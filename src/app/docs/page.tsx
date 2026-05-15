@@ -1,0 +1,488 @@
+'use client';
+
+export const dynamic = 'force-dynamic';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { PageLayout, Heading, Text, Box, Label } from '@primer/react';
+import {
+  BookIcon,
+  BrowserIcon,
+  RepoIcon,
+  IssueOpenedIcon,
+  GitPullRequestIcon,
+  PersonIcon,
+  GearIcon,
+  BellIcon,
+  CpuIcon,
+  CheckCircleIcon,
+  EyeIcon,
+  ZapIcon,
+} from '@primer/octicons-react';
+
+interface Section {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+}
+
+const SECTIONS: Section[] = [
+  { id: 'overview', title: 'Overview', icon: <BookIcon size={16} /> },
+  { id: 'browse', title: 'Browse', icon: <BrowserIcon size={16} /> },
+  { id: 'repositories', title: 'Repositories', icon: <RepoIcon size={16} /> },
+  { id: 'issues', title: 'Issues', icon: <IssueOpenedIcon size={16} /> },
+  { id: 'pulls', title: 'Pull Requests', icon: <GitPullRequestIcon size={16} /> },
+  { id: 'my-prs', title: 'My PRs', icon: <PersonIcon size={16} /> },
+  { id: 'manage', title: 'Manage Repositories', icon: <RepoIcon size={16} /> },
+  { id: 'validate', title: 'AI Validation', icon: <CpuIcon size={16} /> },
+  { id: 'predict', title: 'Predict Score', icon: <ZapIcon size={16} /> },
+  { id: 'notifications', title: 'Notifications', icon: <BellIcon size={16} /> },
+  { id: 'settings', title: 'Settings', icon: <GearIcon size={16} /> },
+  { id: 'shortcuts', title: 'Keyboard Shortcuts', icon: <EyeIcon size={16} /> },
+];
+
+export default function DocsPage() {
+  const [section, setSection] = useState<string>('overview');
+  // When the user clicks a TOC entry we initiate a smooth scroll. Suppress the
+  // observer-driven update during that scroll so the clicked entry stays active
+  // until the scroll settles on its target.
+  const suppressObserverRef = useRef<number>(0);
+
+  useEffect(() => {
+    // Active section = the last one whose heading has scrolled above an anchor
+    // line near the top of the viewport (just below the sticky header).
+    const ANCHOR_OFFSET = 120;
+    const computeActive = () => {
+      if (Date.now() < suppressObserverRef.current) return;
+      let activeId = SECTIONS[0].id;
+      for (const s of SECTIONS) {
+        const el = document.getElementById(`docs-${s.id}`);
+        if (!el) continue;
+        const top = el.getBoundingClientRect().top;
+        if (top - ANCHOR_OFFSET <= 0) activeId = s.id;
+        else break; // sections are in DOM order, no need to keep checking
+      }
+      setSection((prev) => (prev !== activeId ? activeId : prev));
+    };
+    computeActive();
+    window.addEventListener('scroll', computeActive, { passive: true });
+    window.addEventListener('resize', computeActive);
+    return () => {
+      window.removeEventListener('scroll', computeActive);
+      window.removeEventListener('resize', computeActive);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <PageLayout containerWidth="xlarge" padding="normal">
+      <PageLayout.Header>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <BookIcon size={20} />
+          <Heading sx={{ fontSize: 4 }}>Dashboard Documentation</Heading>
+        </Box>
+        <Text sx={{ color: 'fg.muted' }}>
+          Everything this dashboard does — features, conventions, and how scoring works.
+        </Text>
+      </PageLayout.Header>
+      <PageLayout.Content>
+        <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
+          {/* Left rail TOC */}
+          <Box
+            sx={{
+              width: 220,
+              flexShrink: 0,
+              position: 'sticky',
+              // Sit below the sticky AppHeader (~64px tall) with a small gap.
+              top: 80,
+              maxHeight: 'calc(100vh - 96px)',
+              overflowY: 'auto',
+              border: '1px solid',
+              borderColor: 'border.default',
+              borderRadius: 2,
+              bg: 'canvas.subtle',
+              p: 2,
+            }}
+          >
+            {SECTIONS.map((s) => {
+              const active = s.id === section;
+              return (
+                <Box
+                  as="button"
+                  key={s.id}
+                  onClick={() => {
+                    setSection(s.id);
+                    suppressObserverRef.current = Date.now() + 800;
+                    document.getElementById(`docs-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    width: '100%',
+                    px: 2,
+                    py: '6px',
+                    border: 'none',
+                    bg: active ? 'var(--bg-emphasis)' : 'transparent',
+                    color: active ? 'var(--fg-default)' : 'var(--fg-muted)',
+                    fontWeight: active ? 600 : 500,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    borderRadius: 1,
+                    fontSize: 1,
+                    fontFamily: 'inherit',
+                    borderLeft: '3px solid',
+                    borderLeftColor: active ? 'var(--accent-emphasis)' : 'transparent',
+                    '&:hover': { bg: active ? 'var(--bg-emphasis)' : 'var(--bg-canvas)' },
+                  }}
+                >
+                  {s.icon}
+                  {s.title}
+                </Box>
+              );
+            })}
+          </Box>
+
+          {/* Content */}
+          <Box sx={{ flex: 1, minWidth: 0, lineHeight: 1.65, fontSize: 1, color: 'fg.default' }}>
+            <Article id="overview" title="Overview">
+              <P>
+                <strong>Gittensor Miner Dashboard</strong> is a real-time monitoring and decision tool for miners on{' '}
+                <strong>Bittensor Subnet 74 (SN74)</strong> — a subnet that rewards merged GitHub PRs in whitelisted
+                open-source repositories.
+              </P>
+              <P>
+                The dashboard polls GitHub for issues and pull requests across all 200+ SN74 whitelisted repos plus any
+                custom repos you add, caches them locally, and surfaces the data through several interconnected views.
+                It also integrates Anthropic and OpenAI models for AI-driven issue validation and prompt generation.
+              </P>
+              <H3>Tech stack</H3>
+              <Ul>
+                <Li>Next.js 14 (App Router) + TypeScript + Primer React</Li>
+                <Li>SQLite cache for issues / PRs / linked-issue map</Li>
+                <Li>TanStack Query for client-side polling and cache</Li>
+                <Li>Octokit for GitHub REST + raw fetch for SN74 whitelist auto-sync</Li>
+                <Li>Anthropic + OpenAI SDKs for AI validation</Li>
+              </Ul>
+            </Article>
+
+            <Article id="browse" title="Browse">
+              <P>
+                The default landing page (<Code>/</Code>). Three-pane layout:
+              </P>
+              <Ul>
+                <Li>
+                  <strong>Left rail</strong> — searchable list of all SN74 + custom repos, sorted by weight, with star
+                  toggle, activity badges, and a <em>Mark all read</em> button. Click a repo to load its content into
+                  the middle pane.
+                </Li>
+                <Li>
+                  <strong>Middle pane</strong> — Issues / Pull Requests tabs for the selected repo. Each table shows
+                  state badges, author with avatar, opened/updated/closed timestamps (recent items in bold green),
+                  predicted SN74 score, related-PR count for issues, and a Validate button.
+                </Li>
+                <Li>
+                  <strong>Right rail (when open)</strong> — issue/PR content viewer or the AI Validate dialog. Slides in
+                  from the right and pushes the table left so nothing is hidden.
+                </Li>
+              </Ul>
+              <P>Both side rails are <strong>resizable</strong> — drag the vertical separators.</P>
+            </Article>
+
+            <Article id="repositories" title="Repositories">
+              <P>
+                <Code>/repositories</Code> — the full catalog of every repo the dashboard knows about, with
+                per-repository statistics:
+              </P>
+              <Ul>
+                <Li><strong>Weight</strong>: SN74's payout multiplier (0–1)</Li>
+                <Li><strong>Band</strong>: Flagship (≥0.5), High (0.3–0.5), Mid-high (0.15–0.3), Standard (0.05–0.15), Low</Li>
+                <Li><strong>Issues / Open</strong>: total cached issues + currently open</Li>
+                <Li><strong>PRs / PR Open / Merged</strong>: total / open / merged pulls</Li>
+                <Li><strong>Activity</strong>: last update timestamp across issues + PRs</Li>
+              </Ul>
+              <P>
+                The SN74 whitelist auto-syncs from{' '}
+                <a href="https://github.com/entrius/gittensor/blob/main/gittensor/validator/weights/master_repositories.json" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-fg)' }}>
+                  master_repositories.json
+                </a>{' '}
+                every hour. Custom repos added via Manage Repositories appear with a blue <Pill>CUSTOM</Pill> pill.
+              </P>
+            </Article>
+
+            <Article id="issues" title="Issues page">
+              <P>
+                <Code>/issues</Code> — global aggregated view of every cached issue across every tracked repo. Sortable
+                on Repository, Weight, Predict Score, Comments, Opened, Closed.
+              </P>
+              <Ul>
+                <Li><strong>State filter</strong>: All / Open / Completed / Not planned / Closed (other)</Li>
+                <Li><strong>Author filter</strong>: searchable combobox with avatars + per-author counts</Li>
+                <Li><strong>Closed filter</strong>: All / Closed only / Still open</Li>
+                <Li><strong>Tracked-only</strong> toggle: limits to repos you've starred</Li>
+                <Li><strong>Lazy rendering</strong>: 50 rows initial, more load as you scroll (smoother on huge lists)</Li>
+              </Ul>
+            </Article>
+
+            <Article id="pulls" title="Pull Requests page">
+              <P>
+                <Code>/pulls</Code> — global PR feed with linked-issue parsing. Each PR's body is scanned for{' '}
+                <Code>Fixes #N</Code> / <Code>Closes owner/repo#N</Code> patterns, and the linked issues appear inline.
+                Click a linked issue chip to jump to that issue.
+              </P>
+              <P>
+                Same filter set as Issues plus a <strong>My PRs only</strong> checkbox. The <strong>Author</strong> and{' '}
+                <strong>Merged / Closed</strong> column headers contain inline filter dropdowns — small blue dot
+                indicates a filter is active.
+              </P>
+            </Article>
+
+            <Article id="my-prs" title="My PRs">
+              <P>
+                <Code>/my-prs</Code> — every PR <strong>you</strong> have authored on GitHub (uses the GitHub search
+                API: <Code>is:pr author:&lt;username&gt;</Code>), enriched with whether each repo is in the SN74
+                whitelist and the repo's weight.
+              </P>
+              <Ul>
+                <Li>Default view: <strong>SN74 whitelist</strong> only (the PRs that earn TAO)</Li>
+                <Li>Stat cards at top: total / in whitelist / open / merged / draft / closed</Li>
+                <Li>Whitelisted PRs are highlighted yellow with the repo's weight as a chip</Li>
+              </Ul>
+            </Article>
+
+            <Article id="manage" title="Manage Repositories">
+              <P>
+                <Code>/manage-repos</Code> (also accessible from the user menu). Add custom repositories that aren't on
+                the SN74 whitelist — useful for tracking your own projects or non-SN74 repos you contribute to.
+              </P>
+              <Ul>
+                <Li>Form: <Code>owner/name</Code> + weight (0–1) + optional notes</Li>
+                <Li>Custom repos are polled by the same background worker and show up everywhere — Browse left rail, Repositories table, Issues, Pulls — with a <Pill>CUSTOM</Pill> pill</Li>
+                <Li>Edit weight or notes inline; remove with the trash icon (confirmation prompt)</Li>
+              </Ul>
+              <P>Stored in SQLite (<Code>user_repos</Code> table) so they persist across server restarts.</P>
+            </Article>
+
+            <Article id="validate" title="AI Validation">
+              <P>
+                Each issue has a <strong>Validate</strong> button. Opens a dialog with two layers of analysis:
+              </P>
+              <H3>1. Deterministic checks (no AI)</H3>
+              <P>Mirrors SN74's own validity rules — fast, free, always runs:</P>
+              <Ul>
+                <Li>Repo in SN74 whitelist?</Li>
+                <Li>Issue has identified author</Li>
+                <Li>Author is repo maintainer (1.66x bonus) vs contributor (1.33x)</Li>
+                <Li>Issue state is solvable (open or completed)</Li>
+                <Li>No disqualifying labels (wontfix, invalid, duplicate)</Li>
+              </Ul>
+              <H3>2. AI judgment</H3>
+              <P>
+                Calls Claude Opus 4.7 / GPT-5.5 / GPT-5.3 Codex (your choice), running at max reasoning effort.
+                Returns a structured verdict: <Code>valid</Code> / <Code>invalid</Code> / <Code>uncertain</Code>,
+                confidence %, engineering-effort estimate (the human coding work needed to fix the issue —
+                <em>not</em> the model&apos;s reasoning budget), reasoning, risks.
+              </P>
+              <H3>Prompt generation</H3>
+              <P>
+                Once validated, click <strong>Generate prompt</strong> to produce a high-quality coding-task prompt for
+                the selected model. Includes acceptance criteria, file-discovery strategy, test guidance, scope
+                guardrails. Copy and paste into Claude Code, Cursor, or your preferred AI dev tool.
+              </P>
+              <P>
+                Verdicts and prompts are cached in SQLite per <Code>(issue, model)</Code> — re-clicking is free and
+                instant.
+              </P>
+              <P>
+                Display mode is configurable in Settings: <Code>modal</Code> (centered overlay), <Code>side</Code>{' '}
+                (slides from right, doesn't cover the table), or <Code>accordion</Code> (expands inline).
+              </P>
+            </Article>
+
+            <Article id="predict" title="Predict Score">
+              <P>
+                Predicted SN74 reward for solving an issue. Formula:
+              </P>
+              <Pre>
+{`predicted = 25 (base) × repo_weight × issue_multiplier × label_multiplier × time_decay`}
+              </Pre>
+              <Ul>
+                <Li><strong>Base</strong>: 25 points if PR's tree-sitter token_score ≥ 5</Li>
+                <Li><strong>Repo weight</strong>: from master_repositories.json (e.g. Bitcoin: 0.4274)</Li>
+                <Li><strong>Issue multiplier</strong>: 1.66x if author is a repo maintainer, 1.33x otherwise</Li>
+                <Li><strong>Label multiplier</strong>: feature 1.5x, bug 1.25x, refactor 0.5x — best-case from issue labels</Li>
+                <Li><strong>Time decay</strong>: 1.0 if PR merges within 12h grace; sigmoid decay over a 35-day window</Li>
+              </Ul>
+              <P>
+                The validate dialog shows <strong>predicted / worst / best</strong> range so you can estimate downside if
+                the PR ends up labeled differently.
+              </P>
+            </Article>
+
+            <Article id="notifications" title="Notifications">
+              <P>
+                Toast notifications fire when a new issue is detected. Triggers: issue's <Code>created_at</Code> is
+                later than the time you opened the dashboard.
+              </P>
+              <Ul>
+                <Li><strong>Toast</strong>: bottom-right, 8s auto-dismiss, click to navigate</Li>
+                <Li><strong>Click</strong>: routes to <Code>/?repo=...&tab=issues&issue=N</Code> — Browse opens with the issue auto-loaded into the configured display (modal/side/accordion)</Li>
+                <Li><strong>Sticky badges</strong>: red pill on the corresponding repo in the left rail; clears when you click that repo</Li>
+                <Li><strong>Mark all read</strong>: button in the left rail header clears all sticky badges at once</Li>
+              </Ul>
+            </Article>
+
+            <Article id="settings" title="Settings">
+              <P>
+                <Code>/settings</Code> (or click your avatar → Settings). All preferences live in <Code>localStorage</Code>:
+              </P>
+              <Ul>
+                <Li><strong>Theme</strong>: dark / light</Li>
+                <Li><strong>Density</strong>: comfortable / compact</Li>
+                <Li><strong>Default AI model</strong>: Claude Opus 4.7 / GPT-5.5 / GPT-5.3 Codex</Li>
+                <Li><strong>Issue / PR content display</strong>: modal / side panel / inline accordion</Li>
+                <Li><strong>Validate dialog display</strong>: modal / side panel</Li>
+                <Li><strong>Render markdown</strong>: on/off for issue & PR bodies</Li>
+                <Li><strong>Default issue state filter</strong> and <strong>repo sort order</strong></Li>
+                <Li><strong>Page size</strong>: 10/25/50/100/All for paginated tables</Li>
+                <Li><strong>Notifications</strong>: enable/disable + UI tick interval</Li>
+              </Ul>
+            </Article>
+
+            <Article id="shortcuts" title="Keyboard Shortcuts">
+              <Kbd>Esc</Kbd> Close any open side panel, modal, or dropdown.<br />
+              <Kbd>Click outside</Kbd> Same as Esc for side panels.<br />
+              <Kbd>↑ / ↓</Kbd> When a dropdown is open, navigate options.<br />
+              <Kbd>Enter</Kbd> Confirm dropdown selection.<br />
+              <Kbd>Tab / Shift+Tab</Kbd> Move focus between interactive elements.
+            </Article>
+          </Box>
+        </Box>
+      </PageLayout.Content>
+    </PageLayout>
+  );
+}
+
+function Article({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  return (
+    <Box
+      id={`docs-${id}`}
+      sx={{ mb: 5, scrollMarginTop: 16 }}
+    >
+      <Heading sx={{ fontSize: 3, mb: 2, pb: 2, borderBottom: '1px solid', borderColor: 'border.muted' }}>
+        {title}
+      </Heading>
+      <Box sx={{ '& > * + *': { mt: 2 } }}>{children}</Box>
+    </Box>
+  );
+}
+
+function P({ children }: { children: React.ReactNode }) {
+  return <Box as="p" sx={{ mb: 2, color: 'fg.default' }}>{children}</Box>;
+}
+
+function H3({ children }: { children: React.ReactNode }) {
+  return (
+    <Heading as="h3" sx={{ fontSize: 2, mt: 3, mb: 2, color: 'fg.default' }}>
+      {children}
+    </Heading>
+  );
+}
+
+function Ul({ children }: { children: React.ReactNode }) {
+  return (
+    <Box as="ul" sx={{ pl: 4, mb: 2, '& > li + li': { mt: 1 } }}>
+      {children}
+    </Box>
+  );
+}
+
+function Li({ children }: { children: React.ReactNode }) {
+  return <Box as="li">{children}</Box>;
+}
+
+function Code({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      as="code"
+      sx={{
+        bg: 'var(--bg-emphasis)',
+        px: '6px',
+        py: '1px',
+        borderRadius: 4,
+        fontFamily: 'mono',
+        fontSize: 0,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function Pre({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      as="pre"
+      sx={{
+        bg: 'var(--bg-inset)',
+        border: '1px solid',
+        borderColor: 'border.default',
+        borderRadius: 2,
+        p: 3,
+        my: 2,
+        fontFamily: 'mono',
+        fontSize: 0,
+        overflowX: 'auto',
+        whiteSpace: 'pre-wrap',
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      as="span"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        px: '6px',
+        py: '1px',
+        bg: 'rgba(31, 111, 235, 0.15)',
+        color: 'accent.fg',
+        fontSize: 0,
+        fontWeight: 700,
+        borderRadius: 999,
+        letterSpacing: '0.4px',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <Box
+      as="kbd"
+      sx={{
+        display: 'inline-block',
+        bg: 'var(--bg-emphasis)',
+        border: '1px solid',
+        borderColor: 'border.default',
+        borderRadius: 1,
+        px: '6px',
+        py: '1px',
+        fontFamily: 'mono',
+        fontSize: 0,
+        color: 'fg.default',
+        mr: 2,
+        boxShadow: '0 1px 0 var(--border-default)',
+      }}
+    >
+      {children}
+    </Box>
+  );
+}

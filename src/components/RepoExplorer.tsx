@@ -1,0 +1,3904 @@
+'use client';
+
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { keepPreviousData, useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Box,
+  TextInput,
+  Text,
+  Label,
+  Link as PrimerLink,
+} from '@primer/react';
+import Spinner from '@/components/Spinner';
+import {
+  SearchIcon,
+  RepoIcon,
+  StarIcon,
+  StarFillIcon,
+  ClockIcon,
+  CommentIcon,
+  IssueOpenedIcon,
+  IssueClosedIcon,
+  SkipIcon,
+  GitPullRequestIcon,
+  PersonIcon,
+  MarkGithubIcon,
+  XIcon,
+  EyeIcon,
+  ChevronRightIcon,
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  TriangleUpIcon,
+  TriangleDownIcon,
+  CheckIcon,
+} from '@primer/octicons-react';
+import { ALL_REPOS, type RepoEntry } from '@/lib/repos';
+import { useTrackedRepos } from '@/lib/tracked-repos';
+import { IssueStatusBadge, PullStatusBadge } from '@/components/StatusBadge';
+import { formatRelativeTime, isRecent } from '@/lib/format';
+import { useMinerLogin } from '@/lib/use-miner';
+import { predictScore } from '@/lib/validate';
+import Dropdown from '@/components/Dropdown';
+// Static imports — the dev-mode chunk-hash churn from frequent restarts kept
+// hitting users with `ChunkLoadError` when the browser held a stale chunk
+// URL. The bundle-size savings of lazy-loading these aren't worth the
+// recurring failure mode.
+import ValidateIssueDialog from '@/components/ValidateIssueDialog';
+import ValidatePullDialog from '@/components/ValidatePullDialog';
+import ValidateButton from '@/components/ValidateButton';
+import ContentViewer from '@/components/ContentViewer';
+import SearchInput from '@/components/SearchInput';
+import AuthorFilter from '@/components/AuthorFilter';
+import { useSettings } from '@/lib/settings';
+import { useToast } from '@/lib/toast';
+import { pullStatus } from '@/lib/api-types';
+import type { IssueDto, IssuesResponse, IssuesMetaResponse, PullDto, PullsResponse, PullsMetaResponse } from '@/lib/api-types';
+
+type RepoSort = 'weight' | 'name' | 'tracked';
+type IssueState = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed';
+type PRState = 'all' | 'open' | 'draft' | 'merged' | 'closed' | 'mine';
+type Tab = 'issues' | 'pulls';
+type IssueSortKey =
+  | 'opened'
+  | 'updated'
+  | 'closed'
+  | 'author'
+  | 'state'
+  | 'predict'
+  | 'comments'
+  | 'author_open'
+  | 'author_completed'
+  | 'author_not_planned'
+  | 'author_closed';
+type PullSortKey = 'opened' | 'updated' | 'closed' | 'author' | 'state';
+type SortDir = 'asc' | 'desc';
+type AuthorTarget = { login: string; association?: string | null };
+interface RepoBadgesResponse {
+  repo: string;
+  issues_count: number;
+  pulls_count: number;
+  owner_comments_count: number;
+  updated_at: string;
+}
+
+// Stable empty array so the relatedPRs fallback doesn't break React.memo on
+// rows with no linked PRs (otherwise `?? []` creates a fresh reference each
+// render, defeating prop equality).
+const EMPTY_PRS: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }> = [];
+const EMPTY_ISSUES: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }> = [];
+
+export default function RepoExplorer() {
+  const { tracked, toggle: toggleTrack } = useTrackedRepos();
+  const [repoQuery, setRepoQuery] = useState('');
+  const [repoSort, setRepoSort] = useState<RepoSort>('weight');
+  const [trackedOnly, setTrackedOnly] = useState(false);
+  const [selected, setSelected] = useState<RepoEntry>(ALL_REPOS[0]);
+  const [tab, setTabState] = useState<Tab>('issues');
+  const [issueQuery, setIssueQuery] = useState('');
+  const [issueState, setIssueState] = useState<IssueState>('all');
+  const [issueAuthor, setIssueAuthor] = useState<string>('all');
+  const [issueAuthorsRequested, setIssueAuthorsRequested] = useState(false);
+  // Filters and per-repo viewing state are scoped to the active repo — reset
+  // them when the user switches repos so e.g. an author filter from repo A
+  // doesn't carry over to repo B (where that author may not have any issues).
+  useEffect(() => {
+    setIssueQuery('');
+    setIssueState('all');
+    setIssueAuthor('all');
+    setIssueAuthorsRequested(false);
+    setPrQuery('');
+    setPrState('all');
+    setPrAuthor('all');
+    setPrAuthorsRequested(false);
+    setPrMineOnly(false);
+    setIssuesPage(1);
+    setPullsPage(1);
+    setExpandedIssue(null);
+    setExpandedPull(null);
+    setIssueModal(null);
+    setPullModal(null);
+    setValidateTarget(null);
+    setValidatePullTarget(null);
+    setAuthorTarget(null);
+    setAuthorPanelActive(false);
+    setRenderedAuthorTarget(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected.fullName]);
+  const [prQuery, setPrQuery] = useState('');
+  const [prState, setPrState] = useState<PRState>('all');
+  const [prMineOnly, setPrMineOnly] = useState(false);
+  const [prAuthor, setPrAuthor] = useState<string>('all');
+  const [prAuthorsRequested, setPrAuthorsRequested] = useState(false);
+
+  // Debounced text-search values — feed into the queryKey so server-side
+  // filtering doesn't refire on every keystroke.
+  const [debouncedIssueQuery, setDebouncedIssueQuery] = useState('');
+  const [debouncedPrQuery, setDebouncedPrQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedIssueQuery(issueQuery), 300);
+    return () => clearTimeout(t);
+  }, [issueQuery]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedPrQuery(prQuery), 300);
+    return () => clearTimeout(t);
+  }, [prQuery]);
+  const [validateTarget, setValidateTarget] = useState<{ number: number; title: string } | null>(null);
+  const [validatePullTarget, setValidatePullTarget] = useState<{ number: number; title: string } | null>(null);
+  const [authorTarget, setAuthorTarget] = useState<AuthorTarget | null>(null);
+  const [renderedAuthorTarget, setRenderedAuthorTarget] = useState<AuthorTarget | null>(null);
+  const [authorPanelActive, setAuthorPanelActive] = useState(false);
+  const validateSideRef = useRef<HTMLDivElement | null>(null);
+  const validatePullSideRef = useRef<HTMLDivElement | null>(null);
+  const authorSideRef = useRef<HTMLDivElement | null>(null);
+  const [issueModal, setIssueModal] = useState<IssueDto | null>(null);
+  const [pullModal, setPullModal] = useState<PullDto | null>(null);
+  const [expandedIssue, setExpandedIssue] = useState<number | null>(null);
+  const [expandedPull, setExpandedPull] = useState<number | null>(null);
+  const { settings, update, hydrated: settingsReady } = useSettings();
+  // pageSize === 0 means the user picked "All (no pagination)" → infinite-scroll
+  // mode. Hoisted up here so the URL-state effects below can read it.
+  const issuesAllMode = settings.pageSize === 0;
+  const pullsAllMode = settings.pageSize === 0;
+  const INFINITE_CHUNK = 100;
+  const me = useMinerLogin();
+
+  // App-level baseline for per-repo new-content badges in the left rail.
+  // Loaded from localStorage in a post-mount effect to avoid SSR/CSR
+  // hydration mismatch.
+  const [appBaseline, setAppBaseline] = useState<string>(
+    () => new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  );
+
+  // Pagination state
+  const [issuesPage, setIssuesPage] = useState(1);
+  const [pullsPage, setPullsPage] = useState(1);
+  const [issueSortKey, setIssueSortKey] = useState<IssueSortKey>('opened');
+  const [issueSortDir, setIssueSortDir] = useState<SortDir>('desc');
+  const [pullSortKey, setPullSortKey] = useState<PullSortKey>('updated');
+  const [pullSortDir, setPullSortDir] = useState<SortDir>('desc');
+
+  const toggleIssueSort = (key: IssueSortKey) => {
+    if (issueSortKey === key) setIssueSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setIssueSortKey(key);
+      setIssueSortDir(key === 'author' || key === 'state' ? 'asc' : 'desc');
+    }
+  };
+
+  const togglePullSort = (key: PullSortKey) => {
+    if (pullSortKey === key) setPullSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else {
+      setPullSortKey(key);
+      setPullSortDir(key === 'author' || key === 'state' ? 'asc' : 'desc');
+    }
+  };
+
+  // Resizable pane widths (persisted to localStorage).
+  const [leftWidth, setLeftWidth] = useState<number>(360);
+  const [sideWidth, setSideWidth] = useState<number>(400);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = JSON.parse(localStorage.getItem('gittensor.layoutWidths') ?? '{}');
+      if (typeof saved.left === 'number') setLeftWidth(Math.max(220, Math.min(640, saved.left)));
+      if (typeof saved.side === 'number') setSideWidth(Math.max(320, Math.min(900, saved.side)));
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(
+      'gittensor.layoutWidths',
+      JSON.stringify({ left: leftWidth, side: sideWidth })
+    );
+  }, [leftWidth, sideWidth]);
+
+  const startResize = (which: 'left' | 'side') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = which === 'left' ? leftWidth : sideWidth;
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      if (which === 'left') {
+        setLeftWidth(Math.max(220, Math.min(640, startW + delta)));
+      } else {
+        // The side panel sits on the right; dragging its handle left enlarges it.
+        setSideWidth(Math.max(320, Math.min(900, startW - delta)));
+      }
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const switchTab = (next: Tab) => {
+    setTabState(next);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('issue');
+      url.searchParams.delete('pull');
+      window.history.replaceState({}, '', url.toString());
+    }
+    setPendingOpen(null);
+    // Close any open side / modal panel when switching tabs.
+    setIssueModal(null);
+    setPullModal(null);
+    setValidateTarget(null);
+    setValidatePullTarget(null);
+    setAuthorTarget(null);
+    setExpandedIssue(null);
+    setExpandedPull(null);
+  };
+
+  // Pending auto-open from URL params (e.g. notification click).
+  const [pendingOpen, setPendingOpen] = useState<{ kind: 'issue' | 'pull'; number: number } | null>(null);
+  const searchParams = useSearchParams();
+  const [routeReady, setRouteReady] = useState(false);
+  // Marks the next `selected` change as URL-driven so the selected-effect
+  // below knows to preserve `pendingOpen` (otherwise the user's click on a
+  // notification for repo B + issue 13 ends up opening repo A's issue 13
+  // because the selected-effect wipes pendingOpen on any selection change).
+  const selectedFromUrlRef = useRef(false);
+
+  // (Effect A — hydrate `selected` from `?repo=` — is declared further down,
+  // after `allRepos` is in scope.)
+
+  // Effect B: tab + pending-open from URL. Runs only on URL change, not on
+  // allRepos updates, so a late user_repos resolution doesn't reopen issues
+  // the user already dismissed.
+  useEffect(() => {
+    if (!searchParams) return;
+    const t = searchParams.get('tab');
+    if (t === 'issues' || t === 'pulls') setTabState(t);
+    const issueParam = searchParams.get('issue');
+    const pullParam = searchParams.get('pull');
+    if (issueParam) {
+      const n = parseInt(issueParam, 10);
+      if (Number.isFinite(n)) setPendingOpen({ kind: 'issue', number: n });
+    } else if (pullParam) {
+      const n = parseInt(pullParam, 10);
+      if (Number.isFinite(n)) setPendingOpen({ kind: 'pull', number: n });
+    }
+    setRouteReady(true);
+  }, [searchParams]);
+
+  // Track the very first run so URL ?ipage / ?ppage params can survive
+  // initial mount instead of being clobbered by the page-1 reset below.
+  const initialPageHydrationRef = useRef(true);
+
+  // Update URL + reset baselines when selection changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const isInitialUrlSync = initialPageHydrationRef.current;
+    // When the selection itself was driven by a URL change (notification
+    // click), preserve `?issue=` / `?pull=` and `pendingOpen` so the issue
+    // actually opens in the new repo. Manual selections from the sidebar
+    // still wipe them as before.
+    const fromUrl = selectedFromUrlRef.current;
+    selectedFromUrlRef.current = false;
+    url.searchParams.set('repo', selected.fullName);
+    if (!isInitialUrlSync && !fromUrl) {
+      url.searchParams.delete('issue');
+      url.searchParams.delete('pull');
+    }
+    window.history.replaceState({}, '', url.toString());
+    if (!initialPageHydrationRef.current) {
+      setIssuesPage(1);
+      setPullsPage(1);
+    }
+    // Close any open side / modal panel when switching repos.
+    if (!isInitialUrlSync && !fromUrl) setPendingOpen(null);
+    setIssueModal(null);
+    setPullModal(null);
+    setValidateTarget(null);
+    setValidatePullTarget(null);
+    setExpandedIssue(null);
+    setExpandedPull(null);
+  }, [selected]);
+
+  // One-shot hydration of page state from URL — runs after the selected-change
+  // effect above resets pages to 1, then overrides with the URL value if any.
+  useEffect(() => {
+    if (!initialPageHydrationRef.current) return;
+    initialPageHydrationRef.current = false;
+    if (!searchParams) return;
+    const ip = parseInt(searchParams.get('ipage') ?? '', 10);
+    if (Number.isFinite(ip) && ip > 0) setIssuesPage(ip);
+    const pp = parseInt(searchParams.get('ppage') ?? '', 10);
+    if (Number.isFinite(pp) && pp > 0) setPullsPage(pp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist current page numbers in the URL so reload restores them. In
+  // infinite-scroll mode the page concept doesn't apply, so we strip the param.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (issuesAllMode || issuesPage <= 1) url.searchParams.delete('ipage');
+    else url.searchParams.set('ipage', String(issuesPage));
+    if (pullsAllMode || pullsPage <= 1) url.searchParams.delete('ppage');
+    else url.searchParams.set('ppage', String(pullsPage));
+    window.history.replaceState({}, '', url.toString());
+  }, [issuesPage, pullsPage, issuesAllMode, pullsAllMode]);
+
+  // Dismiss the side-mode Validate dialog when the user clicks anywhere
+  // outside it (other than the resize handle, which is part of the same UI).
+  // Modal mode already self-dismisses on Escape / overlay click.
+  useEffect(() => {
+    if (settings.validateDisplay !== 'side' || !validateTarget) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const node = e.target as Node;
+      if (validateSideRef.current?.contains(node)) return;
+      // Resize handles use role="separator"; preserve their drag UX.
+      const el = e.target as HTMLElement;
+      if (el.closest && el.closest('[role="separator"]')) return;
+      setValidateTarget(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [settings.validateDisplay, validateTarget]);
+
+  // Same dismiss-on-outside-click behavior for the PR validate side panel.
+  useEffect(() => {
+    if (settings.validateDisplay !== 'side' || !validatePullTarget) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const node = e.target as Node;
+      if (validatePullSideRef.current?.contains(node)) return;
+      const el = e.target as HTMLElement;
+      if (el.closest && el.closest('[role="separator"]')) return;
+      setValidatePullTarget(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [settings.validateDisplay, validatePullTarget]);
+
+  useEffect(() => {
+    if (!authorTarget) {
+      setAuthorPanelActive(false);
+      return;
+    }
+    setRenderedAuthorTarget(authorTarget);
+    const frame = window.requestAnimationFrame(() => setAuthorPanelActive(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [authorTarget]);
+
+  useEffect(() => {
+    if (!authorTarget) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const node = e.target as Node;
+      if (authorSideRef.current?.contains(node)) return;
+      setAuthorTarget(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAuthorTarget(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [authorTarget]);
+
+  // Reset page when filters or sort change so the user always lands on page 1
+  // of the new view rather than e.g. page 5 of an empty filter result.
+  useEffect(() => {
+    setIssuesPage(1);
+  }, [issueQuery, issueState, issueAuthor, issueSortKey, issueSortDir]);
+
+  useEffect(() => {
+    setPullsPage(1);
+  }, [prQuery, prState, prMineOnly, prAuthor, pullSortKey, pullSortDir]);
+
+  const { data: userReposData } = useQuery<{
+    count: number;
+    repos: Array<{ full_name: string; weight: number; notes: string | null; added_at: string }>;
+  }>({
+    queryKey: ['user-repos'],
+    queryFn: async ({ signal }) => {
+      const r = await fetch('/api/user-repos', { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    // 30s — user repos don't change often; aggressive polling caused the
+    // left-rail list to visibly re-render every few seconds.
+    refetchInterval: 30000,
+    staleTime: 20000,
+  });
+
+  // Server polls master_repositories.json every 5 min and persists any new
+  // repos at weight 0; nothing is ever removed. Client refetches on the same
+  // cadence so newly discovered repos appear without a page reload.
+  const { data: sn74ReposData } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'bundled'; count: number }>({
+    queryKey: ['sn74-repos'],
+    queryFn: async ({ signal }) => {
+      const r = await fetch('/api/sn74-repos', { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+    staleTime: 4 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const sn74Repos: RepoEntry[] = sn74ReposData?.repos ?? ALL_REPOS;
+
+  const allRepos = useMemo(() => {
+    const sn74Set = new Set(sn74Repos.map((r) => r.fullName));
+    const userExtras: RepoEntry[] = (userReposData?.repos ?? [])
+      .filter((u) => !sn74Set.has(u.full_name))
+      .map((u) => {
+        const [owner, name] = u.full_name.split('/');
+        return { fullName: u.full_name, owner, name, weight: u.weight, inactiveAt: null };
+      });
+    return [...sn74Repos, ...userExtras];
+  }, [sn74Repos, userReposData]);
+
+  const userRepoNames = useMemo(
+    () => new Set((userReposData?.repos ?? []).map((u) => u.full_name)),
+    [userReposData]
+  );
+
+  // Effect A (declared here so `allRepos` is in scope): hydrate `selected`
+  // from `?repo=`. Re-runs when allRepos grows (e.g. user_repos query
+  // resolves) so notifications targeting custom repositories — which aren't
+  // in ALL_REPOS — still resolve once their entries arrive.
+  //
+  // Note `selected.fullName` is intentionally NOT a dependency. Including it
+  // caused a feedback loop: a manual sidebar click would update `selected`,
+  // re-run this effect with the old (stale) `searchParams`, and revert the
+  // selection back to the URL's previous repo, which then bounced back when
+  // the URL caught up. The functional setter below makes the equality check
+  // self-contained without needing the dep.
+  useEffect(() => {
+    if (!searchParams) return;
+    const r = searchParams.get('repo');
+    if (!r) return;
+    setSelected((prev) => {
+      if (prev.fullName === r) return prev; // no change needed
+      const found = allRepos.find((x) => x.fullName === r);
+      if (!found) return prev;
+      selectedFromUrlRef.current = true;
+      return found;
+    });
+  }, [searchParams, allRepos]);
+
+  // Per-row valid/invalid mutation. Optimistically patches every cached
+  // issues query so the picker flips on the next paint — no waiting on the
+  // server roundtrip. We avoid a global invalidate because re-fetching the
+  // whole page after every click feels worse than the optimistic flip.
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const setValidation = useMutation({
+    mutationFn: async ({ number, status }: { number: number; status: 'valid' | 'invalid' | null }) => {
+      const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/validations/${number}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    onMutate: async ({ number, status }) => {
+      const patch = (data: IssuesResponse | undefined) => {
+        if (!data) return data;
+        const next: Record<number, 'valid' | 'invalid'> = { ...(data.user_validations ?? {}) };
+        if (status === null) delete next[number];
+        else next[number] = status;
+        return { ...data, user_validations: next };
+      };
+      const snapshots: Array<[unknown, unknown]> = [];
+      queryClient.getQueriesData<IssuesResponse>({ queryKey: ['issues'] }).forEach(([key, data]) => {
+        snapshots.push([key, data]);
+        queryClient.setQueryData(key, patch(data));
+      });
+      queryClient.getQueriesData<{ pages: IssuesResponse[]; pageParams: unknown[] }>({ queryKey: ['issues-inf'] }).forEach(
+        ([key, data]) => {
+          snapshots.push([key, data]);
+          if (data?.pages) {
+            queryClient.setQueryData(key, {
+              ...data,
+              pages: data.pages.map((p) => patch(p) as IssuesResponse),
+            });
+          }
+        },
+      );
+      return { snapshots };
+    },
+    onSuccess: (_data, { number, status }) => {
+      const repo = `${selected.owner}/${selected.name}`;
+      if (status === null) {
+        toast.push({
+          title: `Cleared mark on #${number}`,
+          body: repo,
+          variant: 'info',
+          icon: 'issue',
+          ttlMs: 3000,
+        });
+      } else {
+        toast.push({
+          title: status === 'valid' ? `Marked #${number} as valid` : `Marked #${number} as invalid`,
+          body: repo,
+          variant: status === 'valid' ? 'success' : 'warning',
+          icon: 'issue',
+          ttlMs: 3000,
+        });
+      }
+    },
+    onError: (_err, vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => queryClient.setQueryData(key as readonly unknown[], data));
+      toast.push({
+        title: `Couldn't update #${vars.number}`,
+        body: 'Please try again',
+        variant: 'danger',
+        icon: 'issue',
+        ttlMs: 4000,
+      });
+    },
+  });
+
+  // Inactive flag comes straight from SN74's master_repositories.json — the
+  // validator team marks repos with `inactive_at` when they're deprioritised
+  // and miners can't earn rewards from them. Authoritative, no heuristics.
+  const filteredRepos = useMemo(() => {
+    const q = repoQuery.trim().toLowerCase();
+    let list = allRepos.filter((r) => !q || r.fullName.toLowerCase().includes(q));
+    if (trackedOnly) list = list.filter((r) => tracked.has(r.fullName));
+    return [...list].sort((a, b) => {
+      // Tracked (starred) repos always float to the top so the user's pinned
+      // selection is one click away regardless of the chosen secondary sort.
+      const at = tracked.has(a.fullName) ? 1 : 0;
+      const bt = tracked.has(b.fullName) ? 1 : 0;
+      if (at !== bt) return bt - at;
+      // Inactive repos sink to the bottom of each tracked/untracked group.
+      const ai = a.inactiveAt != null ? 1 : 0;
+      const bi = b.inactiveAt != null ? 1 : 0;
+      if (ai !== bi) return ai - bi;
+      if (repoSort === 'name') return a.fullName.localeCompare(b.fullName);
+      return b.weight - a.weight;
+    });
+  }, [allRepos, repoQuery, repoSort, trackedOnly, tracked]);
+
+  // issuesAllMode + INFINITE_CHUNK are hoisted to the top of the component.
+  const issuesPageSize = issuesAllMode ? INFINITE_CHUNK : (settings.pageSize > 0 ? settings.pageSize : 50);
+  const queriesReady = settingsReady && routeReady;
+  const shouldLoadIssues = tab === 'issues';
+
+  const buildIssuesUrl = (page: number, size: number) => {
+    const sp = new URLSearchParams();
+    sp.set('page', String(page));
+    sp.set('pageSize', String(size));
+    if (debouncedIssueQuery) sp.set('q', debouncedIssueQuery);
+    if (issueState !== 'all') sp.set('state', issueState);
+    // `__assoc:` prefix is the front-end sentinel for the "Collaborators" /
+    // "Contributors" pseudo-options at the top of the author dropdown — they
+    // map to GitHub's author_association field, not a specific login.
+    if (issueAuthor.startsWith('__assoc:')) {
+      sp.set('assoc', issueAuthor.slice('__assoc:'.length));
+    } else if (issueAuthor !== 'all') {
+      sp.set('author', issueAuthor);
+    }
+    sp.set('sort', issueSortKey);
+    sp.set('dir', issueSortDir);
+    return `/api/repos/${selected.owner}/${selected.name}/issues?${sp.toString()}`;
+  };
+
+  // Paged-mode query — fires when settings.pageSize is a finite number.
+  const issuesPaged = useQuery<IssuesResponse>({
+    queryKey: [
+      'issues',
+      selected.owner,
+      selected.name,
+      issuesPage,
+      issuesPageSize,
+      debouncedIssueQuery,
+      issueState,
+      issueAuthor,
+      issueSortKey,
+      issueSortDir,
+    ],
+    queryFn: async ({ signal }) => {
+      const r = await fetch(buildIssuesUrl(issuesPage, issuesPageSize), { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 15000,
+    staleTime: 10000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+    enabled: queriesReady && shouldLoadIssues && !issuesAllMode,
+  });
+
+  // All-mode infinite query — appends rows as the user scrolls past the
+  // sentinel near the table bottom. queryKey omits page; useInfiniteQuery
+  // tracks pages internally.
+  const issuesInfinite = useInfiniteQuery<IssuesResponse, Error, { pages: IssuesResponse[]; pageParams: number[] }, readonly unknown[], number>({
+    queryKey: [
+      'issues-inf',
+      selected.owner,
+      selected.name,
+      debouncedIssueQuery,
+      issueState,
+      issueAuthor,
+      issueSortKey,
+      issueSortDir,
+    ],
+    queryFn: async ({ pageParam, signal }) => {
+      const r = await fetch(buildIssuesUrl(pageParam, INFINITE_CHUNK), { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((acc, p) => acc + p.issues.length, 0);
+      return loaded < lastPage.count ? allPages.length + 1 : undefined;
+    },
+    refetchInterval: 60000,
+    staleTime: 10000,
+    refetchOnWindowFocus: false,
+    enabled: queriesReady && shouldLoadIssues && issuesAllMode,
+  });
+
+  // Unified shape so the rest of the component doesn't care which branch is active.
+  const issuesData: IssuesResponse | undefined = issuesAllMode
+    ? (issuesInfinite.data
+        ? {
+            ...issuesInfinite.data.pages[0],
+            issues: issuesInfinite.data.pages.flatMap((p) => p.issues),
+          }
+        : undefined)
+    : issuesPaged.data;
+  const issuesLoading = issuesAllMode ? issuesInfinite.isLoading : issuesPaged.isLoading;
+
+  // Repo-wide author list + per-author counts. Refresh slowly because these
+  // change much less often than the listing itself.
+  const { data: issuesMeta, isFetching: issuesMetaFetching } = useQuery<IssuesMetaResponse>({
+    queryKey: ['issues-meta', selected.owner, selected.name, issueAuthorsRequested],
+    queryFn: async ({ signal }) => {
+      const sp = new URLSearchParams();
+      if (!issueAuthorsRequested) sp.set('summary', '1');
+      const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/issues-meta?${sp.toString()}`, { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
+    enabled: queriesReady && shouldLoadIssues,
+  });
+
+  // Linked PRs + per-author stats now come inlined in `issuesData` per page,
+  // so we no longer fetch the bulk /api/related-prs map (the openclaw response
+  // was 3 MB / 50 s for that endpoint). Same idea for `issuesMeta.author_stats`
+  // which is no longer requested by the client.
+  const relatedMapData: { map: Record<number, Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }>> } | undefined = issuesData
+    ? { map: (issuesData as IssuesResponse).linked_prs_by_issue ?? {} }
+    : undefined;
+
+  const { data: repoBadges } = useQuery<RepoBadgesResponse>({
+    queryKey: ['repo-badges', selected.owner, selected.name],
+    queryFn: async ({ signal }) => {
+      const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/badges`, { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    enabled: queriesReady,
+    staleTime: 60000,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Hydration flag — set to true after initial post-mount localStorage load
+  // so persistence effects can run safely.
+  const [hydrated, setHydrated] = useState(false);
+
+  // Per-repo "viewed at" timestamps so badges clear when user selects the repo.
+  const [viewedAt, setViewedAt] = useState<Record<string, string>>({});
+
+  // Sticky badge counts per repo. Once a badge appears, it stays at the max
+  // count seen — only resets when the user actually clicks the repo. The
+  // `priority` flag is set when an owner or collaborator opens an issue
+  // there, and unlike the count it persists across renders until the user
+  // visits the repo (the sidebar row gets a yellow accent border).
+  const [stickyBadges, setStickyBadges] = useState<Record<string, { issues: number; pulls: number; priority?: boolean }>>({});
+
+  const { data: activityData } = useQuery<{
+    since: string;
+    activity: Record<string, { repo: string; issues: number; pulls: number }>;
+  }>({
+    queryKey: ['repo-activity', appBaseline],
+    queryFn: async ({ signal }) => {
+      const r = await fetch(`/api/repo-activity?since=${encodeURIComponent(appBaseline)}`, { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 15000,
+    staleTime: 10000,
+    refetchOnWindowFocus: false,
+    enabled: hydrated,
+  });
+
+  useEffect(() => {
+    if (!hydrated) return;
+    setViewedAt((prev) => {
+      const next = { ...prev, [selected.fullName]: new Date().toISOString() };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gittensor.viewedAt', JSON.stringify(next));
+      }
+      return next;
+    });
+    // Drop the sticky badge entry (counts + priority highlight) for the repo
+    // the user just opened — they've seen the new content.
+    setStickyBadges((prev) => {
+      if (!prev[selected.fullName]) return prev;
+      const next = { ...prev };
+      delete next[selected.fullName];
+      return next;
+    });
+  }, [selected, hydrated]);
+
+  // Load persisted state once on mount (post-hydration).
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('gittensor.viewedAt');
+      if (v) setViewedAt(JSON.parse(v));
+      const s = localStorage.getItem('gittensor.stickyBadges');
+      if (s) setStickyBadges(JSON.parse(s));
+      let b = localStorage.getItem('gittensor.appBaseline');
+      if (!b) {
+        b = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        localStorage.setItem('gittensor.appBaseline', b);
+      }
+      setAppBaseline(b);
+    } catch {
+      /* noop */
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!hydrated) return;
+    localStorage.setItem('gittensor.stickyBadges', JSON.stringify(stickyBadges));
+  }, [stickyBadges, hydrated]);
+
+  useEffect(() => {
+    if (!activityData?.activity) return;
+    setStickyBadges((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [repo, info] of Object.entries(activityData.activity)) {
+        if (viewedAt[repo]) continue;
+        const cur = next[repo] ?? { issues: 0, pulls: 0 };
+        const mergedIssues = Math.max(cur.issues, info.issues);
+        const mergedPulls = Math.max(cur.pulls, info.pulls);
+        if (mergedIssues !== cur.issues || mergedPulls !== cur.pulls) {
+          next[repo] = { issues: mergedIssues, pulls: mergedPulls };
+          changed = true;
+        }
+      }
+      // Skip the state update entirely when nothing actually changed —
+      // returning `prev` lets React bail out of the re-render.
+      return changed ? next : prev;
+    });
+  }, [activityData, viewedAt]);
+
+  // When user views a repo, drop its sticky badge entry.
+  useEffect(() => {
+    setStickyBadges((prev) => {
+      if (!prev[selected.fullName]) return prev;
+      const next = { ...prev };
+      delete next[selected.fullName];
+      return next;
+    });
+  }, [selected]);
+
+  // Auto-scroll the left rail to bring the selected repo into view
+  // (e.g. when navigating via notification or URL).
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const id = setTimeout(() => {
+      const el = document.querySelector(`[data-repo-fullname="${CSS.escape(selected.fullName)}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+    return () => clearTimeout(id);
+  }, [selected]);
+
+  // Listen for direct "new content" events from the toast watcher so a badge
+  // appears immediately, independent of the activity polling loop.
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const e = ev as CustomEvent<{ repo: string; kind: 'issue' | 'pull'; priority?: boolean }>;
+      if (!e.detail) return;
+      const { repo, kind, priority } = e.detail;
+      if (repo === selected.fullName) return; // currently viewing — no badge needed
+      setStickyBadges((prev) => {
+        const cur = prev[repo] ?? { issues: 0, pulls: 0 };
+        return {
+          ...prev,
+          [repo]: {
+            issues: cur.issues + (kind === 'issue' ? 1 : 0),
+            pulls: cur.pulls + (kind === 'pull' ? 1 : 0),
+            // Priority is sticky once set — sticks until the user views the
+            // repo (which clears the whole entry below).
+            priority: cur.priority || !!priority,
+          },
+        };
+      });
+    };
+    window.addEventListener('gittensor-new-content', handler as EventListener);
+    return () => window.removeEventListener('gittensor-new-content', handler as EventListener);
+  }, [selected]);
+
+  // Total unread count across all repos.
+  const totalUnread = useMemo(() => {
+    let count = 0;
+    for (const v of Object.values(stickyBadges)) {
+      count += (v.issues ?? 0) + (v.pulls ?? 0);
+    }
+    return count;
+  }, [stickyBadges]);
+
+  const markAllAsRead = () => {
+    const now = new Date().toISOString();
+    // Mark every repo with a sticky badge as viewed
+    setViewedAt((prev) => {
+      const next = { ...prev };
+      for (const repo of Object.keys(stickyBadges)) {
+        next[repo] = now;
+      }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gittensor.viewedAt', JSON.stringify(next));
+      }
+      return next;
+    });
+    setStickyBadges({});
+  };
+
+  const pullsPageSize = pullsAllMode ? INFINITE_CHUNK : (settings.pageSize > 0 ? settings.pageSize : 50);
+  const pullsState = prMineOnly ? 'mine' : prState;
+  const shouldLoadPulls = tab === 'pulls';
+
+  const buildPullsUrl = (page: number, size: number) => {
+    const sp = new URLSearchParams();
+    sp.set('page', String(page));
+    sp.set('pageSize', String(size));
+    if (debouncedPrQuery) sp.set('q', debouncedPrQuery);
+    if (pullsState !== 'all') sp.set('state', pullsState);
+    if (prAuthor !== 'all') sp.set('author', prAuthor);
+    sp.set('sort', pullSortKey);
+    sp.set('dir', pullSortDir);
+    if (me) sp.set('mine_login', me);
+    return `/api/repos/${selected.owner}/${selected.name}/pulls?${sp.toString()}`;
+  };
+
+  const pullsPaged = useQuery<PullsResponse>({
+    queryKey: [
+      'pulls',
+      selected.owner,
+      selected.name,
+      pullsPage,
+      pullsPageSize,
+      debouncedPrQuery,
+      pullsState,
+      prAuthor,
+      pullSortKey,
+      pullSortDir,
+      me,
+    ],
+    queryFn: async ({ signal }) => {
+      const r = await fetch(buildPullsUrl(pullsPage, pullsPageSize), { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 15000,
+    staleTime: 10000,
+    placeholderData: keepPreviousData,
+    refetchOnWindowFocus: false,
+    enabled: queriesReady && !pullsAllMode && shouldLoadPulls,
+  });
+
+  const pullsInfinite = useInfiniteQuery<PullsResponse, Error, { pages: PullsResponse[]; pageParams: number[] }, readonly unknown[], number>({
+    queryKey: [
+      'pulls-inf',
+      selected.owner,
+      selected.name,
+      debouncedPrQuery,
+      pullsState,
+      prAuthor,
+      pullSortKey,
+      pullSortDir,
+      me,
+    ],
+    queryFn: async ({ pageParam, signal }) => {
+      const r = await fetch(buildPullsUrl(pageParam, INFINITE_CHUNK), { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((acc, p) => acc + p.pulls.length, 0);
+      return loaded < lastPage.count ? allPages.length + 1 : undefined;
+    },
+    refetchInterval: 60000,
+    staleTime: 10000,
+    refetchOnWindowFocus: false,
+    enabled: queriesReady && pullsAllMode && shouldLoadPulls,
+  });
+
+  const pullsData: PullsResponse | undefined = pullsAllMode
+    ? (pullsInfinite.data
+        ? {
+            ...pullsInfinite.data.pages[0],
+            pulls: pullsInfinite.data.pages.flatMap((p) => p.pulls),
+          }
+        : undefined)
+    : pullsPaged.data;
+  const pullsLoading = pullsAllMode ? pullsInfinite.isLoading : pullsPaged.isLoading;
+
+  const openLinkedPullRequest = useCallback(
+    async (prNumber: number) => {
+      setValidateTarget(null);
+      setAuthorTarget(null);
+      setIssueModal(null);
+      setExpandedIssue(null);
+      setExpandedPull(null);
+
+      let pr = pullsData?.pulls.find((p) => p.number === prNumber) ?? null;
+      if (!pr) {
+        try {
+          const r = await fetch(`/api/pull/${selected.owner}/${selected.name}/${prNumber}`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          pr = (await r.json()) as PullDto;
+        } catch (err) {
+          console.warn('[browse] could not open linked PR:', err);
+          return;
+        }
+      }
+
+      if (settings.contentDisplay === 'modal' || settings.contentDisplay === 'side') {
+        setPullModal(pr);
+        return;
+      }
+
+      setTabState('pulls');
+      setExpandedPull(pr.number);
+    },
+    [pullsData?.pulls, selected.owner, selected.name, settings.contentDisplay],
+  );
+
+  const openAuthorSidebar = useCallback((login: string, association?: string | null) => {
+    setValidateTarget(null);
+    setIssueModal(null);
+    setPullModal(null);
+    setExpandedIssue(null);
+    setExpandedPull(null);
+    setAuthorTarget({ login, association });
+  }, []);
+
+  const openIssueFromAuthorSidebar = useCallback(
+    (issue: IssueDto) => {
+      setAuthorTarget(null);
+      setValidateTarget(null);
+      setPullModal(null);
+      setExpandedPull(null);
+
+      if (settings.contentDisplay === 'modal' || settings.contentDisplay === 'side') {
+        setIssueModal(issue);
+        return;
+      }
+
+      setTabState('issues');
+      setExpandedIssue(issue.number);
+    },
+    [settings.contentDisplay],
+  );
+
+  // Infinite-scroll sentinels. When the sentinel intersects the viewport
+  // (with a 200px buffer so we kick the next fetch slightly before the user
+  // hits the bottom), we fetch the next chunk. Inactive in paged mode.
+  const issuesSentinelRef = useRef<HTMLDivElement>(null);
+  const pullsSentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!issuesAllMode) return;
+    const node = issuesSentinelRef.current;
+    if (!node) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0]?.isIntersecting &&
+          issuesInfinite.hasNextPage &&
+          !issuesInfinite.isFetchingNextPage
+        ) {
+          void issuesInfinite.fetchNextPage();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, [issuesAllMode, issuesInfinite.hasNextPage, issuesInfinite.isFetchingNextPage, issuesInfinite.fetchNextPage]);
+
+  useEffect(() => {
+    if (!pullsAllMode) return;
+    const node = pullsSentinelRef.current;
+    if (!node) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0]?.isIntersecting &&
+          pullsInfinite.hasNextPage &&
+          !pullsInfinite.isFetchingNextPage
+        ) {
+          void pullsInfinite.fetchNextPage();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, [pullsAllMode, pullsInfinite.hasNextPage, pullsInfinite.isFetchingNextPage, pullsInfinite.fetchNextPage]);
+
+  const { data: pullsMeta, isFetching: pullsMetaFetching } = useQuery<PullsMetaResponse>({
+    queryKey: ['pulls-meta', selected.owner, selected.name, me, prAuthorsRequested],
+    queryFn: async ({ signal }) => {
+      const sp = new URLSearchParams();
+      if (me) sp.set('mine_login', me);
+      if (!prAuthorsRequested) sp.set('summary', '1');
+      const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/pulls-meta?${sp.toString()}`, { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    enabled: queriesReady && shouldLoadPulls,
+    refetchInterval: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Resolve a pending auto-open (from notification / URL param).
+  // Always fetches directly from the API to avoid races with the cached
+  // useQuery data which may still be for the previous repo.
+  useEffect(() => {
+    if (!pendingOpen) return;
+    const useOverlay = settings.contentDisplay === 'modal' || settings.contentDisplay === 'side';
+    const { kind, number: num } = pendingOpen;
+    let cancelled = false;
+
+    const open = async () => {
+      const path = kind === 'issue'
+        ? `/api/issue/${selected.owner}/${selected.name}/${num}`
+        : `/api/pull/${selected.owner}/${selected.name}/${num}`;
+      try {
+        const r = await fetch(path);
+        if (!r.ok) {
+          if (!cancelled) setPendingOpen(null);
+          return;
+        }
+        const data = await r.json();
+        if (cancelled) return;
+
+        setValidateTarget(null);
+        setAuthorTarget(null);
+        if (kind === 'issue') {
+          setTabState('issues');
+          if (useOverlay) {
+            setIssueModal(data as IssueDto);
+            setPullModal(null);
+            setExpandedIssue(null);
+          } else {
+            setIssueModal(null);
+            setPullModal(null);
+            setExpandedIssue((data as IssueDto).number);
+            setTimeout(() => {
+              document
+                .querySelector(`[data-issue-number="${(data as IssueDto).number}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 120);
+          }
+        } else {
+          setTabState('pulls');
+          if (useOverlay) {
+            setPullModal(data as PullDto);
+            setIssueModal(null);
+            setExpandedPull(null);
+          } else {
+            setPullModal(null);
+            setIssueModal(null);
+            setExpandedPull((data as PullDto).number);
+            setTimeout(() => {
+              document
+                .querySelector(`[data-pull-number="${(data as PullDto).number}"]`)
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 120);
+          }
+        }
+        setPendingOpen(null);
+      } catch {
+        if (!cancelled) setPendingOpen(null);
+      }
+    };
+
+    void open();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingOpen, selected.owner, selected.name, settings.contentDisplay]);
+
+  // Server already applied filter/sort/pagination — just hand the rows back.
+  const filteredPulls = pullsData?.pulls ?? [];
+
+  const myPullCount = pullsMeta?.mine_count ?? 0;
+
+  // Server returns `new_count` based on the per-tab baseline we sent.
+  const newIssuesCount = issuesData?.new_count ?? 0;
+  const newPullsCount = pullsData?.new_count ?? 0;
+  const issueTabCount = issuesData?.count ?? repoBadges?.issues_count;
+  const pullTabCount = pullsData?.count ?? repoBadges?.pulls_count;
+
+  const pageSize = settings.pageSize > 0 ? settings.pageSize : 50;
+
+  // Per-author OPEN/DONE/NP counts come from the meta endpoint (repo-wide,
+  // independent of the current page). Adapted into a Map for the existing
+  // render code that calls .get(login).
+  // Per-author stats now come from the page response — only contains stats
+  // for the ~50 authors visible on the current page rather than all 15k.
+  const issueAuthorStats = useMemo(() => {
+    const map = new Map<string, { open: number; completed: number; not_planned: number; closed: number }>();
+    const stats = (issuesData as IssuesResponse | undefined)?.page_author_stats;
+    if (!stats) return map;
+    for (const [login, s] of Object.entries(stats)) {
+      map.set(login, s);
+    }
+    return map;
+  }, [issuesData]);
+
+  // Server already filtered, sorted, and paginated. Only "predict" requires a
+  // client-side resort because the formula isn't expressed in SQL — we re-sort
+  // just the current page (a known limitation: predict sort is page-local).
+  const filteredIssues = useMemo(() => {
+    const list = issuesData?.issues ?? [];
+    if (issueSortKey !== 'predict') return list;
+    const dir = issueSortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => (predictScore(a).predicted - predictScore(b).predicted) * dir);
+  }, [issuesData, issueSortKey, issueSortDir]);
+
+  const issueAuthorOptions = useMemo(() => issuesMeta?.author_options ?? [], [issuesMeta]);
+
+
+  const prAuthorOptions = useMemo(() => pullsMeta?.author_options ?? [], [pullsMeta]);
+
+  // Pagination math now reads `count` (total matching the current filter) from
+  // the server response. The "paged" lists are just the rows the server
+  // returned — no additional client-side slicing needed.
+  const issueTotalCount = issuesData?.count ?? 0;
+  const pullTotalCount = pullsData?.count ?? 0;
+  const issueTotalPages = Math.max(1, Math.ceil(issueTotalCount / pageSize));
+  const pullTotalPages = Math.max(1, Math.ceil(pullTotalCount / pageSize));
+  const safeIssuesPage = Math.min(issuesPage, issueTotalPages);
+  const safePullsPage = Math.min(pullsPage, pullTotalPages);
+  const pagedIssues = filteredIssues;
+  const pagedPulls = filteredPulls;
+
+  return (
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
+      {/* LEFT: REPO LIST */}
+      <Box
+        sx={{
+          width: leftWidth,
+          flexShrink: 0,
+          bg: 'var(--bg-canvas)',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'var(--border-default)', flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            <Text sx={{ fontWeight: 600, fontSize: 1, color: 'var(--fg-default)' }}>Repositories</Text>
+            <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+              {filteredRepos.length} of {allRepos.length}
+            </Text>
+            {totalUnread > 0 && (
+              <Box
+                as="button"
+                onClick={markAllAsRead}
+                title={`Clear ${totalUnread} unread badge${totalUnread === 1 ? '' : 's'}`}
+                sx={{
+                  ml: 'auto',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  px: '8px',
+                  py: '3px',
+                  border: '1px solid',
+                  borderColor: 'var(--border-default)',
+                  bg: 'var(--bg-canvas)',
+                  color: 'var(--fg-muted)',
+                  borderRadius: '999px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                  transition: 'border-color 80ms, color 80ms',
+                  '&:hover': { borderColor: 'var(--accent-emphasis)', color: 'var(--accent-fg)' },
+                }}
+              >
+                <CheckIcon size={11} />
+                Mark all read · {totalUnread}
+              </Box>
+            )}
+          </Box>
+          <Box sx={{ mb: 2, width: '100%' }}>
+            <SearchInput
+              value={repoQuery}
+              onChange={setRepoQuery}
+              placeholder="Filter repos…"
+              width="100%"
+              ariaLabel="Filter repositories"
+            />
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Box sx={{ flex: 1 }}>
+              <Dropdown
+                value={repoSort}
+                onChange={(v) => setRepoSort(v as RepoSort)}
+                options={[
+                  { value: 'weight', label: 'By weight' },
+                  { value: 'name', label: 'By name' },
+                  { value: 'tracked', label: 'Tracked first' },
+                ]}
+                width="100%"
+                ariaLabel="Sort repos"
+              />
+            </Box>
+            <Box
+              onClick={() => setTrackedOnly((v) => !v)}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1,
+                px: '10px',
+                borderRadius: '6px',
+                border: '1px solid',
+                borderColor: trackedOnly ? '#d29922' : 'var(--border-default)',
+                bg: trackedOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
+                color: trackedOnly ? '#d29922' : 'var(--fg-default)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 500,
+                userSelect: 'none',
+              }}
+              title="Show only tracked repos"
+            >
+              {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
+              <Text>{tracked.size}</Text>
+            </Box>
+          </Box>
+        </Box>
+
+        <Box sx={{ flex: 1, overflowY: 'auto' }}>
+          {filteredRepos.map((repo) => {
+            const isSelected = repo.fullName === selected.fullName;
+            const isTracked = tracked.has(repo.fullName);
+            const sticky = stickyBadges[repo.fullName];
+            const inactive = repo.inactiveAt != null;
+            const inactiveAt = repo.inactiveAt;
+            const newIssues = isSelected ? 0 : sticky?.issues ?? 0;
+            const newPulls = isSelected ? 0 : sticky?.pulls ?? 0;
+            // Priority highlight stays on until the user opens the repo —
+            // owner/collaborator-filed issues are time-sensitive and the
+            // user asked for them to stand out in this list.
+            const priority = !isSelected && !!sticky?.priority;
+            return (
+              <Box
+                key={repo.fullName}
+                data-repo-fullname={repo.fullName}
+                onClick={() => setSelected(repo)}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  px: 3,
+                  py: 2,
+                  borderBottom: '1px solid',
+                  borderColor: 'var(--border-muted)',
+                  cursor: 'pointer',
+                  bg: isSelected
+                    ? 'var(--bg-emphasis)'
+                    : priority
+                    ? 'rgba(210, 153, 34, 0.12)'
+                    : 'transparent',
+                  borderLeft: '3px solid',
+                  borderLeftColor: isSelected
+                    ? 'var(--accent-emphasis)'
+                    : priority
+                    ? '#d29922'
+                    : 'transparent',
+                  '&:hover': {
+                    bg: isSelected
+                      ? 'var(--bg-emphasis)'
+                      : priority
+                      ? 'rgba(210, 153, 34, 0.20)'
+                      : 'var(--bg-subtle)',
+                  },
+                }}
+              >
+                <Box
+                  as="button"
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    toggleTrack(repo.fullName);
+                  }}
+                  sx={{
+                    cursor: 'pointer',
+                    border: 'none',
+                    bg: 'transparent',
+                    color: isTracked ? '#d29922' : 'var(--fg-muted)',
+                    p: 1,
+                    borderRadius: 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    flexShrink: 0,
+                    '&:hover': { color: '#d29922' },
+                  }}
+                >
+                  {isTracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
+                </Box>
+                <RepoIcon size={14} />
+                <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Text
+                    sx={{
+                      fontWeight: isSelected ? 600 : 500,
+                      color: inactive ? 'var(--fg-muted)' : 'var(--fg-default)',
+                      fontSize: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      minWidth: 0,
+                      flex: '0 1 auto',
+                    }}
+                  >
+                    {repo.fullName}
+                  </Text>
+                  {inactive && (
+                    <Box
+                      title={
+                        inactiveAt
+                          ? `SN74 marked this repo inactive on ${inactiveAt.slice(0, 10)} — miners earn no rewards from it.`
+                          : 'SN74 marked this repo inactive — miners earn no rewards from it.'
+                      }
+                      sx={{
+                        flexShrink: 0,
+                        px: '6px',
+                        py: 0,
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.4px',
+                        borderRadius: 999,
+                        bg: 'var(--bg-emphasis)',
+                        color: 'var(--fg-muted)',
+                        border: '1px solid var(--border-default)',
+                        lineHeight: '16px',
+                      }}
+                    >
+                      Inactive
+                    </Box>
+                  )}
+                </Box>
+                {(newIssues > 0 || newPulls > 0) && (
+                  <Box
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      flexShrink: 0,
+                    }}
+                    title={`${newIssues} new issue${newIssues === 1 ? '' : 's'}, ${newPulls} new PR${newPulls === 1 ? '' : 's'} since you last viewed`}
+                  >
+                    {newIssues > 0 && (
+                      <Box
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          px: '5px',
+                          py: '1px',
+                          bg: 'var(--success-emphasis)',
+                          color: '#ffffff',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          borderRadius: 999,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        <IssueOpenedIcon size={9} />
+                        {newIssues}
+                      </Box>
+                    )}
+                    {newPulls > 0 && (
+                      <Box
+                        sx={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          px: '5px',
+                          py: '1px',
+                          bg: 'var(--accent-emphasis)',
+                          color: '#ffffff',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          borderRadius: 999,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        <GitPullRequestIcon size={9} />
+                        {newPulls}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+                {userRepoNames.has(repo.fullName) && (
+                  <Box
+                    sx={{
+                      px: '5px',
+                      py: '1px',
+                      bg: 'rgba(31, 111, 235, 0.15)',
+                      color: 'var(--accent-fg)',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      borderRadius: 999,
+                      flexShrink: 0,
+                      letterSpacing: '0.4px',
+                      textTransform: 'uppercase',
+                    }}
+                    title="Added from Manage Repositories"
+                  >
+                    Custom
+                  </Box>
+                )}
+                <Text
+                  sx={{
+                    fontFamily: 'mono',
+                    fontVariantNumeric: 'tabular-nums',
+                    fontSize: 1,
+                    fontWeight: weightFontWeight(repo.weight),
+                    color: weightColor(repo.weight),
+                    flexShrink: 0,
+                    minWidth: 48,
+                    textAlign: 'right',
+                  }}
+                  title={`Weight ${repo.weight.toFixed(4)} · multiplies the 25-pt PR base score`}
+                >
+                  {repo.weight.toFixed(3)}
+                </Text>
+              </Box>
+            );
+          })}
+          {filteredRepos.length === 0 && (
+            <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 1 }}>
+              No repos match your filters.
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      {/* RESIZER: LEFT ↔ MIDDLE */}
+      <ResizeHandle onMouseDown={startResize('left')} />
+
+      {/* RIGHT: ISSUES + PRS TABS FOR SELECTED REPO */}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 320, bg: 'var(--bg-canvas)' }}>
+        <Box sx={{ p: 3, pb: 0, borderBottom: '1px solid', borderColor: 'var(--border-default)', flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+            <RepoIcon size={20} />
+            <PrimerLink
+              href={`https://github.com/${selected.fullName}`}
+              target="_blank"
+              rel="noreferrer"
+              sx={{ fontWeight: 600, fontSize: 3, color: 'var(--fg-default)', '&:hover': { color: 'var(--accent-fg)' } }}
+            >
+              {selected.fullName}
+            </PrimerLink>
+            {tracked.has(selected.fullName) && (
+              <Box sx={{ color: '#d29922', display: 'inline-flex', alignItems: 'center', gap: 1, fontSize: 0 }}>
+                <StarFillIcon size={12} />
+                <Text>Tracked</Text>
+              </Box>
+            )}
+          </Box>
+
+          {/* Tabs */}
+          <Box sx={{ display: 'flex', gap: 4, mb: '-1px' }}>
+            <TabButton
+              active={tab === 'issues'}
+              onClick={() => switchTab('issues')}
+              icon={<IssueOpenedIcon size={16} />}
+              label="Issues"
+              count={issueTabCount}
+              newCount={tab === 'issues' ? 0 : newIssuesCount}
+            />
+            <TabButton
+              active={tab === 'pulls'}
+              onClick={() => switchTab('pulls')}
+              icon={<GitPullRequestIcon size={16} />}
+              label="Pull Requests"
+              count={pullTabCount}
+              newCount={tab === 'pulls' ? 0 : newPullsCount}
+            />
+          </Box>
+        </Box>
+
+        {tab === 'issues' ? (
+          <>
+            <Box sx={{ p: 3, pt: 3, flexShrink: 0, borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                <SearchInput
+                  value={issueQuery}
+                  onChange={setIssueQuery}
+                  placeholder="Filter issues by title, #, author…"
+                  width={320}
+                  ariaLabel="Filter issues"
+                />
+                <Dropdown
+                  value={issueState}
+                  onChange={(v) => setIssueState(v as IssueState)}
+                  options={[
+                    { value: 'all', label: 'All states' },
+                    { value: 'open', label: 'Open' },
+                    { value: 'completed', label: 'Completed' },
+                    { value: 'not_planned', label: 'Not planned' },
+                    { value: 'duplicate', label: 'Duplicate' },
+                    { value: 'closed', label: 'Closed (other)' },
+                  ]}
+                  width={180}
+                  ariaLabel="Filter by state"
+                />
+                <AuthorFilter
+                  value={issueAuthor}
+                  onChange={setIssueAuthor}
+                  authors={issueAuthorOptions}
+                  totalAuthors={issuesMeta?.total_authors}
+                  loading={issuesMetaFetching}
+                  onOpen={() => setIssueAuthorsRequested(true)}
+                  width={420}
+                  ariaLabel="Filter issues by author"
+                  extraOptions={[
+                    {
+                      value: '__assoc:collaborator',
+                      label: 'Collaborators',
+                      count: issuesMeta?.assoc_counts?.collaborator,
+                    },
+                    {
+                      value: '__assoc:contributor',
+                      label: 'Contributors',
+                      count: issuesMeta?.assoc_counts?.contributor,
+                    },
+                  ]}
+                />
+                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 3, color: 'var(--fg-muted)', fontSize: 0 }}>
+                  {issuesLoading && <Spinner size="sm" tone="muted" />}
+                  {issueTotalCount > 0 && !issuesAllMode && (
+                    <InlinePagination
+                      page={safeIssuesPage}
+                      totalPages={issueTotalPages}
+                      totalItems={issueTotalCount}
+                      pageSize={pageSize}
+                      onChange={setIssuesPage}
+                      onPageSizeChange={(n) => {
+                        update('pageSize', n);
+                        setIssuesPage(1);
+                      }}
+                      rawPageSize={settings.pageSize}
+                    />
+                  )}
+                  {issueTotalCount > 0 && issuesAllMode && (
+                    <>
+                      <Text sx={{ fontFamily: 'mono' }}>
+                        Loaded <strong>{pagedIssues.length}</strong> of <strong>{issueTotalCount}</strong>
+                      </Text>
+                      <PageSizeDropdown value={settings.pageSize} onChange={(n) => update('pageSize', n)} />
+                    </>
+                  )}
+                  {issuesData && (
+                    <Text>
+                      synced {formatRelativeTime(issuesData.last_fetch)}
+                    </Text>
+                  )}
+                </Box>
+              </Box>
+            </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
+              {issueTotalCount === 0 && !issuesLoading ? (
+                <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                  {issuesData && issuesData.count === 0
+                    ? 'No issues cached yet for this repo. The poller will fill it shortly.'
+                    : 'No issues match these filters.'}
+                </Box>
+              ) : (
+                <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
+                  <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
+                    <Box as="tr" sx={{ borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
+                      <Box as="th" sx={{ ...tableHeaderSx, width: 28 }}></Box>
+                      <SortHeader label="State" sortKey="state" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
+                      <Box as="th" sx={tableHeaderSx}>Issue</Box>
+                      <SortHeader label="Author" sortKey="author" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
+                      <SortHeader label="Open" sortKey="author_open" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
+                      <SortHeader label="Done" sortKey="author_completed" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
+                      <SortHeader label="NP" sortKey="author_not_planned" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
+                      <SortHeader label="CL" sortKey="author_closed" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
+                      <SortHeader label="Opened" sortKey="opened" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
+                      <SortHeader label="Updated" sortKey="updated" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
+                      <SortHeader label="Closed" sortKey="closed" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
+                      <SortHeader label="Predict" sortKey="predict" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="right" />
+                      <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>PRs</Box>
+                      <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>VAL</Box>
+                      <Box as="th" sx={tableHeaderSx}>Action</Box>
+                    </Box>
+                  </Box>
+                  <Box as="tbody">
+                    {pagedIssues.map((issue) => {
+                      const expanded = expandedIssue === issue.number;
+                      const rowMergedPRCount = relatedMapData?.map
+                        ? (relatedMapData.map[issue.number]?.filter((p) => p.merged === 1).length ?? 0)
+                        : null;
+                      const handleView = () => {
+                        // If a validate dialog is open, close it first so the
+                        // content panel can take over the same screen real estate.
+                        setValidateTarget(null);
+                        setValidatePullTarget(null);
+                        setAuthorTarget(null);
+                        if (settings.contentDisplay === 'modal' || settings.contentDisplay === 'side') {
+                          setIssueModal(
+                            rowMergedPRCount == null
+                              ? issue
+                              : { ...issue, merged_pr_count: rowMergedPRCount },
+                          );
+                          setPullModal(null);
+                        } else {
+                          setExpandedIssue(expanded ? null : issue.number);
+                        }
+                      };
+                      return (
+                        <React.Fragment key={issue.id}>
+                          <ExplorerIssueRow
+                            issue={issue}
+                            expanded={expanded}
+                            onView={handleView}
+                            onValidate={() => {
+                              setIssueModal(null);
+                              setPullModal(null);
+                              setAuthorTarget(null);
+                              setValidatePullTarget(null);
+                              setValidateTarget({ number: issue.number, title: issue.title });
+                            }}
+                            authorStats={issue.author_login ? issueAuthorStats.get(issue.author_login) ?? null : null}
+                            relatedPRs={relatedMapData?.map?.[issue.number] ?? EMPTY_PRS}
+                            mergedPRCount={rowMergedPRCount}
+                            validationStatus={
+                              (issuesData as IssuesResponse | undefined)?.user_validations?.[issue.number] ?? null
+                            }
+                            onSetValidation={(next) => setValidation.mutate({ number: issue.number, status: next })}
+                            onPRClick={openLinkedPullRequest}
+                            onAuthorClick={openAuthorSidebar}
+                          />
+                          {expanded && settings.contentDisplay === 'accordion' && (
+                            <Box as="tr">
+                              <Box as="td" colSpan={14} sx={{ p: 0 }}>
+                                <ContentViewer
+                                  target={{
+                                    kind: 'issue',
+                                    owner: selected.owner,
+                                    name: selected.name,
+                                    number: issue.number,
+                                    preloaded: issue,
+                                  }}
+                                  mode="inline"
+                                  onClose={() => setExpandedIssue(null)}
+                                />
+                              </Box>
+                            </Box>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              )}
+              {issuesAllMode && issueTotalCount > 0 && (
+                <>
+                  <Box ref={issuesSentinelRef} sx={{ height: 1 }} />
+                  {issuesInfinite.isFetchingNextPage && (
+                    <Box sx={{ p: 3, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 0 }}>
+                      Loading more…
+                    </Box>
+                  )}
+                  {!issuesInfinite.hasNextPage && pagedIssues.length >= issueTotalCount && (
+                    <Box sx={{ p: 3, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 0 }}>
+                      End of list — {issueTotalCount} issues
+                    </Box>
+                  )}
+                </>
+              )}
+            </Box>
+          </>
+        ) : (
+          <>
+            <Box sx={{ p: 3, pt: 3, flexShrink: 0, borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                <SearchInput
+                  value={prQuery}
+                  onChange={setPrQuery}
+                  placeholder="Filter PRs by title, #, author…"
+                  width={320}
+                  ariaLabel="Filter pull requests"
+                />
+                <Dropdown
+                  value={prState}
+                  onChange={(v) => setPrState(v as PRState)}
+                  options={[
+                    { value: 'all', label: 'All states' },
+                    { value: 'open', label: 'Open' },
+                    { value: 'draft', label: 'Draft' },
+                    { value: 'merged', label: 'Merged' },
+                    { value: 'closed', label: 'Closed (unmerged)' },
+                  ]}
+                  width={180}
+                  ariaLabel="Filter by PR state"
+                />
+                <AuthorFilter
+                  value={prAuthor}
+                  onChange={setPrAuthor}
+                  authors={prAuthorOptions}
+                  totalAuthors={pullsMeta?.total_authors}
+                  loading={pullsMetaFetching}
+                  onOpen={() => setPrAuthorsRequested(true)}
+                  width={260}
+                  ariaLabel="Filter PRs by author"
+                />
+                <Box
+                  as="label"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    px: '12px',
+                    py: '5px',
+                    height: 32,
+                    border: '1px solid',
+                    borderColor: prMineOnly ? '#d29922' : 'var(--border-default)',
+                    bg: prMineOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
+                    color: prMineOnly ? '#d29922' : 'var(--fg-default)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    userSelect: 'none',
+                    transition: 'border-color 80ms, background 80ms, color 80ms',
+                    '&:hover': { borderColor: prMineOnly ? '#d29922' : 'var(--border-strong)' },
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={prMineOnly}
+                    onChange={(e) => setPrMineOnly(e.target.checked)}
+                    style={{
+                      margin: 0,
+                      width: 14,
+                      height: 14,
+                      accentColor: '#d29922',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  <PersonIcon size={14} />
+                  My PRs only
+                  {myPullCount > 0 && (
+                    <Box
+                      sx={{
+                        px: '6px',
+                        py: 0,
+                        bg: prMineOnly ? '#d29922' : 'var(--bg-emphasis)',
+                        color: prMineOnly ? '#ffffff' : 'var(--fg-default)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        borderRadius: 999,
+                        lineHeight: '18px',
+                      }}
+                    >
+                      {myPullCount}
+                    </Box>
+                  )}
+                </Box>
+                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 3, color: 'var(--fg-muted)', fontSize: 0 }}>
+                  {pullsLoading && <Spinner size="sm" tone="muted" />}
+                  {pullTotalCount > 0 && !pullsAllMode && (
+                    <InlinePagination
+                      page={safePullsPage}
+                      totalPages={pullTotalPages}
+                      totalItems={pullTotalCount}
+                      pageSize={pageSize}
+                      onChange={setPullsPage}
+                      onPageSizeChange={(n) => {
+                        update('pageSize', n);
+                        setPullsPage(1);
+                      }}
+                      rawPageSize={settings.pageSize}
+                    />
+                  )}
+                  {pullTotalCount > 0 && pullsAllMode && (
+                    <>
+                      <Text sx={{ fontFamily: 'mono' }}>
+                        Loaded <strong>{pagedPulls.length}</strong> of <strong>{pullTotalCount}</strong>
+                      </Text>
+                      <PageSizeDropdown value={settings.pageSize} onChange={(n) => update('pageSize', n)} />
+                    </>
+                  )}
+                  {pullsData && (
+                    <Text>
+                      synced {formatRelativeTime(pullsData.last_fetch)}
+                    </Text>
+                  )}
+                </Box>
+              </Box>
+            </Box>
+            <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
+              {pullTotalCount === 0 && !pullsLoading ? (
+                <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                  {pullsData && pullsData.count === 0
+                    ? 'No pull requests cached yet.'
+                    : 'No pull requests match these filters.'}
+                </Box>
+              ) : (
+                <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
+                  <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
+                    <Box as="tr" sx={{ borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
+                      <Box as="th" sx={{ ...tableHeaderSx, width: 28 }}></Box>
+                      <SortHeader label="State" sortKey="state" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
+                      <Box as="th" sx={tableHeaderSx}>Pull Request</Box>
+                      <SortHeader label="Author" sortKey="author" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
+                      <SortHeader label="Opened" sortKey="opened" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
+                      <SortHeader label="Updated" sortKey="updated" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
+                      <SortHeader label="Merged / Closed" sortKey="closed" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
+                      <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>Issues</Box>
+                      <Box as="th" sx={tableHeaderSx}>Action</Box>
+                    </Box>
+                  </Box>
+                  <Box as="tbody">
+                    {pagedPulls.map((pr) => {
+                      const expanded = expandedPull === pr.number;
+                      const handleView = () => {
+                        setValidateTarget(null);
+                        setValidatePullTarget(null);
+                        setAuthorTarget(null);
+                        if (settings.contentDisplay === 'modal' || settings.contentDisplay === 'side') {
+                          setPullModal(pr);
+                          setIssueModal(null);
+                        } else {
+                          setExpandedPull(expanded ? null : pr.number);
+                        }
+                      };
+                      const linkedIssues = pullsData?.linked_issues_by_pull?.[pr.number] ?? EMPTY_ISSUES;
+                      return (
+                        <React.Fragment key={pr.id}>
+                          <ExplorerPullRow
+                            pr={pr}
+                            mine={pr.author_login?.toLowerCase() === me.toLowerCase()}
+                            expanded={expanded}
+                            onView={handleView}
+                            onValidate={() => {
+                              setIssueModal(null);
+                              setPullModal(null);
+                              setAuthorTarget(null);
+                              setValidateTarget(null);
+                              setValidatePullTarget({ number: pr.number, title: pr.title });
+                            }}
+                            linkedIssues={linkedIssues}
+                            onIssueClick={(num) => {
+                              setPullModal(null);
+                              setIssueModal(null);
+                              setExpandedPull(null);
+                              setExpandedIssue(null);
+                              switchTab('issues');
+                              setPendingOpen({ kind: 'issue', number: num });
+                            }}
+                          />
+                          {expanded && settings.contentDisplay === 'accordion' && (
+                            <Box as="tr">
+                              <Box as="td" colSpan={9} sx={{ p: 0 }}>
+                                <ContentViewer
+                                  target={{
+                                    kind: 'pull',
+                                    owner: selected.owner,
+                                    name: selected.name,
+                                    number: pr.number,
+                                    preloaded: pr,
+                                  }}
+                                  mode="inline"
+                                  onClose={() => setExpandedPull(null)}
+                                />
+                              </Box>
+                            </Box>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              )}
+              {pullsAllMode && pullTotalCount > 0 && (
+                <>
+                  <Box ref={pullsSentinelRef} sx={{ height: 1 }} />
+                  {pullsInfinite.isFetchingNextPage && (
+                    <Box sx={{ p: 3, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 0 }}>
+                      Loading more…
+                    </Box>
+                  )}
+                  {!pullsInfinite.hasNextPage && pagedPulls.length >= pullTotalCount && (
+                    <Box sx={{ p: 3, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 0 }}>
+                      End of list — {pullTotalCount} pull requests
+                    </Box>
+                  )}
+                </>
+              )}
+            </Box>
+          </>
+        )}
+      </Box>
+
+      {renderedAuthorTarget && (
+        <>
+          <Box
+            onMouseDown={() => setAuthorTarget(null)}
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 29,
+              bg: 'transparent',
+              pointerEvents: 'auto',
+            }}
+          />
+          <Box
+            ref={authorSideRef}
+            onTransitionEnd={(e: React.TransitionEvent<HTMLDivElement>) => {
+              if (e.propertyName === 'transform' && !authorPanelActive) setRenderedAuthorTarget(null);
+            }}
+            sx={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: '50vw',
+              minWidth: 'min(760px, calc(100vw - 24px))',
+              maxWidth: 'calc(100vw - 24px)',
+              borderLeft: '1px solid',
+              borderColor: 'var(--border-default)',
+              bg: 'var(--bg-canvas)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              boxShadow: '-18px 0 36px rgba(1, 4, 9, 0.36)',
+              transform: authorPanelActive ? 'translateX(0)' : 'translateX(100%)',
+              transition: 'transform 220ms cubic-bezier(0.2, 0, 0, 1)',
+              zIndex: 30,
+              willChange: 'transform',
+            }}
+          >
+            <AuthorSidebar
+              owner={selected.owner}
+              name={selected.name}
+              repoFullName={selected.fullName}
+              login={renderedAuthorTarget.login}
+              initialAssociation={renderedAuthorTarget.association ?? null}
+              onClose={() => setAuthorTarget(null)}
+              onIssueClick={openIssueFromAuthorSidebar}
+            />
+          </Box>
+        </>
+      )}
+
+      {/* Side-mode panels — absolute overlay so the table behind keeps its
+          original column widths (otherwise opening the panel would shrink
+          the table column-by-column). The resize handle sits on the panel's
+          left edge as an inner absolute element. */}
+      {settings.contentDisplay === 'side' && (issueModal || pullModal) && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: sideWidth,
+            minWidth: 320,
+            maxWidth: '50vw',
+            borderLeft: '1px solid',
+            borderColor: 'var(--border-default)',
+            bg: 'var(--bg-canvas)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            zIndex: 25,
+            boxShadow: '-12px 0 24px rgba(1, 4, 9, 0.28)',
+          }}
+        >
+          <Box
+            onMouseDown={startResize('side')}
+            sx={{
+              position: 'absolute',
+              left: -3,
+              top: 0,
+              bottom: 0,
+              width: 6,
+              cursor: 'col-resize',
+              zIndex: 1,
+            }}
+          />
+          {issueModal && (
+            <ContentViewer
+              target={{
+                kind: 'issue',
+                owner: selected.owner,
+                name: selected.name,
+                number: issueModal.number,
+                preloaded: issueModal,
+              }}
+              mode="side"
+              width={sideWidth}
+              onClose={() => setIssueModal(null)}
+            />
+          )}
+          {pullModal && (
+            <ContentViewer
+              target={{
+                kind: 'pull',
+                owner: selected.owner,
+                name: selected.name,
+                number: pullModal.number,
+                preloaded: pullModal,
+              }}
+              mode="side"
+              width={sideWidth}
+              onClose={() => setPullModal(null)}
+            />
+          )}
+        </Box>
+      )}
+
+      {settings.validateDisplay === 'side' && validateTarget && (
+        <Box
+          ref={validateSideRef}
+          sx={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: sideWidth,
+            minWidth: 360,
+            maxWidth: '50vw',
+            borderLeft: '1px solid',
+            borderColor: 'var(--border-default)',
+            bg: 'var(--bg-canvas)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            zIndex: 25,
+            boxShadow: '-12px 0 24px rgba(1, 4, 9, 0.28)',
+          }}
+        >
+          <Box
+            onMouseDown={startResize('side')}
+            sx={{
+              position: 'absolute',
+              left: -3,
+              top: 0,
+              bottom: 0,
+              width: 6,
+              cursor: 'col-resize',
+              zIndex: 1,
+            }}
+          />
+          <ValidateIssueDialog
+            owner={selected.owner}
+            name={selected.name}
+            number={validateTarget.number}
+            title={validateTarget.title}
+            onClose={() => setValidateTarget(null)}
+          />
+        </Box>
+      )}
+
+      {validateTarget && settings.validateDisplay === 'modal' && (
+        <ValidateIssueDialog
+          owner={selected.owner}
+          name={selected.name}
+          number={validateTarget.number}
+          title={validateTarget.title}
+          onClose={() => setValidateTarget(null)}
+        />
+      )}
+
+      {settings.validateDisplay === 'side' && validatePullTarget && (
+        <Box
+          ref={validatePullSideRef}
+          sx={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: sideWidth,
+            minWidth: 360,
+            maxWidth: '50vw',
+            borderLeft: '1px solid',
+            borderColor: 'var(--border-default)',
+            bg: 'var(--bg-canvas)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            zIndex: 25,
+            boxShadow: '-12px 0 24px rgba(1, 4, 9, 0.28)',
+          }}
+        >
+          <Box
+            onMouseDown={startResize('side')}
+            sx={{
+              position: 'absolute',
+              left: -3,
+              top: 0,
+              bottom: 0,
+              width: 6,
+              cursor: 'col-resize',
+              zIndex: 1,
+            }}
+          />
+          <ValidatePullDialog
+            owner={selected.owner}
+            name={selected.name}
+            number={validatePullTarget.number}
+            title={validatePullTarget.title}
+            onClose={() => setValidatePullTarget(null)}
+          />
+        </Box>
+      )}
+
+      {validatePullTarget && settings.validateDisplay === 'modal' && (
+        <ValidatePullDialog
+          owner={selected.owner}
+          name={selected.name}
+          number={validatePullTarget.number}
+          title={validatePullTarget.title}
+          onClose={() => setValidatePullTarget(null)}
+        />
+      )}
+
+      {issueModal && settings.contentDisplay === 'modal' && (
+        <ContentViewer
+          target={{
+            kind: 'issue',
+            owner: selected.owner,
+            name: selected.name,
+            number: issueModal.number,
+            preloaded: issueModal,
+          }}
+          mode="modal"
+          onClose={() => setIssueModal(null)}
+        />
+      )}
+
+      {pullModal && settings.contentDisplay === 'modal' && (
+        <ContentViewer
+          target={{
+            kind: 'pull',
+            owner: selected.owner,
+            name: selected.name,
+            number: pullModal.number,
+            preloaded: pullModal,
+          }}
+          mode="modal"
+          onClose={() => setPullModal(null)}
+        />
+      )}
+
+    </Box>
+  );
+}
+
+function SortHeader<T extends string>({
+  label,
+  sortKey,
+  current,
+  dir,
+  onClick,
+  align = 'left',
+}: {
+  label: string;
+  sortKey: T;
+  current: T;
+  dir: SortDir;
+  onClick: (key: T) => void;
+  align?: 'left' | 'right' | 'center';
+}) {
+  const active = current === sortKey;
+  return (
+    <Box
+      as="th"
+      onClick={() => onClick(sortKey)}
+      sx={{
+        ...tableHeaderSx,
+        textAlign: align,
+        cursor: 'pointer',
+        userSelect: 'none',
+        '&:hover': { color: 'var(--fg-default)' },
+      }}
+    >
+      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+        {label}
+        {active && (dir === 'asc' ? <TriangleUpIcon size={12} /> : <TriangleDownIcon size={12} />)}
+      </Box>
+    </Box>
+  );
+}
+
+function OwnerCommentsTab({
+  loading,
+  data,
+  ownerLogin,
+  repoFullName,
+}: {
+  loading: boolean;
+  data:
+    | {
+        count: number;
+        comments: Array<{
+          id: number;
+          issue_number: number;
+          author_login: string | null;
+          body: string | null;
+          html_url: string | null;
+          created_at: string | null;
+        }>;
+      }
+    | undefined;
+  ownerLogin: string;
+  repoFullName: string;
+}) {
+  if (loading && !data) {
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--fg-muted)' }}>
+        <Spinner size="sm" tone="muted" />
+        <Text>Loading comments…</Text>
+      </Box>
+    );
+  }
+  const comments = data?.comments ?? [];
+  if (comments.length === 0) {
+    return (
+      <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+        No comments by an owner-association maintainer have been cached for {repoFullName} yet.
+      </Box>
+    );
+  }
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+        {data?.count ?? comments.length} comment{(data?.count ?? comments.length) === 1 ? '' : 's'} by maintainers (
+        {ownerLogin} owns {repoFullName})
+      </Text>
+      {comments.map((c) => (
+        <Box
+          key={c.id}
+          sx={{
+            border: '1px solid',
+            borderColor: 'var(--border-default)',
+            borderRadius: 2,
+            p: 3,
+            bg: 'var(--bg-subtle)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            <Text sx={{ fontWeight: 600 }}>{c.author_login ?? 'unknown'}</Text>
+            <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+              on #{c.issue_number} · {formatRelativeTime(c.created_at)}
+            </Text>
+            {c.html_url && (
+              <PrimerLink
+                href={c.html_url}
+                target="_blank"
+                rel="noreferrer"
+                sx={{ ml: 'auto', color: 'var(--accent-fg)', fontSize: 0 }}
+              >
+                view on GitHub →
+              </PrimerLink>
+            )}
+          </Box>
+          <Text sx={{ color: 'var(--fg-default)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {c.body ?? ''}
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+interface AuthorIssuesResponse {
+  repo: string;
+  author: {
+    login: string;
+    association: string | null;
+    avatar_url: string;
+    html_url: string;
+  };
+  stats: {
+    total: number;
+    open: number;
+    completed: number;
+    not_planned: number;
+    closed: number;
+    last_updated_at: string | null;
+  };
+  issues: Array<IssueDto & { merged_pr_count: number }>;
+}
+
+function AuthorSidebar({
+  owner,
+  name,
+  repoFullName,
+  login,
+  initialAssociation,
+  onClose,
+  onIssueClick,
+}: {
+  owner: string;
+  name: string;
+  repoFullName: string;
+  login: string;
+  initialAssociation: string | null;
+  onClose: () => void;
+  onIssueClick: (issue: IssueDto) => void;
+}) {
+  const { data, isLoading, isError } = useQuery<AuthorIssuesResponse>({
+    queryKey: ['author-issues', owner, name, login],
+    queryFn: async () => {
+      const r = await fetch(
+        `/api/repos/${owner}/${name}/authors/${encodeURIComponent(login)}/issues?limit=100`,
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    staleTime: 30000,
+    refetchInterval: 60000,
+  });
+
+  const association = data?.author.association ?? initialAssociation;
+  const showAssociation = association && association !== 'NONE';
+  const stats = data?.stats;
+  const issues = data?.issues ?? [];
+
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <Box
+        sx={{
+          p: 3,
+          borderBottom: '1px solid',
+          borderColor: 'var(--border-default)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          flexShrink: 0,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={data?.author.avatar_url ?? `https://github.com/${login}.png?size=96`}
+          alt={login}
+          loading="lazy"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            border: '1px solid var(--border-default)',
+            flexShrink: 0,
+          }}
+        />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+            <Text
+              sx={{
+                color: 'var(--fg-default)',
+                fontWeight: 700,
+                fontSize: 2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {login}
+            </Text>
+            {showAssociation && (
+              <Label variant="secondary" sx={{ fontSize: '10px', flexShrink: 0 }}>
+                {association.toLowerCase()}
+              </Label>
+            )}
+          </Box>
+          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, display: 'block', mt: 1 }}>
+            {repoFullName}
+          </Text>
+        </Box>
+        <PrimerLink
+          href={data?.author.html_url ?? `https://github.com/${login}`}
+          target="_blank"
+          rel="noreferrer"
+          sx={{ color: 'var(--fg-muted)', display: 'inline-flex', '&:hover': { color: 'var(--accent-fg)' } }}
+          title="Open GitHub profile"
+        >
+          <MarkGithubIcon size={16} />
+        </PrimerLink>
+        <Box
+          as="button"
+          type="button"
+          onClick={onClose}
+          title="Close"
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            border: '1px solid',
+            borderColor: 'var(--border-default)',
+            borderRadius: 2,
+            bg: 'var(--bg-canvas)',
+            color: 'var(--fg-muted)',
+            cursor: 'pointer',
+            '&:hover': { color: 'var(--fg-default)', borderColor: 'var(--border-strong)' },
+          }}
+        >
+          <XIcon size={14} />
+        </Box>
+      </Box>
+
+      <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'var(--border-muted)', flexShrink: 0 }}>
+        {isLoading && !data ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'var(--fg-muted)', fontSize: 0 }}>
+            <Spinner size="sm" tone="muted" />
+            <Text>Loading author…</Text>
+          </Box>
+        ) : isError ? (
+          <Text sx={{ color: 'var(--danger-fg)', fontSize: 0 }}>Could not load author issues.</Text>
+        ) : (
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 2, textAlign: 'center' }}>
+            <Metric label="Total" value={stats?.total ?? issues.length} fg="var(--fg-default)" bg="var(--bg-emphasis)" />
+            <Metric label="Open" value={stats?.open ?? 0} fg="var(--success-fg)" bg="rgba(46, 160, 67, 0.18)" />
+            <Metric label="Done" value={stats?.completed ?? 0} fg="#a371f7" bg="rgba(163, 113, 247, 0.18)" />
+            <Metric label="NP" value={stats?.not_planned ?? 0} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
+            <Metric label="CL" value={stats?.closed ?? 0} fg="var(--danger-fg)" bg="rgba(248, 81, 73, 0.15)" />
+          </Box>
+        )}
+      </Box>
+
+      <Box sx={{ px: 3, py: 2, color: 'var(--fg-muted)', fontSize: 0, flexShrink: 0 }}>
+        Latest issues{stats?.last_updated_at ? ` · updated ${formatRelativeTime(stats.last_updated_at)}` : ''}
+      </Box>
+
+      <Box sx={{ flex: 1, overflow: 'auto' }}>
+        {!isLoading && !isError && issues.length === 0 ? (
+          <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+            No cached issues by {login} in this repo.
+          </Box>
+        ) : (
+          <Box as="table" sx={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 0 }}>
+            <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
+              <Box as="tr">
+                <Box as="th" sx={{ ...tableHeaderSx, width: 96 }}>State</Box>
+                <Box as="th" sx={{ ...tableHeaderSx, width: 56 }}>No</Box>
+                <Box as="th" sx={tableHeaderSx}>Issue</Box>
+                <Box as="th" sx={{ ...tableHeaderSx, width: 112 }}>Updated</Box>
+                <Box as="th" sx={{ ...tableHeaderSx, width: 84, textAlign: 'right' }}>Predict</Box>
+              </Box>
+            </Box>
+            <Box as="tbody">
+              {issues.map((issue, index) => {
+                const score = predictScore(issue).predicted;
+                return (
+                  <Box
+                    as="tr"
+                    key={issue.id}
+                    onClick={() => onIssueClick(issue)}
+                    sx={{
+                      borderBottom: '1px solid',
+                      borderColor: 'var(--border-muted)',
+                      cursor: 'pointer',
+                      '&:hover': { bg: 'var(--bg-subtle)' },
+                    }}
+                  >
+                    <Box as="td" sx={tableCellSx}>
+                      <IssueStatusBadge issue={issue} mergedPRCount={issue.merged_pr_count} />
+                    </Box>
+                    <Box
+                      as="td"
+                      sx={{
+                        ...tableCellSx,
+                        color: 'var(--fg-muted)',
+                        fontFamily: 'mono',
+                        fontVariantNumeric: 'tabular-nums',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {index + 1}
+                    </Box>
+                    <Box as="td" sx={{ ...tableCellSx, minWidth: 0 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap', minWidth: 0 }}>
+                        <Text
+                          sx={{
+                            color: 'var(--fg-default)',
+                            fontWeight: 500,
+                            lineHeight: 1.35,
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
+                          }}
+                          title={issue.title}
+                        >
+                          {issue.title}
+                        </Text>
+                        <Text
+                          sx={{
+                            color: 'var(--fg-muted)',
+                            fontFamily: 'mono',
+                            fontVariantNumeric: 'tabular-nums',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}
+                        >
+                          #{issue.number}
+                        </Text>
+                      </Box>
+                    </Box>
+                    <Box as="td" sx={tableTimeSx} title={issue.updated_at ?? undefined}>
+                      <RecentTime iso={issue.updated_at} />
+                    </Box>
+                    <Box as="td" sx={{ ...tableCellSx, textAlign: 'right', fontFamily: 'mono' }}>
+                      {score > 0 ? score.toFixed(1) : '—'}
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function Metric({ label, value, fg, bg }: { label: string; value: number; fg: string; bg: string }) {
+  return (
+    <Box sx={{ minWidth: 0 }}>
+      <CountBadge n={value} fg={fg} bg={bg} />
+      <Text sx={{ display: 'block', color: 'var(--fg-muted)', fontSize: '10px', mt: 1 }}>{label}</Text>
+    </Box>
+  );
+}
+
+// Per-row valid / invalid picker. Two side-by-side toggle buttons — one for
+// each state — so a single click sets or clears it. Mutually exclusive: clicking
+// the opposite side of an already-set value flips directly to the new value.
+function ValidationPicker({
+  value,
+  onChange,
+}: {
+  value: 'valid' | 'invalid' | null;
+  onChange: (next: 'valid' | 'invalid' | null) => void;
+}) {
+  const cellSx: React.CSSProperties = {
+    width: 30,
+    height: 24,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px solid var(--border-default)',
+    cursor: 'pointer',
+    padding: 0,
+    lineHeight: 1,
+    transition: 'background 0.08s ease, color 0.08s ease',
+  };
+  return (
+    <Box sx={{ display: 'inline-flex' }}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(value === 'valid' ? null : 'valid');
+        }}
+        title={value === 'valid' ? 'Clear valid' : 'Mark as valid'}
+        style={{
+          ...cellSx,
+          borderTopLeftRadius: 6,
+          borderBottomLeftRadius: 6,
+          borderRight: 'none',
+          background: value === 'valid' ? 'rgba(46, 160, 67, 0.28)' : 'var(--bg-emphasis)',
+          color: value === 'valid' ? 'var(--success-fg)' : 'var(--fg-muted)',
+        }}
+      >
+        <CheckIcon size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(value === 'invalid' ? null : 'invalid');
+        }}
+        title={value === 'invalid' ? 'Clear invalid' : 'Mark as invalid'}
+        style={{
+          ...cellSx,
+          borderTopRightRadius: 6,
+          borderBottomRightRadius: 6,
+          background: value === 'invalid' ? 'rgba(248, 81, 73, 0.28)' : 'var(--bg-emphasis)',
+          color: value === 'invalid' ? 'var(--danger-fg)' : 'var(--fg-muted)',
+        }}
+      >
+        <XIcon size={14} />
+      </button>
+    </Box>
+  );
+}
+
+function PageSizeDropdown({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <Dropdown
+      value={String(value)}
+      onChange={(v) => onChange(parseInt(v, 10))}
+      options={[
+        { value: '10', label: '10' },
+        { value: '25', label: '25' },
+        { value: '50', label: '50' },
+        { value: '100', label: '100' },
+        { value: '0', label: 'All' },
+      ]}
+      width={72}
+      size="small"
+      ariaLabel="Rows per page"
+    />
+  );
+}
+
+function InlinePagination({
+  page,
+  totalPages,
+  totalItems,
+  pageSize,
+  onChange,
+  onPageSizeChange,
+  rawPageSize,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: number;
+  onChange: (next: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  rawPageSize?: number;
+}) {
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalItems);
+  const showPageNav = totalItems > pageSize;
+
+  const navBtn = (label: React.ReactNode, target: number, disabled: boolean | undefined, aria: string) => (
+    <button
+      key={aria}
+      type="button"
+      onClick={() => onChange(target)}
+      disabled={disabled}
+      aria-label={aria}
+      title={aria}
+      className="gt-pag-btn"
+      data-disabled={disabled ? 'true' : 'false'}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 0 }}>
+      <Text sx={{ color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>
+        <strong>{showPageNav ? start : 1}</strong>–<strong>{showPageNav ? end : totalItems}</strong> of{' '}
+        <strong>{totalItems}</strong>
+      </Text>
+      {onPageSizeChange && (
+        <Dropdown
+          value={String(rawPageSize ?? pageSize)}
+          onChange={(v) => onPageSizeChange(parseInt(v, 10))}
+          options={[
+            { value: '10', label: '10' },
+            { value: '25', label: '25' },
+            { value: '50', label: '50' },
+            { value: '100', label: '100' },
+            { value: '0', label: 'All' },
+          ]}
+          width={72}
+          size="small"
+          ariaLabel="Rows per page"
+        />
+      )}
+      {showPageNav && (
+        <Box className="gt-pag-group">
+          {navBtn(<DoubleChevron dir="left" />, 1, page <= 1, 'First page')}
+          {navBtn(<ChevronLeftIcon size={14} />, page - 1, page <= 1, 'Previous page')}
+          <Box className="gt-pag-label">
+            <Text sx={{ color: 'var(--fg-default)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {page}
+            </Text>
+            <Text sx={{ color: 'var(--fg-muted)', mx: '4px' }}>/</Text>
+            <Text sx={{ color: 'var(--fg-muted)', fontVariantNumeric: 'tabular-nums' }}>
+              {totalPages}
+            </Text>
+          </Box>
+          {navBtn(<ChevronRightIcon size={14} />, page + 1, page >= totalPages, 'Next page')}
+          {navBtn(<DoubleChevron dir="right" />, totalPages, page >= totalPages, 'Last page')}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function DoubleChevron({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      {dir === 'left' ? (
+        <>
+          <path d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" fill="currentColor" />
+          <path d="M5.78 4.22a.75.75 0 0 1 0 1.06L3.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L1.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" fill="currentColor" />
+        </>
+      ) : (
+        <>
+          <path d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 1 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" fill="currentColor" />
+          <path d="M10.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 1 1-1.06-1.06L12.94 8l-2.72-2.72a.75.75 0 0 1 0-1.06Z" fill="currentColor" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  totalItems,
+  pageSize,
+  onChange,
+  onPageSizeChange,
+  rawPageSize,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: number;
+  onChange: (next: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  rawPageSize?: number;
+}) {
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalItems);
+
+  const btn = (label: React.ReactNode, target: number, disabled?: boolean, active?: boolean) => (
+    <button
+      key={`${label}-${target}`}
+      type="button"
+      onClick={() => onChange(target)}
+      disabled={disabled}
+      style={{
+        minWidth: 32,
+        height: 28,
+        padding: '0 10px',
+        border: '1px solid var(--border-default)',
+        borderRadius: 6,
+        background: active ? 'var(--accent-emphasis)' : 'var(--bg-canvas)',
+        color: active ? '#ffffff' : disabled ? 'var(--fg-subtle)' : 'var(--fg-default)',
+        fontSize: 13,
+        fontWeight: active ? 600 : 500,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        fontFamily: 'inherit',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  // Build a windowed page-number list (current ± 2, plus first/last with ellipses)
+  const numbers: (number | '…')[] = [];
+  const window = 1;
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= page - window && i <= page + window)) {
+      numbers.push(i);
+    } else if (numbers[numbers.length - 1] !== '…') {
+      numbers.push('…');
+    }
+  }
+
+  const showPageNav = totalItems > pageSize;
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 3,
+        px: 3,
+        py: 2,
+        borderTop: '1px solid',
+        borderColor: 'var(--border-default)',
+        bg: 'var(--bg-subtle)',
+        flexShrink: 0,
+        flexWrap: 'wrap',
+      }}
+    >
+      <Box sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+        Showing <strong>{showPageNav ? start : 1}</strong>–<strong>{showPageNav ? end : totalItems}</strong> of <strong>{totalItems}</strong>
+      </Box>
+
+      {onPageSizeChange && (
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>Rows per page</Text>
+          <Dropdown
+            value={String(rawPageSize ?? pageSize)}
+            onChange={(v) => onPageSizeChange(parseInt(v, 10))}
+            options={[
+              { value: '10', label: '10' },
+              { value: '25', label: '25' },
+              { value: '50', label: '50' },
+              { value: '100', label: '100' },
+              { value: '0', label: 'All' },
+            ]}
+            width={88}
+            size="small"
+            ariaLabel="Rows per page"
+          />
+        </Box>
+      )}
+
+      {showPageNav && (
+        <Box sx={{ ml: 'auto', display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+          {btn(<ChevronLeftIcon size={14} />, page - 1, page <= 1)}
+          {numbers.map((n, i) =>
+            n === '…' ? (
+              <span key={`e-${i}`} style={{ color: 'var(--fg-muted)', padding: '0 4px' }}>
+                …
+              </span>
+            ) : (
+              btn(n, n, false, n === page)
+            )
+          )}
+          {btn(<ChevronRightIcon size={14} />, page + 1, page >= totalPages)}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+const RecentTime = React.memo(function RecentTime({ iso }: { iso: string | null | undefined }) {
+  if (!iso) return <Text sx={{ color: 'var(--fg-muted)' }}>—</Text>;
+  const recent = isRecent(iso);
+  if (recent) {
+    return (
+      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+        <Box
+          sx={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            bg: 'var(--success-emphasis)',
+            display: 'inline-block',
+            animation: 'gtPulse 1.6s ease-in-out infinite',
+          }}
+        />
+        <Text
+          sx={{
+            color: 'var(--success-fg)',
+            fontWeight: 700,
+            letterSpacing: '0.2px',
+          }}
+        >
+          {formatRelativeTime(iso)}
+        </Text>
+      </Box>
+    );
+  }
+  return <Text sx={{ color: 'var(--fg-muted)' }}>{formatRelativeTime(iso)}</Text>;
+});
+
+function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <Box
+      role="separator"
+      aria-orientation="vertical"
+      onMouseDown={onMouseDown}
+      sx={{
+        width: 4,
+        flexShrink: 0,
+        cursor: 'col-resize',
+        position: 'relative',
+        bg: 'var(--border-default)',
+        transition: 'background 80ms',
+        zIndex: 1,
+        '&:hover': {
+          bg: 'var(--accent-emphasis)',
+        },
+        '&:active': {
+          bg: 'var(--accent-emphasis)',
+        },
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: '-4px',
+          right: '-4px',
+        },
+      }}
+    />
+  );
+}
+
+const AuthorCell = React.memo(function AuthorCell({
+  login,
+  association,
+  highlight,
+  onClick,
+}: {
+  login: string | null;
+  association?: string | null;
+  highlight?: boolean;
+  onClick?: (login: string, association?: string | null) => void;
+}) {
+  if (!login) {
+    return <Text sx={{ color: 'var(--fg-muted)', fontWeight: 500 }}>unknown</Text>;
+  }
+  const showAssociation = association && association !== 'NONE';
+  const content = (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`https://github.com/${login}.png?size=40`}
+        alt={login}
+        loading="lazy"
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          border: '1px solid var(--border-muted)',
+          flexShrink: 0,
+          display: 'block',
+        }}
+      />
+      <Text
+        sx={{
+          color: highlight ? '#d29922' : 'var(--fg-default)',
+          fontWeight: 500,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          '&:hover': { color: 'var(--accent-fg)' },
+        }}
+      >
+        {login}
+      </Text>
+      {showAssociation && (
+        <Label variant="secondary" sx={{ fontSize: '10px', flexShrink: 0 }}>
+          {(association ?? '').toLowerCase()}
+        </Label>
+      )}
+    </>
+  );
+  const sharedStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    textDecoration: 'none',
+    color: 'inherit',
+    maxWidth: '100%',
+  };
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick(login, association);
+        }}
+        style={{
+          ...sharedStyle,
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          font: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <a
+      href={`https://github.com/${login}`}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      style={sharedStyle}
+    >
+      {content}
+    </a>
+  );
+});
+
+const AuthorStatCell = React.memo(function AuthorStatCell({ value, fg, bg }: { value: number | null; fg: string; bg: string }) {
+  return (
+    <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }}>
+      {value == null ? (
+        <Text sx={{ color: 'var(--fg-muted)', fontFamily: 'mono', fontSize: 0 }}>—</Text>
+      ) : (
+        <CountBadge n={value} fg={fg} bg={bg} />
+      )}
+    </Box>
+  );
+});
+
+// GitHub uses 6-digit hex without `#` for label colors. Pick a readable
+// foreground (white on dark hues, black on light) using YIQ-style luminance.
+function readableFgFor(hex: string): string {
+  const h = hex.replace(/^#/, '');
+  if (h.length !== 6) return '#000000';
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 160 ? '#1f2328' : '#ffffff';
+}
+
+const IssueLabels = React.memo(function IssueLabels({
+  labels,
+}: {
+  labels: Array<{ name: string; color?: string }>;
+}) {
+  if (!labels || labels.length === 0) return null;
+  // Cap to 4 visible to keep the title cell tidy; rest are tooltipped.
+  const visible = labels.slice(0, 4);
+  const hidden = labels.length - visible.length;
+  return (
+    <Box
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        flexShrink: 0,
+        flexWrap: 'nowrap',
+        overflow: 'hidden',
+      }}
+    >
+      {visible.map((l) => {
+        const bg = `#${(l.color || '6e7781').replace(/^#/, '')}`;
+        const fg = readableFgFor(bg);
+        return (
+          <span
+            key={l.name}
+            title={l.name}
+            style={{
+              display: 'inline-block',
+              padding: '0 7px',
+              borderRadius: 999,
+              background: bg,
+              color: fg,
+              fontSize: 11,
+              fontWeight: 500,
+              lineHeight: '18px',
+              whiteSpace: 'nowrap',
+              maxWidth: 120,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {l.name}
+          </span>
+        );
+      })}
+      {hidden > 0 && (
+        <span
+          title={labels.slice(4).map((l) => l.name).join(', ')}
+          style={{
+            color: 'var(--fg-muted)',
+            fontSize: 11,
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          +{hidden}
+        </span>
+      )}
+    </Box>
+  );
+});
+
+const CountBadge = React.memo(function CountBadge({ n, fg, bg }: { n: number; fg: string; bg: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        minWidth: 22,
+        padding: '1px 8px',
+        borderRadius: 999,
+        background: bg,
+        color: fg,
+        textAlign: 'center',
+      }}
+    >
+      {n}
+    </span>
+  );
+});
+
+function weightColor(w: number): string {
+  if (w >= 0.5) return 'var(--success-fg)';
+  if (w >= 0.3) return 'var(--accent-fg)';
+  if (w >= 0.15) return '#d29922';
+  if (w >= 0.05) return 'var(--fg-default)';
+  return 'var(--fg-subtle)';
+}
+
+function weightFontWeight(w: number): number {
+  if (w >= 0.5) return 700;
+  if (w >= 0.3) return 700;
+  if (w >= 0.15) return 600;
+  if (w >= 0.05) return 500;
+  return 400;
+}
+
+const tableHeaderSx = {
+  px: 2,
+  py: '6px',
+  textAlign: 'left' as const,
+  fontWeight: 600,
+  fontSize: '11px',
+  color: 'var(--fg-muted)',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.5px',
+  whiteSpace: 'nowrap' as const,
+  borderBottom: '1px solid',
+  borderColor: 'var(--border-default)',
+};
+
+const tableCellSx = {
+  px: 2,
+  py: '6px',
+  height: 36,
+  verticalAlign: 'middle' as const,
+  cursor: 'pointer',
+};
+
+const tableTimeSx = {
+  ...tableCellSx,
+  fontSize: 0,
+  color: 'var(--fg-muted)',
+  whiteSpace: 'nowrap' as const,
+  cursor: 'pointer',
+};
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+  count,
+  newCount = 0,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  count?: number;
+  newCount?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '8px 16px',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: active ? '2px solid var(--attention-emphasis)' : '2px solid transparent',
+        color: active ? 'var(--fg-default)' : 'var(--fg-muted)',
+        fontSize: 14,
+        fontWeight: active ? 600 : 500,
+        fontFamily: 'inherit',
+        cursor: 'pointer',
+        marginBottom: 0,
+        transition: 'color 80ms, border-color 80ms',
+      }}
+      onMouseEnter={(e) => {
+        if (!active) (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-default)';
+      }}
+      onMouseLeave={(e) => {
+        if (!active) (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted)';
+      }}
+    >
+      {icon}
+      {label}
+      {typeof count === 'number' && (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '0 6px',
+            background: 'var(--bg-emphasis)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 500,
+            minWidth: 20,
+            justifyContent: 'center',
+          }}
+        >
+          {count}
+        </span>
+      )}
+      {newCount > 0 && (
+        <span
+          title={`${newCount} new since you last viewed this tab`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 6px',
+            height: 18,
+            minWidth: 18,
+            background: '#cf222e',
+            color: '#ffffff',
+            borderRadius: 999,
+            fontSize: 11,
+            fontWeight: 700,
+            lineHeight: 1,
+            boxShadow: '0 0 0 2px var(--bg-canvas)',
+            animation: 'badgePulse 2s ease-in-out infinite',
+          }}
+        >
+          {newCount > 99 ? '99+' : newCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
+const ExplorerPullRow = React.memo(function ExplorerPullRow({
+  pr,
+  mine,
+  expanded,
+  onView,
+  onValidate,
+  linkedIssues,
+  onIssueClick,
+}: {
+  pr: PullDto;
+  mine: boolean;
+  expanded: boolean;
+  onView: () => void;
+  onValidate: () => void;
+  linkedIssues: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }>;
+  onIssueClick: (issueNumber: number) => void;
+}) {
+  return (
+    <Box
+      as="tr"
+      data-explorer-row="pull"
+      data-pull-number={pr.number}
+      sx={{
+        height: 36,
+        borderBottom: '1px solid',
+        borderColor: 'var(--border-muted)',
+        bg: mine ? 'rgba(187, 128, 9, 0.08)' : 'transparent',
+        borderLeft: '3px solid',
+        borderLeftColor: mine ? '#d29922' : expanded ? 'var(--accent-emphasis)' : 'transparent',
+        '&:hover': { bg: mine ? 'rgba(187, 128, 9, 0.12)' : 'var(--bg-subtle)' },
+        cursor: 'pointer',
+      }}
+      onClick={onView}
+    >
+      <Box as="td" sx={{ ...tableCellSx, width: 28 }}>
+        <Box sx={{ color: 'var(--fg-muted)', display: 'inline-flex' }}>
+          {expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+        </Box>
+      </Box>
+      <Box as="td" sx={tableCellSx}>
+        <PullStatusBadge pr={pr} />
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, maxWidth: 360 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <PrimerLink
+            href={pr.html_url ?? '#'}
+            target="_blank"
+            rel="noreferrer"
+            // Stop the click from bubbling to the row's onClick — clicking the
+            // title should only open GitHub in a new tab, not also open the
+            // side viewer.
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            sx={{
+              fontWeight: 500,
+              color: 'var(--fg-default)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              '&:hover': { color: 'var(--accent-fg)' },
+            }}
+            title={pr.title}
+          >
+            {pr.title}
+          </PrimerLink>
+          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, flexShrink: 0 }}>#{pr.number}</Text>
+          {mine && (
+            <Box
+              sx={{
+                px: 1,
+                bg: '#d29922',
+                color: '#ffffff',
+                fontSize: '10px',
+                fontWeight: 700,
+                borderRadius: 999,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1,
+                flexShrink: 0,
+              }}
+            >
+              <PersonIcon size={10} />
+              You
+            </Box>
+          )}
+        </Box>
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, fontSize: 0 }}>
+        <AuthorCell login={pr.author_login} highlight={mine} />
+      </Box>
+      <Box as="td" sx={tableTimeSx} title={pr.created_at ?? undefined}>
+        <RecentTime iso={pr.created_at} />
+      </Box>
+      <Box as="td" sx={tableTimeSx} title={pr.updated_at ?? undefined}>
+        <RecentTime iso={pr.updated_at} />
+      </Box>
+      <Box as="td" sx={tableTimeSx} title={pr.merged_at ?? pr.closed_at ?? undefined}>
+        {pr.merged_at ? (
+          <Text sx={{ color: 'var(--success-fg)', fontWeight: isRecent(pr.merged_at) ? 700 : 400 }}>
+            merged {formatRelativeTime(pr.merged_at)}
+          </Text>
+        ) : pr.closed_at ? (
+          <Text sx={{ color: 'var(--danger-fg)', fontWeight: isRecent(pr.closed_at) ? 700 : 400 }}>
+            closed {formatRelativeTime(pr.closed_at)}
+          </Text>
+        ) : (
+          <Text sx={{ color: 'var(--fg-muted)' }}>—</Text>
+        )}
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <RelatedIssuesCell issues={linkedIssues} onIssueClick={onIssueClick} />
+      </Box>
+      <Box as="td" sx={tableCellSx} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <ValidateButton onClick={onValidate} size="small" />
+      </Box>
+    </Box>
+  );
+}, (prev, next) =>
+  // Skip re-render when only the inline `onView` callback identity changed —
+  // visible row content depends solely on the data props below.
+  prev.pr === next.pr &&
+  prev.mine === next.mine &&
+  prev.expanded === next.expanded &&
+  prev.linkedIssues === next.linkedIssues &&
+  prev.onIssueClick === next.onIssueClick &&
+  prev.onValidate === next.onValidate,
+);
+
+const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
+  issue,
+  expanded,
+  onView,
+  onValidate,
+  authorStats,
+  relatedPRs,
+  mergedPRCount,
+  validationStatus,
+  onSetValidation,
+  onPRClick,
+  onAuthorClick,
+}: {
+  issue: IssueDto;
+  expanded: boolean;
+  onView: () => void;
+  onValidate: () => void;
+  authorStats: { open: number; completed: number; not_planned: number; closed: number } | null;
+  relatedPRs: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }>;
+  mergedPRCount: number | null;
+  validationStatus: 'valid' | 'invalid' | null;
+  onSetValidation: (next: 'valid' | 'invalid' | null) => void;
+  onPRClick: (prNumber: number) => void | Promise<void>;
+  onAuthorClick: (login: string, association?: string | null) => void;
+}) {
+  const score = predictScore(issue);
+  const tone = score.predicted >= 25 ? 'var(--success-fg)' : score.predicted >= 10 ? '#d29922' : 'var(--fg-default)';
+  return (
+    <Box
+      as="tr"
+      data-explorer-row="issue"
+      data-issue-number={issue.number}
+      sx={{
+        height: 36,
+        borderBottom: '1px solid',
+        borderColor: 'var(--border-muted)',
+        '&:hover': { bg: 'var(--bg-subtle)' },
+        cursor: 'pointer',
+        borderLeft: '3px solid',
+        borderLeftColor: expanded ? 'var(--accent-emphasis)' : 'transparent',
+      }}
+      onClick={onView}
+    >
+      <Box as="td" sx={{ ...tableCellSx, width: 28 }}>
+        <Box sx={{ color: 'var(--fg-muted)', display: 'inline-flex' }}>
+          {expanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+        </Box>
+      </Box>
+      <Box as="td" sx={tableCellSx}>
+        <IssueStatusBadge issue={issue} mergedPRCount={mergedPRCount} />
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, maxWidth: 360 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+          <PrimerLink
+            href={issue.html_url ?? '#'}
+            target="_blank"
+            rel="noreferrer"
+            // Stop bubbling — clicking the title is for "open in GitHub", not
+            // for opening the side viewer (the chevron / row-body click does that).
+            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            sx={{
+              fontWeight: 500,
+              color: 'var(--fg-default)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              '&:hover': { color: 'var(--accent-fg)' },
+            }}
+            title={issue.title}
+          >
+            {issue.title}
+          </PrimerLink>
+          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, flexShrink: 0 }}>#{issue.number}</Text>
+          {issue.comments > 0 && (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'var(--fg-muted)', fontSize: 0, flexShrink: 0 }}>
+              <CommentIcon size={12} />
+              {issue.comments}
+            </Box>
+          )}
+          <IssueLabels labels={issue.labels} />
+        </Box>
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, fontSize: 0 }}>
+        <AuthorCell
+          login={issue.author_login}
+          association={issue.author_association}
+          onClick={onAuthorClick}
+        />
+      </Box>
+      <AuthorStatCell value={authorStats?.open ?? null} fg="var(--success-fg)" bg="rgba(46, 160, 67, 0.18)" />
+      <AuthorStatCell value={authorStats?.completed ?? null} fg="#a371f7" bg="rgba(163, 113, 247, 0.18)" />
+      <AuthorStatCell value={authorStats?.not_planned ?? null} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
+      <AuthorStatCell value={authorStats?.closed ?? null} fg="var(--danger-fg)" bg="rgba(248, 81, 73, 0.15)" />
+      <Box as="td" sx={tableTimeSx} title={issue.created_at ?? undefined}>
+        <RecentTime iso={issue.created_at} />
+      </Box>
+      <Box as="td" sx={tableTimeSx} title={issue.updated_at ?? undefined}>
+        <RecentTime iso={issue.updated_at} />
+      </Box>
+      <Box as="td" sx={tableTimeSx} title={issue.closed_at ?? undefined}>
+        {issue.closed_at ? <RecentTime iso={issue.closed_at} /> : <Text sx={{ color: 'var(--fg-muted)' }}>—</Text>}
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, textAlign: 'right', whiteSpace: 'nowrap' }} title={score.formula}>
+        {score.predicted > 0 ? (
+          <Text sx={{ fontFamily: 'mono', fontWeight: 700, fontSize: 1, color: tone, fontVariantNumeric: 'tabular-nums' }}>
+            {score.predicted.toFixed(2)}
+          </Text>
+        ) : (
+          <Text sx={{ color: 'var(--fg-muted)', fontFamily: 'mono', fontSize: 0 }}>—</Text>
+        )}
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }}>
+        <RelatedPRsCell prs={relatedPRs} onPRClick={onPRClick} />
+      </Box>
+      <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <ValidationPicker value={validationStatus} onChange={onSetValidation} />
+      </Box>
+      <Box as="td" sx={tableCellSx} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <ValidateButton onClick={onValidate} size="small" />
+      </Box>
+    </Box>
+  );
+}, (prev, next) =>
+  prev.issue === next.issue &&
+  prev.expanded === next.expanded &&
+  prev.authorStats === next.authorStats &&
+  prev.validationStatus === next.validationStatus &&
+  prev.relatedPRs === next.relatedPRs &&
+  prev.mergedPRCount === next.mergedPRCount &&
+  prev.onPRClick === next.onPRClick &&
+  prev.onAuthorClick === next.onAuthorClick,
+);
+
+function RelatedPRsCell({
+  prs,
+  onPRClick,
+}: {
+  prs: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }>;
+  onPRClick?: (prNumber: number) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (prs.length === 0) {
+    return <Text sx={{ color: 'var(--fg-muted)', fontFamily: 'mono', fontSize: 0 }}>—</Text>;
+  }
+  const merged = prs.filter((p) => p.merged).length;
+  const open_ = prs.filter((p) => !p.merged && p.state === 'open').length;
+  const tone = merged > 0 ? 'var(--success-emphasis)' : open_ > 0 ? 'var(--accent-emphasis)' : 'var(--fg-muted)';
+
+  return (
+    <Box
+      ref={wrapRef as unknown as React.Ref<HTMLDivElement>}
+      sx={{ position: 'relative', display: 'inline-block' }}
+      onClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
+    >
+      <Box
+        as="button"
+        title={`${prs.length} PR${prs.length === 1 ? '' : 's'} reference this issue`}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 1,
+          px: '8px',
+          py: '3px',
+          border: '1px solid',
+          borderColor: 'var(--border-default)',
+          borderRadius: '999px',
+          bg: 'var(--bg-canvas)',
+          color: tone,
+          fontSize: '12px',
+          fontWeight: 700,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          '&:hover': { borderColor: tone },
+        }}
+      >
+        <GitPullRequestIcon size={11} />
+        {prs.length}
+      </Box>
+      {open && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: '100%',
+            right: 0,
+            mt: 1,
+            minWidth: 280,
+            maxWidth: 360,
+            bg: 'var(--bg-subtle)',
+            border: '1px solid',
+            borderColor: 'var(--border-default)',
+            borderRadius: 2,
+            boxShadow: 'var(--shadow-overlay)',
+            zIndex: 50,
+            py: 1,
+            textAlign: 'left',
+          }}
+        >
+          <Text sx={{ px: 2, py: 1, fontSize: 0, color: 'var(--fg-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block' }}>
+            Linked pull requests
+          </Text>
+          {prs.map((pr) => {
+            const status = pr.merged ? 'merged' : pr.draft ? 'draft' : pr.state === 'open' ? 'open' : 'closed';
+            const statusColor =
+              status === 'merged' ? 'var(--success-emphasis)' :
+              status === 'open' ? 'var(--accent-emphasis)' :
+              status === 'draft' ? 'var(--fg-muted)' :
+              'var(--danger-fg)';
+            return (
+              <Box
+                as="button"
+                key={pr.number}
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  void onPRClick?.(pr.number);
+                }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  px: 2,
+                  py: '6px',
+                  width: '100%',
+                  border: 'none',
+                  bg: 'transparent',
+                  color: 'inherit',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  '&:hover': { bg: 'var(--bg-emphasis)' },
+                }}
+              >
+                {pr.author_login ? (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, flexShrink: 0, minWidth: 0, maxWidth: 110 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://github.com/${pr.author_login}.png?size=32`}
+                      alt={pr.author_login}
+                      loading="lazy"
+                      style={{ width: 16, height: 16, borderRadius: '50%', border: '1px solid var(--border-muted)', display: 'block', flexShrink: 0 }}
+                    />
+                    <Text sx={{ fontSize: 0, color: 'var(--fg-default)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {pr.author_login}
+                    </Text>
+                  </Box>
+                ) : (
+                  <GitPullRequestIcon size={12} />
+                )}
+                <Text sx={{ color: statusColor, fontSize: 0, fontWeight: 700, textTransform: 'capitalize', flexShrink: 0 }}>
+                  {status}
+                </Text>
+                <Text
+                  sx={{
+                    fontSize: 0,
+                    color: 'var(--fg-default)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}
+                >
+                  #{pr.number} {pr.title}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+/** Inline cell for the PR table: shows a count badge with a popover listing
+ *  the issues this PR closes/fixes/references. Mirrors RelatedPRsCell so the
+ *  two columns feel consistent. */
+function RelatedIssuesCell({
+  issues,
+  onIssueClick,
+}: {
+  issues: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }>;
+  onIssueClick?: (issueNumber: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (issues.length === 0) {
+    return <Text sx={{ color: 'var(--fg-muted)', fontFamily: 'mono', fontSize: 0 }}>—</Text>;
+  }
+
+  // Tone the badge based on the dominant state so a glance tells you whether
+  // the linked issues are still open (accent) or all resolved (success).
+  const openIssues = issues.filter((i) => i.state === 'open').length;
+  const tone = openIssues > 0 ? 'var(--accent-emphasis)' : 'var(--success-emphasis)';
+
+  return (
+    <Box
+      ref={wrapRef as unknown as React.Ref<HTMLDivElement>}
+      sx={{ position: 'relative', display: 'inline-block' }}
+      onClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
+    >
+      <Box
+        as="button"
+        title={`${issues.length} linked issue${issues.length === 1 ? '' : 's'}`}
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 1,
+          px: '8px',
+          py: '3px',
+          border: '1px solid',
+          borderColor: 'var(--border-default)',
+          borderRadius: '999px',
+          bg: 'var(--bg-canvas)',
+          color: tone,
+          fontSize: '12px',
+          fontWeight: 700,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          '&:hover': { borderColor: tone },
+        }}
+      >
+        <IssueOpenedIcon size={11} />
+        {issues.length}
+      </Box>
+      {open && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: '100%',
+            right: 0,
+            mt: 1,
+            minWidth: 280,
+            maxWidth: 360,
+            bg: 'var(--bg-subtle)',
+            border: '1px solid',
+            borderColor: 'var(--border-default)',
+            borderRadius: 2,
+            boxShadow: 'var(--shadow-overlay)',
+            zIndex: 50,
+            py: 1,
+            textAlign: 'left',
+          }}
+        >
+          <Text sx={{ px: 2, py: 1, fontSize: 0, color: 'var(--fg-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block' }}>
+            Linked issues
+          </Text>
+          {issues.map((iss) => {
+            // Effective state mirroring the issues-table coloring: open/done/np/closed.
+            const reason = (iss.state_reason ?? '').toUpperCase();
+            const status =
+              iss.state === 'open' ? 'open' :
+              reason === 'NOT_PLANNED' ? 'not_planned' :
+              reason === 'COMPLETED' ? 'done' :
+              'closed';
+            const statusColor =
+              status === 'open' ? 'var(--success-fg)' :
+              status === 'done' ? 'var(--success-fg)' :
+              status === 'not_planned' ? 'var(--fg-muted)' :
+              'var(--danger-fg)';
+            const StatusIcon =
+              status === 'open' ? IssueOpenedIcon :
+              status === 'not_planned' ? SkipIcon :
+              IssueClosedIcon;
+            return (
+              <Box
+                as="button"
+                key={iss.number}
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  onIssueClick?.(iss.number);
+                }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  px: 2,
+                  py: '6px',
+                  width: '100%',
+                  border: 'none',
+                  bg: 'transparent',
+                  color: 'inherit',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  '&:hover': { bg: 'var(--bg-emphasis)' },
+                }}
+              >
+                <Box sx={{ color: statusColor, display: 'inline-flex', flexShrink: 0 }}>
+                  <StatusIcon size={12} />
+                </Box>
+                {iss.author_login && (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, flexShrink: 0, minWidth: 0, maxWidth: 110 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`https://github.com/${iss.author_login}.png?size=32`}
+                      alt={iss.author_login}
+                      loading="lazy"
+                      style={{ width: 16, height: 16, borderRadius: '50%', border: '1px solid var(--border-muted)', display: 'block', flexShrink: 0 }}
+                    />
+                    <Text sx={{ fontSize: 0, color: 'var(--fg-default)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {iss.author_login}
+                    </Text>
+                  </Box>
+                )}
+                <Text
+                  sx={{
+                    fontSize: 0,
+                    color: 'var(--fg-default)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}
+                >
+                  #{iss.number} {iss.title}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+    </Box>
+  );
+}

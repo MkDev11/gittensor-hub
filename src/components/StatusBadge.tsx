@@ -1,0 +1,107 @@
+'use client';
+
+import React from 'react';
+import { Box, Text } from '@primer/react';
+import {
+  IssueOpenedIcon,
+  IssueClosedIcon,
+  GitPullRequestIcon,
+  GitPullRequestDraftIcon,
+  GitMergeIcon,
+  GitPullRequestClosedIcon,
+  SkipIcon,
+  type Icon,
+} from '@primer/octicons-react';
+import type { IssueDto, PullDto } from '@/lib/api-types';
+import { pullStatus } from '@/lib/api-types';
+
+const ISSUE_STYLE = {
+  open: { bg: 'open.emphasis', fg: 'fg.onEmphasis', icon: IssueOpenedIcon, label: 'Open' },
+  completed: { bg: 'done.emphasis', fg: 'fg.onEmphasis', icon: IssueClosedIcon, label: 'Completed' },
+  not_planned: { bg: 'neutral.emphasis', fg: 'fg.onEmphasis', icon: SkipIcon, label: 'Not planned' },
+  closed: { bg: 'closed.emphasis', fg: 'fg.onEmphasis', icon: IssueClosedIcon, label: 'Closed' },
+  duplicate: { bg: 'neutral.emphasis', fg: 'fg.onEmphasis', icon: IssueClosedIcon, label: 'Duplicate' },
+};
+
+const PR_STYLE = {
+  open: { bg: 'open.emphasis', fg: 'fg.onEmphasis', icon: GitPullRequestIcon, label: 'Open' },
+  draft: { bg: 'neutral.emphasis', fg: 'fg.onEmphasis', icon: GitPullRequestDraftIcon, label: 'Draft' },
+  merged: { bg: 'done.emphasis', fg: 'fg.onEmphasis', icon: GitMergeIcon, label: 'Merged' },
+  closed: { bg: 'closed.emphasis', fg: 'fg.onEmphasis', icon: GitPullRequestClosedIcon, label: 'Closed' },
+};
+
+export type EffectiveIssueState = 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed';
+
+/**
+ * Five buckets the dashboard groups issues into. Matches the Gittensor
+ * mining model: only an issue solved by an actually-merged PR via GitHub's
+ * `closingIssuesReferences` qualifies as Completed.
+ *
+ *   open        — state = 'open'
+ *   completed   — closed + state_reason='completed' AND has ≥1 MERGED linked PR
+ *   not_planned — closed + state_reason='not_planned'
+ *   duplicate   — closed + state_reason='duplicate'
+ *   closed      — everything else closed, including state_reason='completed'
+ *                 *without* a merged linked PR (Gittensor's risky/negative
+ *                 category) and reopened/null-reason
+ *
+ * `mergedPRCount === null` means the related-PR map hasn't loaded yet. We
+ * default to NOT claiming Completed in that case — a brief render as
+ * "Closed" while data hydrates is preferable to a stale "Completed" badge
+ * being wrong per the strict mining rule.
+ */
+export function effectiveIssueState(
+  issue: IssueDto,
+  mergedPRCount: number | null,
+): EffectiveIssueState {
+  if (issue.state === 'open') return 'open';
+  const reason = (issue.state_reason ?? '').toUpperCase();
+  if (reason === 'NOT_PLANNED') return 'not_planned';
+  if (reason === 'DUPLICATE') return 'duplicate';
+  if (reason === 'COMPLETED' && (mergedPRCount ?? 0) > 0) return 'completed';
+  return 'closed';
+}
+
+export const IssueStatusBadge = React.memo(function IssueStatusBadge({
+  issue,
+  mergedPRCount = null,
+}: {
+  issue: IssueDto;
+  mergedPRCount?: number | null;
+}) {
+  return <Pill style={ISSUE_STYLE[effectiveIssueState(issue, mergedPRCount)]} />;
+});
+
+export const PullStatusBadge = React.memo(function PullStatusBadge({ pr }: { pr: PullDto }) {
+  const s = pullStatus(pr);
+  return <Pill style={PR_STYLE[s]} />;
+});
+
+function Pill({
+  style,
+}: {
+  style: { bg: string; fg: string; icon: Icon; label: string };
+}) {
+  const Icon = style.icon;
+  return (
+    <Box
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 1,
+        px: 2,
+        py: '2px',
+        borderRadius: 999,
+        bg: style.bg,
+        color: style.fg,
+        fontSize: 0,
+        fontWeight: 600,
+        lineHeight: 1.5,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Icon size={12} />
+      <Text>{style.label}</Text>
+    </Box>
+  );
+}
