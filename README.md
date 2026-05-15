@@ -1,4 +1,4 @@
-# Gittensor Miner Dashboard
+# Gittensor Hub
 
 A real-time monitoring and decision tool for miners on **Bittensor Subnet 74 (SN74)** — the subnet that rewards merged GitHub PRs in whitelisted open-source repositories.
 
@@ -24,16 +24,44 @@ The dashboard polls GitHub for issues and PRs across all 200+ SN74 whitelisted r
 
 See `/docs` in the running app for the full feature reference.
 
-## Setup
+## Prerequisites
+
+- Node.js 20+
+- [pnpm](https://pnpm.io/) (`npm i -g pnpm`)
+- A GitHub account (you'll register an OAuth App and a Personal Access Token below)
+
+## Quick start
 
 ```bash
-npm i -g pnpm                      # if not already installed
+git clone https://github.com/MkDev11/gittensor-hub.git
+cd gittensor-hub
 pnpm install
 cp .env.local.example .env.local   # then fill in the values below
 pnpm dev                           # starts on http://localhost:12074
 ```
 
-### Required environment variables (`.env.local`)
+## GitHub setup
+
+The dashboard needs two GitHub credentials before sign-in works.
+
+### 1. OAuth App (for sign-in)
+
+1. Go to <https://github.com/settings/developers> → **New OAuth App**.
+2. Fill in:
+   - **Application name** — anything (e.g. `Gittensor Hub`)
+   - **Homepage URL** — `http://localhost:12074` for dev, or your public URL in prod
+   - **Authorization callback URL** — `<homepage>/api/auth/github/callback`
+3. Generate a client secret.
+4. Copy the **Client ID** and **Client Secret** into `.env.local` as `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`.
+
+### 2. Personal Access Tokens (for polling GitHub data)
+
+1. Go to <https://github.com/settings/tokens> → **Generate new token (classic)** or **Fine-grained**.
+2. Scopes: `public_repo` and `read:user` are sufficient for read-only polling of public repos.
+3. (Optional) Create 2–4 tokens — the poller rotates between them to spread the GitHub rate limit.
+4. Paste them comma-separated into `.env.local` as `GITHUB_PATS`.
+
+## Environment variables (`.env.local`)
 
 | Var | Purpose |
 | --- | --- |
@@ -47,13 +75,16 @@ pnpm dev                           # starts on http://localhost:12074
 
 ## Production
 
-`ecosystem.config.js` is a pm2 config:
+`ecosystem.config.js` is a [pm2](https://pm2.keymetrics.io/) config:
 
 ```bash
 pnpm build
 pm2 start ecosystem.config.js
-pm2 save
+pm2 save                          # persist for `pm2 resurrect` on reboot
+pm2 logs gittensor-miner-dashboard
 ```
+
+The app serves over plain HTTP by default. If you put nginx/Caddy with TLS in front, the auth cookies automatically switch to `Secure` (the server reads `x-forwarded-proto`).
 
 ## License
 
