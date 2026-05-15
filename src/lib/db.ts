@@ -90,23 +90,24 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_issues_seen_created_repo ON issues(first_seen_at, created_at, repo_full_name);
 
     CREATE TABLE IF NOT EXISTS pulls (
-      id               INTEGER PRIMARY KEY AUTOINCREMENT,
-      repo_full_name   TEXT NOT NULL,
-      number           INTEGER NOT NULL,
-      title            TEXT NOT NULL,
-      body             TEXT,
-      state            TEXT NOT NULL,
-      draft            INTEGER DEFAULT 0,
-      merged           INTEGER DEFAULT 0,
-      author_login     TEXT,
-      created_at       TEXT,
-      updated_at       TEXT,
-      closed_at        TEXT,
-      merged_at        TEXT,
-      html_url         TEXT,
-      raw_json         TEXT,
-      fetched_at       TEXT NOT NULL,
-      first_seen_at    TEXT NOT NULL,
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_full_name     TEXT NOT NULL,
+      number             INTEGER NOT NULL,
+      title              TEXT NOT NULL,
+      body               TEXT,
+      state              TEXT NOT NULL,
+      draft              INTEGER DEFAULT 0,
+      merged             INTEGER DEFAULT 0,
+      author_login       TEXT,
+      author_association TEXT,
+      created_at         TEXT,
+      updated_at         TEXT,
+      closed_at          TEXT,
+      merged_at          TEXT,
+      html_url           TEXT,
+      raw_json           TEXT,
+      fetched_at         TEXT NOT NULL,
+      first_seen_at      TEXT NOT NULL,
       UNIQUE(repo_full_name, number)
     );
 
@@ -161,14 +162,13 @@ export function getDb(): Database.Database {
     );
 
     -- Authoritative per-repo weight, refreshed by each live sync of
-    -- master_repositories.json. Semantics: a repo we've ever seen (in the
-    -- bundled snapshot or in a previous live poll) keeps its row forever;
-    -- only its weight changes. After a sync:
+    -- master_repositories.json. Semantics: a repo we've seen in any previous
+    -- live poll keeps its row forever; only its weight changes. After a sync:
     --   * weight = live.weight, if the repo is in the latest master file
     --   * weight = 0,           if it was in our list but disappeared upstream
     --   * new row,              if the repo is in live but we hadn't seen it
-    -- The dashboard reads weights from this table, falling back to the
-    -- bundled snapshot only on cold start before the first sync succeeds.
+    -- The dashboard reads weights from this table; on cold start before the
+    -- first successful sync the table is empty and consumers see no repos.
     CREATE TABLE IF NOT EXISTS repo_weights (
       full_name   TEXT PRIMARY KEY,
       weight      REAL NOT NULL DEFAULT 0,
@@ -244,6 +244,14 @@ export function getDb(): Database.Database {
     db.exec('ALTER TABLE repo_meta ADD COLUMN issue_body_links_backfilled_at TEXT');
   }
 
+  // `pulls.author_association` was added later to mirror the issues table —
+  // existing PR rows will be NULL until the next poll re-upserts them, which
+  // is fine since refresh.ts:upsertPull now writes the column.
+  const pullsCols = db.prepare("PRAGMA table_info(pulls)").all() as Array<{ name: string }>;
+  if (!pullsCols.some((c) => c.name === 'author_association')) {
+    db.exec('ALTER TABLE pulls ADD COLUMN author_association TEXT');
+  }
+
   _db = db;
   return db;
 }
@@ -278,6 +286,7 @@ export interface PullRow {
   draft: number;
   merged: number;
   author_login: string | null;
+  author_association: string | null;
   created_at: string | null;
   updated_at: string | null;
   closed_at: string | null;

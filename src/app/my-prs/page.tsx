@@ -445,6 +445,11 @@ function MyPRRow({ pr, isLast }: { pr: MyPullDto; isLast: boolean }) {
                 not in SN74
               </Label>
             )}
+            {pr.author_association && pr.author_association !== 'NONE' && (
+              <Label variant="secondary" sx={{ ml: 1, fontSize: '10px' }}>
+                {pr.author_association.toLowerCase()}
+              </Label>
+            )}
           </Box>
           <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
             <ClockIcon size={12} />

@@ -1,7 +1,8 @@
 // Server-only: this module imports `db` (better-sqlite3) and must never be
-// imported by client components. The `repos.ts` sibling exports the bundled
-// snapshot and other client-safe helpers.
-import { ALL_REPOS, type RepoEntry } from './repos';
+// imported by client components. The `repos.ts` sibling stays as the
+// client-safe type/helper surface; the bundled JSON snapshot it ships is
+// intentionally not consulted here — live is the sole source of truth.
+import type { RepoEntry } from './repos';
 import { getDb } from './db';
 
 // Live source. We poll entrius/gittensor:main/master_repositories.json every
@@ -14,53 +15,83 @@ const REMOTE_URL =
   'https://raw.githubusercontent.com/entrius/gittensor/main/gittensor/validator/weights/master_repositories.json';
 const REFRESH_MS = 5 * 60 * 1000;
 
+// Upstream replaced `weight` with `emission_share` plus a set of scoring
+// knobs. We map `emission_share` → internal `weight` and ignore the rest
+// until the UI needs them.
 interface MasterRepoEntry {
-  weight: number;
+  emission_share?: number;
+  issue_discovery_share?: number;
+  eligibility_mode?: boolean;
+  fixed_base_score?: number;
+  label_multipliers?: Record<string, number>;
+  default_label_multiplier?: number;
+  trusted_label_pipeline?: boolean;
+  additional_acceptable_branches?: string[];
+  // Legacy field — older snapshots used this; keep as a fallback in case the
+  // upstream schema regresses or a mirror still serves the old shape.
+  weight?: number;
   inactive_at?: string | null;
 }
 
-let lastFetchedAt = 0;
-let inFlight: Promise<void> | null = null;
-let seeded = false;
-
-// On cold start, populate repo_weights from the bundled snapshot so the
-// dashboard has *something* to render before the first live poll completes.
-// Subsequent polls overwrite these with live weights (or 0).
-function seedFromBundledIfEmpty(): void {
-  if (seeded) return;
-  const db = getDb();
-  const c = (db.prepare('SELECT COUNT(*) AS c FROM repo_weights').get() as { c: number }).c;
-  if (c === 0) {
-    const insert = db.prepare(
-      `INSERT OR IGNORE INTO repo_weights (full_name, weight, updated_at) VALUES (?, ?, ?)`,
-    );
-    const now = new Date().toISOString();
-    const tx = db.transaction(() => {
-      for (const r of ALL_REPOS) insert.run(r.fullName, r.weight, now);
-    });
-    tx();
-    console.log(`[repos] seeded repo_weights from bundled (${ALL_REPOS.length} rows)`);
-  }
-  seeded = true;
+function entryWeight(ent: MasterRepoEntry): number {
+  if (typeof ent.emission_share === 'number') return ent.emission_share;
+  if (typeof ent.weight === 'number') return ent.weight;
+  return 0;
 }
 
+function entryInactiveAt(ent: MasterRepoEntry): string | null {
+  // New schema: `eligibility_mode: false` marks an explicitly ineligible repo.
+  // We don't have a real timestamp to attach, but the dashboard only checks
+  // truthiness on `inactiveAt`, so a synthetic marker is enough.
+  if (ent.eligibility_mode === false) return ent.inactive_at ?? 'ineligible';
+  return ent.inactive_at ?? null;
+}
+
+let lastFetchedAt = 0;
+// Stamped on every attempt (success or failure) so a failed fetch is
+// throttled by FAILURE_BACKOFF_MS instead of amplifying load while
+// `lastFetchedAt` stays at 0.
+let lastAttemptAt = 0;
+let inFlight: Promise<void> | null = null;
+
+const FAILURE_BACKOFF_MS = 30_000;
+const FETCH_TIMEOUT_MS = 10_000;
+
+// In-memory mirror of the latest live JSON, keyed by lower-cased full_name.
+// The DB persists weights across restarts, but `inactive_at` lives only here
+// (the `repo_weights` table doesn't carry it). Repopulated on every live
+// fetch; empty until the first fetch resolves.
+const liveByLc = new Map<string, { fullName: string; weight: number; inactiveAt: string | null }>();
+
 async function refreshLiveIfStale(): Promise<void> {
-  seedFromBundledIfEmpty();
-  const age = Date.now() - lastFetchedAt;
-  if (lastFetchedAt > 0 && age < REFRESH_MS) return;
+  // Honor the 5-minute window after a successful fetch, and a shorter
+  // backoff after a failure — otherwise a degraded upstream would see every
+  // incoming request kick off a new fetch.
+  const sinceSuccess = Date.now() - lastFetchedAt;
+  const sinceAttempt = Date.now() - lastAttemptAt;
+  if (lastFetchedAt > 0 && sinceSuccess < REFRESH_MS) return;
+  if (lastAttemptAt > lastFetchedAt && sinceAttempt < FAILURE_BACKOFF_MS) return;
   if (inFlight) return inFlight;
   inFlight = (async () => {
     try {
-      const r = await fetch(REMOTE_URL, { cache: 'no-store' });
+      const r = await fetch(REMOTE_URL, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = (await r.json()) as Record<string, MasterRepoEntry>;
 
-      // Build a case-insensitive lookup of live weights. GitHub repo names
-      // are case-insensitive, so we should not treat `entrius/OC-1` and
+      // Rebuild the in-memory mirror from scratch every poll so dropped
+      // entries vanish from the inactiveAt lookup. GitHub repo names are
+      // case-insensitive, so we should not treat `entrius/OC-1` and
       // `entrius/oc-1` as different repos.
-      const liveByLc = new Map<string, { fullName: string; weight: number }>();
+      liveByLc.clear();
       for (const [fn, ent] of Object.entries(data)) {
-        liveByLc.set(fn.toLowerCase(), { fullName: fn, weight: ent.weight });
+        liveByLc.set(fn.toLowerCase(), {
+          fullName: fn,
+          weight: entryWeight(ent),
+          inactiveAt: entryInactiveAt(ent),
+        });
       }
 
       const db = getDb();
@@ -107,6 +138,9 @@ async function refreshLiveIfStale(): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[repos] live fetch failed (${msg})`);
     } finally {
+      // Stamp the attempt regardless of outcome so the failure backoff
+      // engages even when the request threw before reaching the success path.
+      lastAttemptAt = Date.now();
       inFlight = null;
     }
   })();
@@ -118,23 +152,36 @@ function readAll(): RepoEntry[] {
     const rows = getDb()
       .prepare('SELECT full_name, weight FROM repo_weights')
       .all() as Array<{ full_name: string; weight: number }>;
-    if (rows.length === 0) return ALL_REPOS;
-    // Pick up inactiveAt from the bundled snapshot when available — the live
-    // master file carries it, but we don't currently surface it from
-    // repo_weights, so the bundled snapshot remains the source for that flag.
-    const bundledByLc = new Map(ALL_REPOS.map((r) => [r.fullName.toLowerCase(), r]));
-    return rows.map((r) => {
-      const [owner, name] = r.full_name.split('/');
-      return {
-        fullName: r.full_name,
-        owner,
-        name,
-        weight: r.weight,
-        inactiveAt: bundledByLc.get(r.full_name.toLowerCase())?.inactiveAt ?? null,
-      };
-    });
+    // Cold-start floor: before the first live fetch resolves, `liveByLc` is
+    // empty even though the DB may have a perfectly good cached snapshot from
+    // a previous run. Serve those rows verbatim (with `inactiveAt: null`)
+    // instead of returning [] — otherwise a transient outage at boot would
+    // render an empty dashboard.
+    if (lastFetchedAt === 0) {
+      return rows.map((r) => {
+        const [owner, name] = r.full_name.split('/');
+        return { fullName: r.full_name, owner, name, weight: r.weight, inactiveAt: null };
+      });
+    }
+    // Steady state: surface only rows present in the CURRENT live snapshot.
+    // The DB still keeps historical rows (we never delete) for cache/audit,
+    // but the displayed list mirrors live exactly — anything that's been
+    // dropped upstream stops being rendered.
+    return rows
+      .filter((r) => liveByLc.has(r.full_name.toLowerCase()))
+      .map((r) => {
+        const [owner, name] = r.full_name.split('/');
+        const live = liveByLc.get(r.full_name.toLowerCase());
+        return {
+          fullName: r.full_name,
+          owner,
+          name,
+          weight: r.weight,
+          inactiveAt: live?.inactiveAt ?? null,
+        };
+      });
   } catch {
-    return ALL_REPOS;
+    return [];
   }
 }
 
@@ -149,13 +196,16 @@ export function getLiveReposServer(): RepoEntry[] {
 
 export async function getLiveReposAsyncServer(): Promise<{
   repos: RepoEntry[];
-  source: 'live' | 'bundled';
+  source: 'live' | 'empty';
   fetchedAt: number;
 }> {
   await refreshLiveIfStale();
   return {
+    // `empty` means we haven't completed a live fetch yet — the DB may still
+    // have a previous run's snapshot (served by `readAll`'s cold-start floor)
+    // but we cannot vouch for its freshness.
     repos: buildList(),
-    source: lastFetchedAt > 0 ? 'live' : 'bundled',
+    source: lastFetchedAt > 0 ? 'live' : 'empty',
     fetchedAt: lastFetchedAt,
   };
 }

@@ -532,11 +532,18 @@ function Header({
                   }}
                 />
                 <Text sx={{ color: 'var(--fg-default)', fontWeight: 500 }}>{data.author_login}</Text>
-                {target.kind === 'issue' && (data as IssueDto).author_association && (data as IssueDto).author_association !== 'NONE' && (
-                  <Label variant="secondary" sx={{ ml: 1, fontSize: '10px' }}>
-                    {((data as IssueDto).author_association ?? '').toLowerCase()}
-                  </Label>
-                )}
+                {(() => {
+                  const assoc =
+                    target.kind === 'issue'
+                      ? (data as IssueDto).author_association
+                      : (data as PullDto).author_association;
+                  if (!assoc || assoc === 'NONE') return null;
+                  return (
+                    <Label variant="secondary" sx={{ ml: 1, fontSize: '10px' }}>
+                      {assoc.toLowerCase()}
+                    </Label>
+                  );
+                })()}
               </a>
             )}
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>

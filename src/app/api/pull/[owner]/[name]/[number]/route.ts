@@ -17,7 +17,7 @@ export async function GET(
   const cached = db
     .prepare(
       `SELECT id, repo_full_name, number, title, body, state, draft, merged,
-              author_login, created_at, updated_at, closed_at, merged_at,
+              author_login, author_association, created_at, updated_at, closed_at, merged_at,
               html_url, fetched_at, first_seen_at
        FROM pulls WHERE repo_full_name = ? AND number = ?`
     )
@@ -40,6 +40,7 @@ export async function GET(
       draft: data.draft ? 1 : 0,
       merged: data.merged ? 1 : 0,
       author_login: data.user?.login ?? null,
+      author_association: data.author_association ?? null,
       created_at: data.created_at,
       updated_at: data.updated_at,
       closed_at: data.closed_at,

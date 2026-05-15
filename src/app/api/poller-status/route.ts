@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getLiveReposAsyncServer } from '@/lib/repos-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,9 +16,19 @@ export async function GET() {
     .prepare('SELECT full_name, last_fetch_error FROM repo_meta WHERE last_fetch_error IS NOT NULL LIMIT 10')
     .all();
 
+  // Denominator must match what the poller actually sweeps — mirror the
+  // dedup in `poller.ts:getAllRepos()` so user-added SN74 repos aren't
+  // double-counted.
+  const { repos: liveRepos } = await getLiveReposAsyncServer();
+  const sn74Names = new Set(liveRepos.map((r) => r.fullName.toLowerCase()));
+  const userExtras = (db
+    .prepare('SELECT full_name FROM user_repos')
+    .all() as Array<{ full_name: string }>).filter((u) => !sn74Names.has(u.full_name.toLowerCase())).length;
+  const reposTotal = liveRepos.length + userExtras;
+
   return NextResponse.json({
     repos_cached: repoCount,
-    repos_total: 216,
+    repos_total: reposTotal,
     issues_cached: issueCount,
     pulls_cached: pullCount,
     last_fetch: lastFetch,

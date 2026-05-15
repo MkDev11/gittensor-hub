@@ -577,6 +577,11 @@ function PullTableRow({
             <Text sx={{ fontWeight: 500, color: mine ? '#d29922' : 'fg.default', '&:hover': { color: 'accent.fg' } }}>
               {pr.author_login}
             </Text>
+            {pr.author_association && pr.author_association !== 'NONE' && (
+              <Label variant="secondary" sx={{ fontSize: '10px', flexShrink: 0 }}>
+                {pr.author_association.toLowerCase()}
+              </Label>
+            )}
           </a>
         ) : (
           <Text sx={{ color: 'fg.muted' }}>—</Text>

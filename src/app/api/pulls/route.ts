@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest) {
   const rows = db
     .prepare(
       `SELECT id, repo_full_name, number, title, body, state, draft, merged,
-              author_login, created_at, updated_at, closed_at, merged_at,
+              author_login, author_association, created_at, updated_at, closed_at, merged_at,
               html_url, fetched_at, first_seen_at
        FROM pulls
        ORDER BY updated_at DESC

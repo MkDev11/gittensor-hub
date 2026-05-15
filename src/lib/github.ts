@@ -265,6 +265,10 @@ export interface GhPull {
   state: string;
   draft: boolean;
   user: { login: string | null } | null;
+  // GitHub's pull-request payload carries the same `author_association` field
+  // as the issues payload (OWNER / COLLABORATOR / CONTRIBUTOR / MEMBER /
+  // FIRST_TIMER / FIRST_TIME_CONTRIBUTOR / MANNEQUIN / NONE).
+  author_association: string;
   created_at: string;
   updated_at: string;
   closed_at: string | null;
@@ -571,6 +575,11 @@ export interface SearchedPR {
   state: string;
   draft: boolean;
   user: { login: string | null } | null;
+  // GitHub's search API returns the same `author_association` field that the
+  // pulls endpoint does. We surface it so /api/my-prs can populate the
+  // contributor/collaborator badge instead of leaving freshly-inserted rows
+  // at NULL until the main poller re-upserts them.
+  author_association: string;
   created_at: string;
   updated_at: string;
   closed_at: string | null;

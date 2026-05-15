@@ -370,21 +370,22 @@ function upsertPull(repoFullName: string, pull: GhPull): void {
   const truncatedBody = (pull.body ?? '').slice(0, 4000);
   db.prepare(
     `INSERT INTO pulls
-     (repo_full_name, number, title, body, state, draft, merged, author_login,
+     (repo_full_name, number, title, body, state, draft, merged, author_login, author_association,
       created_at, updated_at, closed_at, merged_at, html_url, raw_json, fetched_at, first_seen_at)
-     VALUES (@repo_full_name, @number, @title, @body, @state, @draft, @merged, @author_login,
+     VALUES (@repo_full_name, @number, @title, @body, @state, @draft, @merged, @author_login, @author_association,
              @created_at, @updated_at, @closed_at, @merged_at, @html_url, NULL, @fetched_at, @first_seen_at)
      ON CONFLICT(repo_full_name, number) DO UPDATE SET
-       title        = excluded.title,
-       body         = excluded.body,
-       state        = excluded.state,
-       draft        = excluded.draft,
-       merged       = excluded.merged,
-       updated_at   = excluded.updated_at,
-       closed_at    = excluded.closed_at,
-       merged_at    = excluded.merged_at,
-       html_url     = excluded.html_url,
-       fetched_at   = excluded.fetched_at`
+       title              = excluded.title,
+       body               = excluded.body,
+       state              = excluded.state,
+       draft              = excluded.draft,
+       merged             = excluded.merged,
+       author_association = excluded.author_association,
+       updated_at         = excluded.updated_at,
+       closed_at          = excluded.closed_at,
+       merged_at          = excluded.merged_at,
+       html_url           = excluded.html_url,
+       fetched_at         = excluded.fetched_at`
   ).run({
     repo_full_name: repoFullName,
     number: pull.number,
@@ -394,6 +395,7 @@ function upsertPull(repoFullName: string, pull: GhPull): void {
     draft: pull.draft ? 1 : 0,
     merged,
     author_login: pull.user?.login ?? null,
+    author_association: pull.author_association ?? null,
     created_at: pull.created_at,
     updated_at: pull.updated_at,
     closed_at: pull.closed_at,
@@ -421,10 +423,12 @@ function touchRepoMeta(repoFullName: string, field: 'last_issues_fetch' | 'last_
   }
 }
 
-// Bump this when MAX_BOOTSTRAP_PAGES (in github.ts) grows. Existing rows have
-// an older version stamped in repo_meta and will re-bootstrap on next fetch
-// so the cache catches the long tail that the previous cap missed.
-export const BOOTSTRAP_VERSION = 1;
+// Bump this when MAX_BOOTSTRAP_PAGES (in github.ts) grows OR when we add a
+// new field to the cache that the incremental `since=` sweep won't backfill
+// (e.g. `pulls.author_association` in v2). Existing rows carry an older
+// version in repo_meta and will re-bootstrap on next fetch so the cache
+// catches the long tail that the previous version missed.
+export const BOOTSTRAP_VERSION = 2;
 
 function markBootstrapDone(repoFullName: string, field: 'issues_bootstrap_done_at' | 'pulls_bootstrap_done_at'): void {
   const db = getDb();

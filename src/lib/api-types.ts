@@ -29,6 +29,7 @@ export interface PullDto {
   draft: number;
   merged: number;
   author_login: string | null;
+  author_association: string | null;
   created_at: string | null;
   updated_at: string | null;
   closed_at: string | null;

@@ -127,7 +127,7 @@ export async function GET() {
     sn74_count: sn74Entries.length,
     user_count: userEntries.length,
     sn74_fetched_at: sn74FetchedAtMs > 0 ? new Date(sn74FetchedAtMs).toISOString() : null,
-    sn74_source: sn74Source === 'live' ? 'github' : 'bundled',
+    sn74_source: sn74Source === 'live' ? 'github' : 'pending',
     repos: all,
   });
 }
