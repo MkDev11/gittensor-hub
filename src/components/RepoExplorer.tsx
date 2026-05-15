@@ -40,13 +40,6 @@ import { formatRelativeTime, isRecent } from '@/lib/format';
 import { useMinerLogin } from '@/lib/use-miner';
 import { predictScore } from '@/lib/validate';
 import Dropdown from '@/components/Dropdown';
-// Static imports — the dev-mode chunk-hash churn from frequent restarts kept
-// hitting users with `ChunkLoadError` when the browser held a stale chunk
-// URL. The bundle-size savings of lazy-loading these aren't worth the
-// recurring failure mode.
-import ValidateIssueDialog from '@/components/ValidateIssueDialog';
-import ValidatePullDialog from '@/components/ValidatePullDialog';
-import ValidateButton from '@/components/ValidateButton';
 import ContentViewer from '@/components/ContentViewer';
 import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
@@ -118,8 +111,6 @@ export default function RepoExplorer() {
     setExpandedPull(null);
     setIssueModal(null);
     setPullModal(null);
-    setValidateTarget(null);
-    setValidatePullTarget(null);
     setAuthorTarget(null);
     setAuthorPanelActive(false);
     setRenderedAuthorTarget(null);
@@ -143,13 +134,9 @@ export default function RepoExplorer() {
     const t = setTimeout(() => setDebouncedPrQuery(prQuery), 300);
     return () => clearTimeout(t);
   }, [prQuery]);
-  const [validateTarget, setValidateTarget] = useState<{ number: number; title: string } | null>(null);
-  const [validatePullTarget, setValidatePullTarget] = useState<{ number: number; title: string } | null>(null);
   const [authorTarget, setAuthorTarget] = useState<AuthorTarget | null>(null);
   const [renderedAuthorTarget, setRenderedAuthorTarget] = useState<AuthorTarget | null>(null);
   const [authorPanelActive, setAuthorPanelActive] = useState(false);
-  const validateSideRef = useRef<HTMLDivElement | null>(null);
-  const validatePullSideRef = useRef<HTMLDivElement | null>(null);
   const authorSideRef = useRef<HTMLDivElement | null>(null);
   const [issueModal, setIssueModal] = useState<IssueDto | null>(null);
   const [pullModal, setPullModal] = useState<PullDto | null>(null);
@@ -254,8 +241,6 @@ export default function RepoExplorer() {
     // Close any open side / modal panel when switching tabs.
     setIssueModal(null);
     setPullModal(null);
-    setValidateTarget(null);
-    setValidatePullTarget(null);
     setAuthorTarget(null);
     setExpandedIssue(null);
     setExpandedPull(null);
@@ -322,8 +307,6 @@ export default function RepoExplorer() {
     if (!isInitialUrlSync && !fromUrl) setPendingOpen(null);
     setIssueModal(null);
     setPullModal(null);
-    setValidateTarget(null);
-    setValidatePullTarget(null);
     setExpandedIssue(null);
     setExpandedPull(null);
   }, [selected]);
@@ -352,37 +335,6 @@ export default function RepoExplorer() {
     else url.searchParams.set('ppage', String(pullsPage));
     window.history.replaceState({}, '', url.toString());
   }, [issuesPage, pullsPage, issuesAllMode, pullsAllMode]);
-
-  // Dismiss the side-mode Validate dialog when the user clicks anywhere
-  // outside it (other than the resize handle, which is part of the same UI).
-  // Modal mode already self-dismisses on Escape / overlay click.
-  useEffect(() => {
-    if (settings.validateDisplay !== 'side' || !validateTarget) return;
-    const onMouseDown = (e: MouseEvent) => {
-      const node = e.target as Node;
-      if (validateSideRef.current?.contains(node)) return;
-      // Resize handles use role="separator"; preserve their drag UX.
-      const el = e.target as HTMLElement;
-      if (el.closest && el.closest('[role="separator"]')) return;
-      setValidateTarget(null);
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [settings.validateDisplay, validateTarget]);
-
-  // Same dismiss-on-outside-click behavior for the PR validate side panel.
-  useEffect(() => {
-    if (settings.validateDisplay !== 'side' || !validatePullTarget) return;
-    const onMouseDown = (e: MouseEvent) => {
-      const node = e.target as Node;
-      if (validatePullSideRef.current?.contains(node)) return;
-      const el = e.target as HTMLElement;
-      if (el.closest && el.closest('[role="separator"]')) return;
-      setValidatePullTarget(null);
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [settings.validateDisplay, validatePullTarget]);
 
   useEffect(() => {
     if (!authorTarget) {
@@ -970,7 +922,6 @@ export default function RepoExplorer() {
 
   const openLinkedPullRequest = useCallback(
     async (prNumber: number) => {
-      setValidateTarget(null);
       setAuthorTarget(null);
       setIssueModal(null);
       setExpandedIssue(null);
@@ -1000,7 +951,6 @@ export default function RepoExplorer() {
   );
 
   const openAuthorSidebar = useCallback((login: string, association?: string | null) => {
-    setValidateTarget(null);
     setIssueModal(null);
     setPullModal(null);
     setExpandedIssue(null);
@@ -1011,7 +961,6 @@ export default function RepoExplorer() {
   const openIssueFromAuthorSidebar = useCallback(
     (issue: IssueDto) => {
       setAuthorTarget(null);
-      setValidateTarget(null);
       setPullModal(null);
       setExpandedPull(null);
 
@@ -1110,7 +1059,6 @@ export default function RepoExplorer() {
         const data = await r.json();
         if (cancelled) return;
 
-        setValidateTarget(null);
         setAuthorTarget(null);
         if (kind === 'issue') {
           setTabState('issues');
@@ -1666,7 +1614,6 @@ export default function RepoExplorer() {
                       <SortHeader label="Predict" sortKey="predict" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="right" />
                       <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>PRs</Box>
                       <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>VAL</Box>
-                      <Box as="th" sx={tableHeaderSx}>Action</Box>
                     </Box>
                   </Box>
                   <Box as="tbody">
@@ -1676,10 +1623,6 @@ export default function RepoExplorer() {
                         ? (relatedMapData.map[issue.number]?.filter((p) => p.merged === 1).length ?? 0)
                         : null;
                       const handleView = () => {
-                        // If a validate dialog is open, close it first so the
-                        // content panel can take over the same screen real estate.
-                        setValidateTarget(null);
-                        setValidatePullTarget(null);
                         setAuthorTarget(null);
                         if (settings.contentDisplay === 'modal' || settings.contentDisplay === 'side') {
                           setIssueModal(
@@ -1698,13 +1641,6 @@ export default function RepoExplorer() {
                             issue={issue}
                             expanded={expanded}
                             onView={handleView}
-                            onValidate={() => {
-                              setIssueModal(null);
-                              setPullModal(null);
-                              setAuthorTarget(null);
-                              setValidatePullTarget(null);
-                              setValidateTarget({ number: issue.number, title: issue.title });
-                            }}
                             authorStats={issue.author_login ? issueAuthorStats.get(issue.author_login) ?? null : null}
                             relatedPRs={relatedMapData?.map?.[issue.number] ?? EMPTY_PRS}
                             mergedPRCount={rowMergedPRCount}
@@ -1893,15 +1829,12 @@ export default function RepoExplorer() {
                       <SortHeader label="Updated" sortKey="updated" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
                       <SortHeader label="Merged / Closed" sortKey="closed" current={pullSortKey} dir={pullSortDir} onClick={togglePullSort} />
                       <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>Issues</Box>
-                      <Box as="th" sx={tableHeaderSx}>Action</Box>
                     </Box>
                   </Box>
                   <Box as="tbody">
                     {pagedPulls.map((pr) => {
                       const expanded = expandedPull === pr.number;
                       const handleView = () => {
-                        setValidateTarget(null);
-                        setValidatePullTarget(null);
                         setAuthorTarget(null);
                         if (settings.contentDisplay === 'modal' || settings.contentDisplay === 'side') {
                           setPullModal(pr);
@@ -1918,13 +1851,6 @@ export default function RepoExplorer() {
                             mine={pr.author_login?.toLowerCase() === me.toLowerCase()}
                             expanded={expanded}
                             onView={handleView}
-                            onValidate={() => {
-                              setIssueModal(null);
-                              setPullModal(null);
-                              setAuthorTarget(null);
-                              setValidateTarget(null);
-                              setValidatePullTarget({ number: pr.number, title: pr.title });
-                            }}
                             linkedIssues={linkedIssues}
                             onIssueClick={(num) => {
                               setPullModal(null);
@@ -1937,7 +1863,7 @@ export default function RepoExplorer() {
                           />
                           {expanded && settings.contentDisplay === 'accordion' && (
                             <Box as="tr">
-                              <Box as="td" colSpan={9} sx={{ p: 0 }}>
+                              <Box as="td" colSpan={8} sx={{ p: 0 }}>
                                 <ContentViewer
                                   target={{
                                     kind: 'pull',
@@ -2094,112 +2020,6 @@ export default function RepoExplorer() {
             />
           )}
         </Box>
-      )}
-
-      {settings.validateDisplay === 'side' && validateTarget && (
-        <Box
-          ref={validateSideRef}
-          sx={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: sideWidth,
-            minWidth: 360,
-            maxWidth: '50vw',
-            borderLeft: '1px solid',
-            borderColor: 'var(--border-default)',
-            bg: 'var(--bg-canvas)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            zIndex: 25,
-            boxShadow: '-12px 0 24px rgba(1, 4, 9, 0.28)',
-          }}
-        >
-          <Box
-            onMouseDown={startResize('side')}
-            sx={{
-              position: 'absolute',
-              left: -3,
-              top: 0,
-              bottom: 0,
-              width: 6,
-              cursor: 'col-resize',
-              zIndex: 1,
-            }}
-          />
-          <ValidateIssueDialog
-            owner={selected.owner}
-            name={selected.name}
-            number={validateTarget.number}
-            title={validateTarget.title}
-            onClose={() => setValidateTarget(null)}
-          />
-        </Box>
-      )}
-
-      {validateTarget && settings.validateDisplay === 'modal' && (
-        <ValidateIssueDialog
-          owner={selected.owner}
-          name={selected.name}
-          number={validateTarget.number}
-          title={validateTarget.title}
-          onClose={() => setValidateTarget(null)}
-        />
-      )}
-
-      {settings.validateDisplay === 'side' && validatePullTarget && (
-        <Box
-          ref={validatePullSideRef}
-          sx={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: sideWidth,
-            minWidth: 360,
-            maxWidth: '50vw',
-            borderLeft: '1px solid',
-            borderColor: 'var(--border-default)',
-            bg: 'var(--bg-canvas)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            zIndex: 25,
-            boxShadow: '-12px 0 24px rgba(1, 4, 9, 0.28)',
-          }}
-        >
-          <Box
-            onMouseDown={startResize('side')}
-            sx={{
-              position: 'absolute',
-              left: -3,
-              top: 0,
-              bottom: 0,
-              width: 6,
-              cursor: 'col-resize',
-              zIndex: 1,
-            }}
-          />
-          <ValidatePullDialog
-            owner={selected.owner}
-            name={selected.name}
-            number={validatePullTarget.number}
-            title={validatePullTarget.title}
-            onClose={() => setValidatePullTarget(null)}
-          />
-        </Box>
-      )}
-
-      {validatePullTarget && settings.validateDisplay === 'modal' && (
-        <ValidatePullDialog
-          owner={selected.owner}
-          name={selected.name}
-          number={validatePullTarget.number}
-          title={validatePullTarget.title}
-          onClose={() => setValidatePullTarget(null)}
-        />
       )}
 
       {issueModal && settings.contentDisplay === 'modal' && (
@@ -3311,7 +3131,6 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
   mine,
   expanded,
   onView,
-  onValidate,
   linkedIssues,
   onIssueClick,
 }: {
@@ -3319,7 +3138,6 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
   mine: boolean;
   expanded: boolean;
   onView: () => void;
-  onValidate: () => void;
   linkedIssues: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }>;
   onIssueClick: (issueNumber: number) => void;
 }) {
@@ -3417,9 +3235,6 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
       <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <RelatedIssuesCell issues={linkedIssues} onIssueClick={onIssueClick} />
       </Box>
-      <Box as="td" sx={tableCellSx} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-        <ValidateButton onClick={onValidate} size="small" />
-      </Box>
     </Box>
   );
 }, (prev, next) =>
@@ -3429,15 +3244,13 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
   prev.mine === next.mine &&
   prev.expanded === next.expanded &&
   prev.linkedIssues === next.linkedIssues &&
-  prev.onIssueClick === next.onIssueClick &&
-  prev.onValidate === next.onValidate,
+  prev.onIssueClick === next.onIssueClick,
 );
 
 const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
   issue,
   expanded,
   onView,
-  onValidate,
   authorStats,
   relatedPRs,
   mergedPRCount,
@@ -3449,7 +3262,6 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
   issue: IssueDto;
   expanded: boolean;
   onView: () => void;
-  onValidate: () => void;
   authorStats: { open: number; completed: number; not_planned: number; closed: number } | null;
   relatedPRs: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }>;
   mergedPRCount: number | null;
@@ -3549,9 +3361,6 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
       </Box>
       <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
         <ValidationPicker value={validationStatus} onChange={onSetValidation} />
-      </Box>
-      <Box as="td" sx={tableCellSx} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-        <ValidateButton onClick={onValidate} size="small" />
       </Box>
     </Box>
   );

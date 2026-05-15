@@ -27,8 +27,6 @@ import { IssueStatusBadge } from '@/components/StatusBadge';
 import { formatRelativeTime } from '@/lib/format';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import { predictScore } from '@/lib/validate';
-import ValidateIssueDialog from '@/components/ValidateIssueDialog';
-import ValidateButton from '@/components/ValidateButton';
 import ContentViewer from '@/components/ContentViewer';
 import { useSettings } from '@/lib/settings';
 import { useSn74Repos, lookupWeight } from '@/lib/use-sn74-repos';
@@ -62,7 +60,6 @@ export default function IssuesTable() {
   const [sortKey, setSortKey] = useState<SortKey>('opened');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [trackedOnly, setTrackedOnly] = useState(false);
-  const [validateTarget, setValidateTarget] = useState<{ owner: string; name: string; number: number; title: string } | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_INCREMENT);
   const [authorFilter, setAuthorFilter] = useState<string>('all');
   const [closeFilter, setCloseFilter] = useState<CloseFilter>('all');
@@ -270,13 +267,12 @@ export default function IssuesTable() {
                 width={180}
                 rightSort={{ active: sortKey === 'closed', dir: sortDir, onClick: () => toggleSort('closed') }}
               />
-              <HeaderCell label="Action" />
             </Box>
           </Box>
           <Box as="tbody">
             {isLoading && filtered.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={11} sx={{ p: 0, height: 320 }}>
+                <Box as="td" colSpan={10} sx={{ p: 0, height: 320 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                     <Spinner size="xl" tone="accent" label="Loading issues…" />
                   </Box>
@@ -285,7 +281,7 @@ export default function IssuesTable() {
             )}
             {!isLoading && filtered.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={11} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+                <Box as="td" colSpan={10} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
                   {data && data.count === 0
                     ? 'No issues cached yet. Visit a repo page or run the poller to populate.'
                     : 'No issues match these filters.'}
@@ -302,14 +298,13 @@ export default function IssuesTable() {
                     issue={issue}
                     tracked={tracked.has(issue.repo_full_name)}
                     onToggleTrack={() => toggleTrack(issue.repo_full_name)}
-                    onValidate={() => setValidateTarget({ owner: o, name: n, number: issue.number, title: issue.title })}
                     onRowClick={() => handleRowClick(issue)}
                     expanded={expanded}
                     weight={lookupWeight(repoWeights, issue.repo_full_name) ?? 0}
                   />
                   {expanded && settings.contentDisplay === 'accordion' && (
                     <Box as="tr">
-                      <Box as="td" colSpan={11} sx={{ p: 0 }}>
+                      <Box as="td" colSpan={10} sx={{ p: 0 }}>
                         <ContentViewer
                           target={{ kind: 'issue', owner: o, name: n, number: issue.number, preloaded: issue }}
                           mode="inline"
@@ -332,16 +327,6 @@ export default function IssuesTable() {
           </Box>
         )}
       </Box>
-
-      {validateTarget && (
-        <ValidateIssueDialog
-          owner={validateTarget.owner}
-          name={validateTarget.name}
-          number={validateTarget.number}
-          title={validateTarget.title}
-          onClose={() => setValidateTarget(null)}
-        />
-      )}
 
       {openIssue && settings.contentDisplay === 'modal' && (() => {
         const [o, n] = openIssue.repo_full_name.split('/');
@@ -494,14 +479,12 @@ function IssueTableRow({
   issue,
   tracked,
   onToggleTrack,
-  onValidate,
   onRowClick,
   expanded,
 }: {
   issue: IssueDto;
   tracked: boolean;
   onToggleTrack: () => void;
-  onValidate: () => void;
   onRowClick?: () => void;
   expanded?: boolean;
   weight: number;
@@ -671,9 +654,6 @@ function IssueTableRow({
         ) : (
           <Text sx={{ color: 'fg.muted' }}>—</Text>
         )}
-      </Box>
-      <Box as="td" sx={{ px: 2, py: '6px', verticalAlign: 'middle', height: 36 }} onClick={(e) => e.stopPropagation()}>
-        <ValidateButton onClick={onValidate} size="small" />
       </Box>
     </Box>
   );

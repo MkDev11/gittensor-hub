@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { getDb } from '@/lib/db';
 import {
   encodeSession,
@@ -46,6 +46,15 @@ ensureSessionSecret();
 // Cookie helpers
 // ---------------------------------------------------------------------------
 
+// Mirror the request scheme so cookies aren't dropped on HTTP-only deploys —
+// browsers refuse to send Secure cookies over plain HTTP.
+function isHttpsRequest(): boolean {
+  const h = headers();
+  const proto = h.get('x-forwarded-proto') || '';
+  if (proto) return proto.split(',')[0].trim() === 'https';
+  return (h.get('host') || '').endsWith(':443');
+}
+
 export async function setSessionCookieFor(user: UserRow): Promise<void> {
   const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC;
   const token = await encodeSession({
@@ -61,7 +70,7 @@ export async function setSessionCookieFor(user: UserRow): Promise<void> {
     value: token,
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttpsRequest(),
     path: '/',
     maxAge: SESSION_MAX_AGE_SEC,
   });
@@ -73,7 +82,7 @@ export function clearSessionCookie(): void {
     value: '',
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttpsRequest(),
     path: '/',
     maxAge: 0,
   });

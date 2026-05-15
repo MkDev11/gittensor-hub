@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Box, Header, Text } from '@primer/react';
 import { RepoIcon, IssueOpenedIcon, GitPullRequestIcon, PersonIcon, BrowserIcon, BookIcon, OrganizationIcon } from '@primer/octicons-react';
-import ModelSelector from '@/components/ModelSelector';
 import ThemeToggle from '@/components/ThemeToggle';
 import UserMenu from '@/components/UserMenu';
 import PriceTicker from '@/components/PriceTicker';
@@ -67,9 +66,6 @@ export default function AppHeader() {
       <Header.Item full />
       <Header.Item>
         <PriceTicker />
-      </Header.Item>
-      <Header.Item>
-        <ModelSelector compact />
       </Header.Item>
       <Header.Item>
         <ThemeToggle />
