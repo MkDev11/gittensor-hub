@@ -48,8 +48,8 @@ ensureSessionSecret();
 
 // Mirror the request scheme so cookies aren't dropped on HTTP-only deploys —
 // browsers refuse to send Secure cookies over plain HTTP.
-function isHttpsRequest(): boolean {
-  const h = headers();
+async function isHttpsRequest(): Promise<boolean> {
+  const h = await headers();
   const proto = h.get('x-forwarded-proto') || '';
   if (proto) return proto.split(',')[0].trim() === 'https';
   return (h.get('host') || '').endsWith(':443');
@@ -65,31 +65,34 @@ export async function setSessionCookieFor(user: UserRow): Promise<void> {
     avatar_url: user.avatar_url,
     exp,
   });
-  cookies().set({
+  const jar = await cookies();
+  jar.set({
     name: SESSION_COOKIE_NAME,
     value: token,
     httpOnly: true,
     sameSite: 'lax',
-    secure: isHttpsRequest(),
+    secure: await isHttpsRequest(),
     path: '/',
     maxAge: SESSION_MAX_AGE_SEC,
   });
 }
 
-export function clearSessionCookie(): void {
-  cookies().set({
+export async function clearSessionCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.set({
     name: SESSION_COOKIE_NAME,
     value: '',
     httpOnly: true,
     sameSite: 'lax',
-    secure: isHttpsRequest(),
+    secure: await isHttpsRequest(),
     path: '/',
     maxAge: 0,
   });
 }
 
 export async function getSessionFromCookies() {
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
 }
 

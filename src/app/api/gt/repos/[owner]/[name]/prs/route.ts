@@ -104,7 +104,8 @@ async function getShared(): Promise<Cached> {
   return inFlight;
 }
 
-export async function GET(_req: Request, { params }: { params: { owner: string; name: string } }) {
+export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
+  const params = await ctx.params;
   const fullName = `${params.owner}/${params.name}`;
   try {
     const shared = await getShared();

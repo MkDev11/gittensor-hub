@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const state = req.nextUrl.searchParams.get('state');
   if (!code || !state) return err(req, 'missing_code_or_state');
 
-  const jar = cookies();
+  const jar = await cookies();
   const expectedState = jar.get(STATE_COOKIE)?.value;
   const next = jar.get(NEXT_COOKIE)?.value || '/';
   // Clear the one-shot cookies regardless of outcome.

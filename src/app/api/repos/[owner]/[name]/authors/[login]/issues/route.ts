@@ -18,8 +18,9 @@ function parseLabels(raw: string | null): Array<{ name: string; color?: string }
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { owner: string; name: string; login: string } },
+  ctx: { params: Promise<{ owner: string; name: string; login: string }> },
 ) {
+  const params = await ctx.params;
   const full = `${params.owner}/${params.name}`;
   const login = params.login;
   const url = new URL(req.url);

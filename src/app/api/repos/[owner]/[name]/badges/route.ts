@@ -23,8 +23,9 @@ interface SourceRow {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { owner: string; name: string } },
+  ctx: { params: Promise<{ owner: string; name: string }> },
 ) {
+  const params = await ctx.params;
   const full = `${params.owner}/${params.name}`;
   const db = getDb();
 

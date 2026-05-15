@@ -31,8 +31,9 @@ const SORT_COLUMN: Partial<Record<SortKey, string>> = {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { owner: string; name: string } }
+  ctx: { params: Promise<{ owner: string; name: string }> }
 ) {
+  const params = await ctx.params;
   const { owner, name } = params;
   const full = `${owner}/${name}`;
 

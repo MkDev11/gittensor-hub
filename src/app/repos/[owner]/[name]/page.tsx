@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useMemo, useState } from 'react';
+import React, { use, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, Label, UnderlineNav } from '@primer/react';
@@ -82,7 +82,8 @@ const TABS: { key: TabKey; label: string; icon: Icon }[] = [
   { key: 'check', label: 'Repo Check', icon: ChecklistIcon },
 ];
 
-export default function RepoDetailPage({ params }: { params: { owner: string; name: string } }) {
+export default function RepoDetailPage(ctx: { params: Promise<{ owner: string; name: string }> }) {
+  const params = use(ctx.params);
   const fullName = `${params.owner}/${params.name}`;
   const { tracked, toggle } = useTrackedRepos();
   const isTracked = tracked.has(fullName);

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   auth.searchParams.set('state', state);
   auth.searchParams.set('allow_signup', 'true');
 
-  const jar = cookies();
+  const jar = await cookies();
   const cookieOpts = {
     httpOnly: true,
     sameSite: 'lax' as const,

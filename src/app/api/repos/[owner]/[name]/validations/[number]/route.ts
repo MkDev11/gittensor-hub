@@ -12,8 +12,9 @@ type ValidationStatus = 'valid' | 'invalid' | null;
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { owner: string; name: string; number: string } },
+  ctx: { params: Promise<{ owner: string; name: string; number: string }> },
 ) {
+  const params = await ctx.params;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
