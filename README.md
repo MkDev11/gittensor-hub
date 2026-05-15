@@ -4,7 +4,7 @@ A dashboard for miners on **Bittensor Subnet 74 (SN74)** — the subnet that rew
 
 It polls GitHub for issues and PRs across the 200+ SN74 repos (plus any you add), caches them in SQLite, and surfaces them in Browse, Issues, Pulls, My PRs, and Repositories views.
 
-Built with Next.js 14, TypeScript, Primer React, and `better-sqlite3`.
+Built with Next.js 15 (App Router), TypeScript, Primer React, and `better-sqlite3`.
 
 ## Quick start
 
@@ -31,6 +31,10 @@ You need an **OAuth App** (sign-in) and one or more **Personal Access Tokens** (
 - Scopes: `public_repo`, `read:user`.
 - Create 2–4 tokens and paste them comma-separated into `GITHUB_PATS` — the poller rotates between them to spread the rate limit.
 
+## Access
+
+Anyone with a GitHub account can sign in — there is no admin-approval gate. Admins (configured via `ADMIN_GITHUB_LOGINS`) can revoke access by marking a user `rejected` from the admin users page, which signs them out and blocks future sign-ins.
+
 ## Environment variables
 
 | Var | Purpose |
@@ -38,7 +42,7 @@ You need an **OAuth App** (sign-in) and one or more **Personal Access Tokens** (
 | `GITHUB_USERNAME` | Your GitHub login (default miner identity) |
 | `GITHUB_PATS` | Comma-separated PATs, rotated automatically |
 | `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET` | OAuth app credentials |
-| `ADMIN_GITHUB_LOGINS` | Comma-separated logins granted admin |
+| `ADMIN_GITHUB_LOGINS` | Comma-separated logins auto-granted admin on first sign-in |
 | `SESSION_SECRET` | Auto-generated on first run if missing |
 | `PORT` | HTTP port (default `12074`) |
 
