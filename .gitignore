@@ -12,3 +12,5 @@ data/cache.db-journal
 data/cache.db-wal
 data/cache.db-shm
 data/.session-secret
+data/seed.db
+data/seed.db.gz

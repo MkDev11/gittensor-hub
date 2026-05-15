@@ -29,11 +29,18 @@ fi
 echo "Hot-copying $SRC_DB → $TMP_DB"
 sqlite3 "$SRC_DB" ".backup '$TMP_DB'"
 
-echo "Wiping user-side tables"
+echo "Wiping user-side tables and orphaned tables from removed features"
 sqlite3 "$TMP_DB" <<'SQL'
 DELETE FROM users;
 DELETE FROM issue_validations;
 DELETE FROM user_repos;
+
+-- Orphans from the removed AI-validate feature (still present in older DBs
+-- because CREATE TABLE IF NOT EXISTS never drops on schema change).
+DROP TABLE IF EXISTS ai_verdicts;
+DROP TABLE IF EXISTS ai_pr_verdicts;
+DROP TABLE IF EXISTS duplicate_checks;
+DROP TABLE IF EXISTS prompts;
 SQL
 
 if [[ "$LIGHT" == "1" ]]; then
