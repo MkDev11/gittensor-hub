@@ -17,3 +17,7 @@ data/cache.db-shm
 data/.session-secret
 data/seed.db
 data/seed.db.gz
+
+# TypeScript incremental build cache — regenerated per-machine on each build,
+# differs across checkouts. Never commit.
+*.tsbuildinfo
