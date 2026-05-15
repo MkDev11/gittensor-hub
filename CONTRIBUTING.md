@@ -13,7 +13,14 @@ Before contributing, please:
 1. Ensure you have Node 20+ and [pnpm](https://pnpm.io/) installed
 2. Clone the repo and run `pnpm install`
 3. Copy `.env.local.example` to `.env.local` and fill in the values (see the [Setup section in the README](./README.md#github-setup) for GitHub OAuth + PAT instructions)
-4. Run `pnpm dev` to start the development server on `http://localhost:12074`
+4. (Optional but recommended) Seed the local cache so you have realistic data without waiting for the poller to bootstrap:
+   ```
+   ./scripts/seed-db.sh
+   ```
+   This downloads a sanitized snapshot (issues / PRs / metadata for the top SN74 repos, last 30 days) from the latest GitHub Release. It contains **no user data** — only public GitHub content. Skip this step if you'd rather start with an empty cache and let the poller fill it (~10 minutes for the bootstrap).
+5. Run `pnpm dev` to start the development server on `http://localhost:12074`
+
+> **Never connect your local app to the production database.** Each contributor's `data/cache.db` is local and isolated by design — sharing the prod DB would expose other users' data and risk corruption from dev experiments.
 
 ### Creating Issues
 
