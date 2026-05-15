@@ -5,10 +5,11 @@ export const dynamic = 'force-dynamic';
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, TextInput, Label } from '@primer/react';
-import { RepoIcon, PlusIcon, TrashIcon, PencilIcon, CheckIcon, XIcon } from '@primer/octicons-react';
+import { RepoIcon, PlusIcon, TrashIcon, PencilIcon, CheckIcon, XIcon, LockIcon } from '@primer/octicons-react';
 import Spinner from '@/components/Spinner';
 import SearchInput from '@/components/SearchInput';
 import { formatRelativeTime } from '@/lib/format';
+import { useSession } from '@/lib/settings';
 
 interface UserRepo {
   full_name: string;
@@ -19,6 +20,7 @@ interface UserRepo {
 
 export default function ManageReposPage() {
   const qc = useQueryClient();
+  const { isAdmin } = useSession();
   const [fullName, setFullName] = useState('');
   const [weight, setWeight] = useState('0.01');
   const [notes, setNotes] = useState('');
@@ -113,11 +115,32 @@ export default function ManageReposPage() {
           <Heading sx={{ fontSize: 4 }}>Manage Repositories</Heading>
         </Box>
         <Text sx={{ color: 'fg.muted' }}>
-          Add custom repositories to track in this dashboard. They'll appear in the Browse view alongside the SN74 whitelist
-          with the weight you assign.
+          Custom repositories tracked in this dashboard. They appear in the Browse view alongside the SN74 whitelist
+          with the weight assigned.
         </Text>
       </PageLayout.Header>
       <PageLayout.Content>
+        {!isAdmin && (
+          <Box
+            sx={{
+              mb: 4,
+              p: 3,
+              border: '1px solid',
+              borderColor: 'border.default',
+              borderRadius: 2,
+              bg: 'canvas.subtle',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <LockIcon size={16} />
+            <Text sx={{ color: 'fg.muted', fontSize: 1 }}>
+              Read-only view. Only admins can add, edit, or remove tracked repositories.
+            </Text>
+          </Box>
+        )}
+        {isAdmin && (
         <Box
           sx={{
             mb: 4,
@@ -189,6 +212,7 @@ export default function ManageReposPage() {
             </Box>
           )}
         </Box>
+        )}
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           <Text sx={{ fontWeight: 600, fontSize: 2 }}>Tracked repositories</Text>
@@ -220,7 +244,7 @@ export default function ManageReposPage() {
               {!isLoading && filtered.length === 0 && (
                 <Box as="tr">
                   <Box as="td" colSpan={5} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
-                    No custom repositories yet — use the form above to add one.
+                    {isAdmin ? 'No custom repositories yet — use the form above to add one.' : 'No custom repositories yet.'}
                   </Box>
                 </Box>
               )}
@@ -256,26 +280,30 @@ export default function ManageReposPage() {
                     {formatRelativeTime(r.added_at)}
                   </Box>
                   <Box as="td" sx={{ p: 2 }}>
-                    <Box sx={{ display: 'inline-flex', gap: 1 }}>
-                      {editing === r.full_name ? (
-                        <>
-                          <IconBtn icon={<CheckIcon size={14} />} onClick={() => saveEdit(r.full_name)} title="Save" tone="success" />
-                          <IconBtn icon={<XIcon size={14} />} onClick={() => setEditing(null)} title="Cancel" />
-                        </>
-                      ) : (
-                        <>
-                          <IconBtn icon={<PencilIcon size={14} />} onClick={() => startEdit(r)} title="Edit" />
-                          <IconBtn
-                            icon={<TrashIcon size={14} />}
-                            onClick={() => {
-                              if (confirm(`Remove ${r.full_name}?`)) deleteMutation.mutate(r.full_name);
-                            }}
-                            title="Remove"
-                            tone="danger"
-                          />
-                        </>
-                      )}
-                    </Box>
+                    {isAdmin ? (
+                      <Box sx={{ display: 'inline-flex', gap: 1 }}>
+                        {editing === r.full_name ? (
+                          <>
+                            <IconBtn icon={<CheckIcon size={14} />} onClick={() => saveEdit(r.full_name)} title="Save" tone="success" />
+                            <IconBtn icon={<XIcon size={14} />} onClick={() => setEditing(null)} title="Cancel" />
+                          </>
+                        ) : (
+                          <>
+                            <IconBtn icon={<PencilIcon size={14} />} onClick={() => startEdit(r)} title="Edit" />
+                            <IconBtn
+                              icon={<TrashIcon size={14} />}
+                              onClick={() => {
+                                if (confirm(`Remove ${r.full_name}?`)) deleteMutation.mutate(r.full_name);
+                              }}
+                              title="Remove"
+                              tone="danger"
+                            />
+                          </>
+                        )}
+                      </Box>
+                    ) : (
+                      <Text sx={{ color: 'fg.subtle' }}>—</Text>
+                    )}
                   </Box>
                 </Box>
               ))}
