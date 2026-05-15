@@ -16,7 +16,12 @@ updates:
         update-types:
           - minor
           - patch
-    # Major-version bumps stay as separate PRs so they get a real review.
+    # Major bumps are opt-in: stage them deliberately, not via dependabot pings.
+    # Security advisories still fire as their own PRs regardless of this rule.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
