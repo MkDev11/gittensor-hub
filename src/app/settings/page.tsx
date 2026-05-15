@@ -137,9 +137,6 @@ export default function SettingsPage() {
               ariaLabel="Density"
             />
           </Field>
-          <Field label="Show predict score column" hint="Display the predicted SN74 reward on every issue row.">
-            <Toggle value={settings.showPredictScore} onChange={(v) => update('showPredictScore', v)} />
-          </Field>
           <Field label="Show labels in tables" hint="Inline label chips on issues — turn off for a denser table.">
             <Toggle value={settings.showLabelsInTable} onChange={(v) => update('showLabelsInTable', v)} />
           </Field>

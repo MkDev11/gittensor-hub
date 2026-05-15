@@ -15,7 +15,6 @@ import {
   BellIcon,
   CheckCircleIcon,
   EyeIcon,
-  ZapIcon,
 } from '@primer/octicons-react';
 
 interface Section {
@@ -32,7 +31,6 @@ const SECTIONS: Section[] = [
   { id: 'pulls', title: 'Pull Requests', icon: <GitPullRequestIcon size={16} /> },
   { id: 'my-prs', title: 'My PRs', icon: <PersonIcon size={16} /> },
   { id: 'manage', title: 'Manage Repositories', icon: <RepoIcon size={16} /> },
-  { id: 'predict', title: 'Predict Score', icon: <ZapIcon size={16} /> },
   { id: 'notifications', title: 'Notifications', icon: <BellIcon size={16} /> },
   { id: 'settings', title: 'Settings', icon: <GearIcon size={16} /> },
   { id: 'shortcuts', title: 'Keyboard Shortcuts', icon: <EyeIcon size={16} /> },
@@ -174,7 +172,7 @@ export default function DocsPage() {
                 <Li>
                   <strong>Middle pane</strong> — Issues / Pull Requests tabs for the selected repo. Each table shows
                   state badges, author with avatar, opened/updated/closed timestamps (recent items in bold green),
-                  predicted SN74 score, and related-PR count for issues.
+                  and related-PR count for issues.
                 </Li>
                 <Li>
                   <strong>Right rail (when open)</strong> — issue/PR content viewer. Slides in from the right and
@@ -208,7 +206,7 @@ export default function DocsPage() {
             <Article id="issues" title="Issues page">
               <P>
                 <Code>/issues</Code> — global aggregated view of every cached issue across every tracked repo. Sortable
-                on Repository, Weight, Predict Score, Comments, Opened, Closed.
+                on Repository, Weight, Comments, Opened, Closed.
               </P>
               <Ul>
                 <Li><strong>State filter</strong>: All / Open / Completed / Not planned / Closed (other)</Li>
@@ -256,22 +254,6 @@ export default function DocsPage() {
                 <Li>Edit weight or notes inline; remove with the trash icon (confirmation prompt)</Li>
               </Ul>
               <P>Stored in SQLite (<Code>user_repos</Code> table) so they persist across server restarts.</P>
-            </Article>
-
-            <Article id="predict" title="Predict Score">
-              <P>
-                Predicted SN74 reward for solving an issue. Formula:
-              </P>
-              <Pre>
-{`predicted = 25 (base) × repo_weight × issue_multiplier × label_multiplier × time_decay`}
-              </Pre>
-              <Ul>
-                <Li><strong>Base</strong>: 25 points if PR's tree-sitter token_score ≥ 5</Li>
-                <Li><strong>Repo weight</strong>: from master_repositories.json (e.g. Bitcoin: 0.4274)</Li>
-                <Li><strong>Issue multiplier</strong>: 1.66x if author is a repo maintainer, 1.33x otherwise</Li>
-                <Li><strong>Label multiplier</strong>: feature 1.5x, bug 1.25x, refactor 0.5x — best-case from issue labels</Li>
-                <Li><strong>Time decay</strong>: 1.0 if PR merges within 12h grace; sigmoid decay over a 35-day window</Li>
-              </Ul>
             </Article>
 
             <Article id="notifications" title="Notifications">

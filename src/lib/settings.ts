@@ -11,7 +11,6 @@ export type ContentDisplayMode = 'modal' | 'accordion' | 'side';
 export interface AppSettings {
   defaultIssueState: IssueDefaultState;
   density: DensityMode;
-  showPredictScore: boolean;
   showLabelsInTable: boolean;
   pollIntervalMs: number;
   uiTickMs: number;
@@ -27,7 +26,6 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultIssueState: 'all',
   density: 'comfortable',
-  showPredictScore: true,
   showLabelsInTable: true,
   pollIntervalMs: 1000,
   uiTickMs: 1000,

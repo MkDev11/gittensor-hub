@@ -16,7 +16,6 @@ type SortKey =
   | 'author'
   | 'state'
   | 'comments'
-  | 'predict'
   | 'author_open'
   | 'author_completed'
   | 'author_not_planned'
@@ -28,8 +27,6 @@ const SORT_COLUMN: Partial<Record<SortKey, string>> = {
   closed: 'i.closed_at',
   author: 'i.author_login',
   comments: 'i.comments',
-  // `predict` falls through to updated_at; the client re-sorts the page.
-  predict: 'i.updated_at',
 };
 
 export async function GET(
