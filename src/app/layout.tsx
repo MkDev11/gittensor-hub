@@ -10,8 +10,8 @@ import PollerStatusBar from '@/components/PollerStatusBar';
 import TopProgressBar from '@/components/TopProgressBar';
 
 export const metadata: Metadata = {
-  title: 'Gittensor Miner Dashboard',
-  description: 'Bittensor Subnet 74 miner-view dashboard',
+  title: 'Gittensor Hub',
+  description: 'Real-time dashboard for Bittensor Subnet 74 miners — track issues, pull requests, and contributor activity across all SN74 whitelisted repos.',
 };
 
 export default function RootLayout({
