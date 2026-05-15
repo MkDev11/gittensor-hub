@@ -16,13 +16,9 @@ export async function GET() {
     .prepare('SELECT full_name, last_fetch_error FROM repo_meta WHERE last_fetch_error IS NOT NULL LIMIT 10')
     .all();
 
-  // Denominator = unique repos the poller will sweep: live SN74 list plus
-  // user-added repos that aren't already on the SN74 list. Mirrors the
-  // dedup logic in `poller.ts:getAllRepos()` so the progress bar caps at
-  // exactly the number of repos the poller is actually working through.
-  // Replaces the previous hardcoded `216` (the bundled snapshot size), which
-  // made the progress bar look perpetually stuck at ~4% once we switched to
-  // the much smaller live list (~9 repos).
+  // Denominator must match what the poller actually sweeps — mirror the
+  // dedup in `poller.ts:getAllRepos()` so user-added SN74 repos aren't
+  // double-counted.
   const { repos: liveRepos } = await getLiveReposAsyncServer();
   const sn74Names = new Set(liveRepos.map((r) => r.fullName.toLowerCase()));
   const userExtras = (db

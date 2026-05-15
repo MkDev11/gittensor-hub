@@ -15,13 +15,9 @@ const REMOTE_URL =
   'https://raw.githubusercontent.com/entrius/gittensor/main/gittensor/validator/weights/master_repositories.json';
 const REFRESH_MS = 5 * 60 * 1000;
 
-// Upstream master_repositories.json has evolved away from a single `weight`
-// field — it now exposes `emission_share` (the per-repo slice of the subnet's
-// emission) plus a bunch of scoring knobs (issue_discovery_share,
-// label_multipliers, fixed_base_score, eligibility_mode, ...). We map
-// `emission_share` → our internal `weight` since that's the closest analogue
-// of the legacy field and what the dashboard ranks repos by. Other fields are
-// ignored for now; surface them here if/when the UI needs them.
+// Upstream replaced `weight` with `emission_share` plus a set of scoring
+// knobs. We map `emission_share` → internal `weight` and ignore the rest
+// until the UI needs them.
 interface MasterRepoEntry {
   emission_share?: number;
   issue_discovery_share?: number;
@@ -52,20 +48,13 @@ function entryInactiveAt(ent: MasterRepoEntry): string | null {
 }
 
 let lastFetchedAt = 0;
-// Tracks the last *attempt* (success or failure). Used to throttle retries
-// after a failed fetch — without this, every incoming request that finds
-// `inFlight === null` would re-trigger the live fetch since `lastFetchedAt`
-// stays 0 on failure, amplifying load on a degraded upstream.
+// Stamped on every attempt (success or failure) so a failed fetch is
+// throttled by FAILURE_BACKOFF_MS instead of amplifying load while
+// `lastFetchedAt` stays at 0.
 let lastAttemptAt = 0;
 let inFlight: Promise<void> | null = null;
 
-// How long to back off after a failed fetch before trying again. Shorter than
-// REFRESH_MS so the dashboard recovers quickly once upstream is healthy, but
-// long enough to absorb a thundering-herd of concurrent requests.
 const FAILURE_BACKOFF_MS = 30_000;
-// Hard timeout on the upstream fetch. Without this a hung connection would
-// keep `inFlight` pending forever and block every consumer awaiting
-// `getLiveReposAsyncServer()`.
 const FETCH_TIMEOUT_MS = 10_000;
 
 // In-memory mirror of the latest live JSON, keyed by lower-cased full_name.
