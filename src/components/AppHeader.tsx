@@ -19,8 +19,12 @@ const navItems = [
   { href: '/docs', label: 'Docs', icon: BookIcon },
 ];
 
+// Routes that should render full-bleed without the nav header (pre-auth screens).
+const HIDE_HEADER_ROUTES = new Set(['/sign-in']);
+
 export default function AppHeader() {
   const pathname = usePathname();
+  if (HIDE_HEADER_ROUTES.has(pathname)) return null;
 
   return (
     <Header

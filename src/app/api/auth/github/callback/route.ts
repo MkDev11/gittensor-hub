@@ -87,11 +87,15 @@ export async function GET(req: NextRequest) {
     github_login: user.login,
     avatar_url: user.avatar_url,
   });
-  await setSessionCookieFor(row);
-
-  // Approved + admin → original destination. Anyone else lands on the gating page.
+  // Rejected users (admin-banned) don't get a session, just bounce back to
+  // sign-in with an error so they can't quietly retry.
   const origin = publicOrigin(req);
-  const redirectTo =
-    row.status === 'approved' ? new URL(next, origin) : new URL('/pending-approval', origin);
-  return NextResponse.redirect(redirectTo);
+  if (row.status === 'rejected') {
+    const url = new URL('/sign-in', origin);
+    url.searchParams.set('error', 'account_rejected');
+    return NextResponse.redirect(url);
+  }
+
+  await setSessionCookieFor(row);
+  return NextResponse.redirect(new URL(next, origin));
 }

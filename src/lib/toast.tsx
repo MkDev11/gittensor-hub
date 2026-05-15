@@ -131,27 +131,33 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   );
 
   if (toast.onClick) {
+    // <div role="button"> instead of <button> because `inner` contains an
+    // IconButton (the dismiss X), and nesting <button> inside <button> is
+    // invalid HTML — Next 15 surfaces it as a hydration error.
+    const activate = () => {
+      toast.onClick!();
+      onClose();
+    };
     return (
-      <button
-        type="button"
-        onClick={() => {
-          toast.onClick!();
-          onClose();
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={activate}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+          }
         }}
         style={{
-          textDecoration: 'none',
           display: 'block',
           width: '100%',
-          padding: 0,
-          background: 'transparent',
-          border: 'none',
           cursor: 'pointer',
-          fontFamily: 'inherit',
           textAlign: 'left',
         }}
       >
         {inner}
-      </button>
+      </div>
     );
   }
   if (toast.href) {
