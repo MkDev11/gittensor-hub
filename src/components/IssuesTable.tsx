@@ -26,12 +26,11 @@ import type { IssueDto } from '@/lib/api-types';
 import { IssueStatusBadge } from '@/components/StatusBadge';
 import { formatRelativeTime } from '@/lib/format';
 import { useTrackedRepos } from '@/lib/tracked-repos';
-import { predictScore } from '@/lib/validate';
 import ContentViewer from '@/components/ContentViewer';
 import { useSettings } from '@/lib/settings';
 import { useSn74Repos, lookupWeight } from '@/lib/use-sn74-repos';
 
-type SortKey = 'opened' | 'closed' | 'updated' | 'comments' | 'repo' | 'weight' | 'number' | 'score';
+type SortKey = 'opened' | 'closed' | 'updated' | 'comments' | 'repo' | 'weight' | 'number';
 type SortDir = 'asc' | 'desc';
 type StateFilter = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed_other';
 type CloseFilter = 'all' | 'closed' | 'still_open';
@@ -120,8 +119,6 @@ export default function IssuesTable() {
       else if (sortKey === 'number') cmp = a.number - b.number;
       else if (sortKey === 'weight') {
         cmp = (lookupWeight(repoWeights, a.repo_full_name) ?? 0) - (lookupWeight(repoWeights, b.repo_full_name) ?? 0);
-      } else if (sortKey === 'score') {
-        cmp = predictScore(a).predicted - predictScore(b).predicted;
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -173,7 +170,7 @@ export default function IssuesTable() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'opened' || key === 'closed' || key === 'updated' || key === 'weight' || key === 'comments' || key === 'score' ? 'desc' : 'asc');
+      setSortDir(key === 'opened' || key === 'closed' || key === 'updated' || key === 'weight' || key === 'comments' ? 'desc' : 'asc');
     }
   };
 
@@ -252,7 +249,6 @@ export default function IssuesTable() {
                 </Box>
               </Box>
               <HeaderCell label="Weight" onClick={() => toggleSort('weight')} active={sortKey === 'weight'} dir={sortDir} align="right" />
-              <HeaderCell label="Predict" onClick={() => toggleSort('score')} active={sortKey === 'score'} dir={sortDir} align="right" />
               <HeaderCell label="Comments" onClick={() => toggleSort('comments')} active={sortKey === 'comments'} dir={sortDir} align="right" />
               <HeaderCell label="Opened" onClick={() => toggleSort('opened')} active={sortKey === 'opened'} dir={sortDir} />
               <FilterHeader
@@ -272,7 +268,7 @@ export default function IssuesTable() {
           <Box as="tbody">
             {isLoading && filtered.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={10} sx={{ p: 0, height: 320 }}>
+                <Box as="td" colSpan={9} sx={{ p: 0, height: 320 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
                     <Spinner size="xl" tone="accent" label="Loading issues…" />
                   </Box>
@@ -281,7 +277,7 @@ export default function IssuesTable() {
             )}
             {!isLoading && filtered.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={10} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+                <Box as="td" colSpan={9} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
                   {data && data.count === 0
                     ? 'No issues cached yet. Visit a repo page or run the poller to populate.'
                     : 'No issues match these filters.'}
@@ -304,7 +300,7 @@ export default function IssuesTable() {
                   />
                   {expanded && settings.contentDisplay === 'accordion' && (
                     <Box as="tr">
-                      <Box as="td" colSpan={10} sx={{ p: 0 }}>
+                      <Box as="td" colSpan={9} sx={{ p: 0 }}>
                         <ContentViewer
                           target={{ kind: 'issue', owner: o, name: n, number: issue.number, preloaded: issue }}
                           mode="inline"
@@ -609,25 +605,6 @@ function IssueTableRow({
         }}
       >
         {weight.toFixed(4)}
-      </Box>
-      <Box as="td" sx={{ px: 2, py: '6px', textAlign: 'right', whiteSpace: 'nowrap', verticalAlign: 'middle', height: 36 }}>
-        {(() => {
-          const s = predictScore(issue);
-          if (s.predicted === 0) {
-            return <Text sx={{ color: 'fg.muted', fontFamily: 'mono', fontSize: 0 }}>—</Text>;
-          }
-          const tone = s.predicted >= 25 ? 'success.fg' : s.predicted >= 10 ? 'attention.fg' : 'fg.default';
-          return (
-            <Box title={s.formula} sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-              <Text sx={{ fontWeight: 700, fontFamily: 'mono', fontSize: 1, color: tone, fontVariantNumeric: 'tabular-nums' }}>
-                {s.predicted.toFixed(2)}
-              </Text>
-              <Text sx={{ fontSize: '10px', color: 'fg.muted', fontFamily: 'mono' }}>
-                {s.worst.toFixed(1)}–{s.best.toFixed(1)}
-              </Text>
-            </Box>
-          );
-        })()}
       </Box>
       <Box as="td" sx={{ px: 2, py: '6px', textAlign: 'right', verticalAlign: 'middle', height: 36 }}>
         {issue.comments > 0 && (

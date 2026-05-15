@@ -38,7 +38,6 @@ import { useTrackedRepos } from '@/lib/tracked-repos';
 import { IssueStatusBadge, PullStatusBadge } from '@/components/StatusBadge';
 import { formatRelativeTime, isRecent } from '@/lib/format';
 import { useMinerLogin } from '@/lib/use-miner';
-import { predictScore } from '@/lib/validate';
 import Dropdown from '@/components/Dropdown';
 import ContentViewer from '@/components/ContentViewer';
 import SearchInput from '@/components/SearchInput';
@@ -58,7 +57,6 @@ type IssueSortKey =
   | 'closed'
   | 'author'
   | 'state'
-  | 'predict'
   | 'comments'
   | 'author_open'
   | 'author_completed'
@@ -1134,15 +1132,7 @@ export default function RepoExplorer() {
     return map;
   }, [issuesData]);
 
-  // Server already filtered, sorted, and paginated. Only "predict" requires a
-  // client-side resort because the formula isn't expressed in SQL — we re-sort
-  // just the current page (a known limitation: predict sort is page-local).
-  const filteredIssues = useMemo(() => {
-    const list = issuesData?.issues ?? [];
-    if (issueSortKey !== 'predict') return list;
-    const dir = issueSortDir === 'asc' ? 1 : -1;
-    return [...list].sort((a, b) => (predictScore(a).predicted - predictScore(b).predicted) * dir);
-  }, [issuesData, issueSortKey, issueSortDir]);
+  const filteredIssues = useMemo(() => issuesData?.issues ?? [], [issuesData]);
 
   const issueAuthorOptions = useMemo(() => issuesMeta?.author_options ?? [], [issuesMeta]);
 
@@ -1450,7 +1440,7 @@ export default function RepoExplorer() {
                     minWidth: 48,
                     textAlign: 'right',
                   }}
-                  title={`Weight ${repo.weight.toFixed(4)} · multiplies the 25-pt PR base score`}
+                  title={`SN74 weight ${repo.weight.toFixed(4)}`}
                 >
                   {repo.weight.toFixed(3)}
                 </Text>
@@ -1611,7 +1601,6 @@ export default function RepoExplorer() {
                       <SortHeader label="Opened" sortKey="opened" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
                       <SortHeader label="Updated" sortKey="updated" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
                       <SortHeader label="Closed" sortKey="closed" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
-                      <SortHeader label="Predict" sortKey="predict" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="right" />
                       <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>PRs</Box>
                       <Box as="th" sx={{ ...tableHeaderSx, textAlign: 'center' }}>VAL</Box>
                     </Box>
@@ -1653,7 +1642,7 @@ export default function RepoExplorer() {
                           />
                           {expanded && settings.contentDisplay === 'accordion' && (
                             <Box as="tr">
-                              <Box as="td" colSpan={14} sx={{ p: 0 }}>
+                              <Box as="td" colSpan={13} sx={{ p: 0 }}>
                                 <ContentViewer
                                   target={{
                                     kind: 'issue',
@@ -2344,12 +2333,10 @@ function AuthorSidebar({
                 <Box as="th" sx={{ ...tableHeaderSx, width: 56 }}>No</Box>
                 <Box as="th" sx={tableHeaderSx}>Issue</Box>
                 <Box as="th" sx={{ ...tableHeaderSx, width: 112 }}>Updated</Box>
-                <Box as="th" sx={{ ...tableHeaderSx, width: 84, textAlign: 'right' }}>Predict</Box>
               </Box>
             </Box>
             <Box as="tbody">
               {issues.map((issue, index) => {
-                const score = predictScore(issue).predicted;
                 return (
                   <Box
                     as="tr"
@@ -2406,9 +2393,6 @@ function AuthorSidebar({
                     </Box>
                     <Box as="td" sx={tableTimeSx} title={issue.updated_at ?? undefined}>
                       <RecentTime iso={issue.updated_at} />
-                    </Box>
-                    <Box as="td" sx={{ ...tableCellSx, textAlign: 'right', fontFamily: 'mono' }}>
-                      {score > 0 ? score.toFixed(1) : '—'}
                     </Box>
                   </Box>
                 );
@@ -3270,8 +3254,6 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
   onPRClick: (prNumber: number) => void | Promise<void>;
   onAuthorClick: (login: string, association?: string | null) => void;
 }) {
-  const score = predictScore(issue);
-  const tone = score.predicted >= 25 ? 'var(--success-fg)' : score.predicted >= 10 ? '#d29922' : 'var(--fg-default)';
   return (
     <Box
       as="tr"
@@ -3346,15 +3328,6 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
       </Box>
       <Box as="td" sx={tableTimeSx} title={issue.closed_at ?? undefined}>
         {issue.closed_at ? <RecentTime iso={issue.closed_at} /> : <Text sx={{ color: 'var(--fg-muted)' }}>—</Text>}
-      </Box>
-      <Box as="td" sx={{ ...tableCellSx, textAlign: 'right', whiteSpace: 'nowrap' }} title={score.formula}>
-        {score.predicted > 0 ? (
-          <Text sx={{ fontFamily: 'mono', fontWeight: 700, fontSize: 1, color: tone, fontVariantNumeric: 'tabular-nums' }}>
-            {score.predicted.toFixed(2)}
-          </Text>
-        ) : (
-          <Text sx={{ color: 'var(--fg-muted)', fontFamily: 'mono', fontSize: 0 }}>—</Text>
-        )}
       </Box>
       <Box as="td" sx={{ ...tableCellSx, textAlign: 'center', whiteSpace: 'nowrap' }}>
         <RelatedPRsCell prs={relatedPRs} onPRClick={onPRClick} />
