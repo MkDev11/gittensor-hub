@@ -7,6 +7,9 @@ dist
 .env.*.local
 *.log
 .DS_Store
+# Whole-directory ignore; safe even when `data` is a symlink to another
+# worktree's DB (dev setup). Individual entries below stay for documentation.
+/data
 data/cache.db
 data/cache.db-journal
 data/cache.db-wal
