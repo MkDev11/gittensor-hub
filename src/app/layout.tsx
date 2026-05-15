@@ -20,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-color-mode="dark" data-dark-theme="dark">
+    <html lang="en" data-color-mode="dark" data-dark-theme="dark" suppressHydrationWarning>
       <body>
         <StyledComponentsRegistry>
           <Providers>
