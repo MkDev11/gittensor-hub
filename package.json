@@ -16,7 +16,7 @@
     "better-sqlite3": "^11.7.0",
     "dompurify": "^3.4.1",
     "marked": "^18.0.2",
-    "next": "14.2.18",
+    "next": "14.2.32",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "styled-components": "^5.3.11"
@@ -30,6 +30,8 @@
     "typescript": "^5.7.2"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }
