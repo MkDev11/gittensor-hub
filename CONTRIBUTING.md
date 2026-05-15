@@ -5,7 +5,7 @@
 Before contributing, please:
 
 1. Read the [README](./README.md) to understand the project
-2. Familiarize yourself with the tech stack (Next.js 14, TypeScript, Primer React, SQLite)
+2. Familiarize yourself with the tech stack (Next.js 15, TypeScript, Primer React, SQLite)
 3. Check existing issues, PRs, and discussions to avoid duplicate work
 
 ### Local Development
@@ -21,6 +21,12 @@ Before contributing, please:
 5. Run `pnpm dev` to start the development server on `http://localhost:12074`
 
 > **Never connect your local app to the production database.** Each contributor's `data/cache.db` is local and isolated by design — sharing the prod DB would expose other users' data and risk corruption from dev experiments.
+
+### Open Work Limit
+
+To keep the queue readable and prevent spam, each contributor may have **at most 3 open issues and 3 open pull requests** at any time. Closed or merged items don't count.
+
+If you're at the limit, finish or close one of your open items before opening a new one. Maintainers will close excess issues / PRs without review.
 
 ### Creating Issues
 
