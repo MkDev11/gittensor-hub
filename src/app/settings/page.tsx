@@ -6,10 +6,9 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageLayout, Heading, Text, Box } from '@primer/react';
 import Spinner from '@/components/Spinner';
-import { GearIcon, PaintbrushIcon, CpuIcon, BellIcon, RepoIcon, PersonIcon, EyeIcon, ArrowLeftIcon } from '@primer/octicons-react';
+import { GearIcon, PaintbrushIcon, BellIcon, RepoIcon, PersonIcon, EyeIcon, ArrowLeftIcon } from '@primer/octicons-react';
 import { useSettings, DEFAULT_SETTINGS, useSession } from '@/lib/settings';
 import { useTheme } from '@/lib/theme';
-import { MODELS, type ModelId } from '@/lib/models';
 import Dropdown from '@/components/Dropdown';
 
 export default function SettingsPage() {
@@ -146,19 +145,6 @@ export default function SettingsPage() {
           </Field>
         </Section>
 
-        {/* AI */}
-        <Section title="AI" icon={<CpuIcon size={16} />}>
-          <Field label="Default model" hint="Used when opening the validate dialog. You can override per-issue.">
-            <Dropdown
-              value={settings.defaultModel}
-              onChange={(v) => update('defaultModel', v as ModelId)}
-              options={MODELS.map((m) => ({ value: m.id, label: m.label, hint: m.badge }))}
-              width={240}
-              ariaLabel="Default AI model"
-            />
-          </Field>
-        </Section>
-
         {/* Browsing defaults */}
         <Section title="Browsing defaults" icon={<RepoIcon size={16} />}>
           <Field label="Default issue state filter">
@@ -235,21 +221,6 @@ export default function SettingsPage() {
             hint="When using accordion mode, automatically expand the first row of the table."
           >
             <Toggle value={settings.autoExpandFirst} onChange={(v) => update('autoExpandFirst', v)} />
-          </Field>
-          <Field
-            label="Validate dialog display"
-            hint="How the AI validate dialog opens when you click the Validate button on an issue."
-          >
-            <Dropdown
-              value={settings.validateDisplay}
-              onChange={(v) => update('validateDisplay', v as 'modal' | 'side')}
-              options={[
-                { value: 'modal', label: 'Modal (centered overlay)' },
-                { value: 'side', label: 'Side panel (slides from right)' },
-              ]}
-              width={260}
-              ariaLabel="Validate dialog display mode"
-            />
           </Field>
         </Section>
 

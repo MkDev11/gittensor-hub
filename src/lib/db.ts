@@ -118,32 +118,9 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_pulls_repo_author ON pulls(repo_full_name, author_login);
     CREATE INDEX IF NOT EXISTS idx_pulls_seen_created_repo ON pulls(first_seen_at, created_at, repo_full_name);
 
-    CREATE TABLE IF NOT EXISTS ai_verdicts (
-      repo_full_name TEXT NOT NULL,
-      issue_number   INTEGER NOT NULL,
-      model          TEXT NOT NULL,
-      verdict        TEXT NOT NULL,
-      reasoning      TEXT,
-      created_at     TEXT NOT NULL,
-      PRIMARY KEY (repo_full_name, issue_number, model)
-    );
-
-    -- Cached AI review of a pull request (the "Validate PR" flow). Mirrors
-    -- ai_verdicts but keyed on PR number; reasoning holds the full markdown
-    -- response from the model.
-    CREATE TABLE IF NOT EXISTS ai_pr_verdicts (
-      repo_full_name TEXT NOT NULL,
-      pr_number      INTEGER NOT NULL,
-      model          TEXT NOT NULL,
-      verdict        TEXT NOT NULL,
-      reasoning      TEXT,
-      created_at     TEXT NOT NULL,
-      PRIMARY KEY (repo_full_name, pr_number, model)
-    );
-
     -- Per-user "valid / invalid" marker on an issue. Independent of GitHub's
-    -- own state — this is the dashboard user's own judgement (e.g. after the
-    -- AI verdict and a manual review). Cleared by deleting the row.
+    -- own state — this is the dashboard user's own judgement after a manual
+    -- review. Cleared by deleting the row.
     CREATE TABLE IF NOT EXISTS issue_validations (
       user_id        INTEGER NOT NULL,
       repo_full_name TEXT NOT NULL,
@@ -153,27 +130,6 @@ export function getDb(): Database.Database {
       PRIMARY KEY (user_id, repo_full_name, issue_number)
     );
     CREATE INDEX IF NOT EXISTS idx_issue_validations_repo ON issue_validations(repo_full_name, issue_number);
-
-    CREATE TABLE IF NOT EXISTS duplicate_checks (
-      repo_full_name TEXT NOT NULL,
-      issue_number   INTEGER NOT NULL,
-      model          TEXT NOT NULL,
-      is_duplicate   INTEGER NOT NULL,
-      duplicate_of   INTEGER,
-      confidence     TEXT,
-      reasoning      TEXT,
-      created_at     TEXT NOT NULL,
-      PRIMARY KEY (repo_full_name, issue_number, model)
-    );
-
-    CREATE TABLE IF NOT EXISTS prompts (
-      repo_full_name TEXT NOT NULL,
-      issue_number   INTEGER NOT NULL,
-      model          TEXT NOT NULL,
-      prompt         TEXT NOT NULL,
-      created_at     TEXT NOT NULL,
-      PRIMARY KEY (repo_full_name, issue_number, model)
-    );
 
     CREATE TABLE IF NOT EXISTS repo_meta (
       full_name                  TEXT PRIMARY KEY,

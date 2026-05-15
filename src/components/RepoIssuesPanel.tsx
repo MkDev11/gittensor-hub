@@ -9,8 +9,6 @@ import { SearchIcon, CommentIcon, ClockIcon } from '@primer/octicons-react';
 import type { IssueDto, IssuesResponse } from '@/lib/api-types';
 import { IssueStatusBadge } from '@/components/StatusBadge';
 import { formatRelativeTime } from '@/lib/format';
-import ValidateIssueDialog from '@/components/ValidateIssueDialog';
-import ValidateButton from '@/components/ValidateButton';
 
 type StateFilter = 'all' | 'open' | 'completed' | 'not_planned' | 'closed_other';
 
@@ -25,7 +23,6 @@ const FILTER_OPTS: { id: StateFilter; label: string }[] = [
 export default function RepoIssuesPanel({ owner, name }: { owner: string; name: string }) {
   const [filter, setFilter] = useState<StateFilter>('all');
   const [query, setQuery] = useState('');
-  const [validateTarget, setValidateTarget] = useState<{ number: number; title: string } | null>(null);
 
   const { data, isLoading, isError, dataUpdatedAt } = useQuery<IssuesResponse>({
     queryKey: ['issues', owner, name],
@@ -104,25 +101,14 @@ export default function RepoIssuesPanel({ owner, name }: { owner: string; name: 
             key={issue.id}
             issue={issue}
             isLast={idx === filtered.length - 1}
-            onValidate={() => setValidateTarget({ number: issue.number, title: issue.title })}
           />
         ))}
       </Box>
-
-      {validateTarget && (
-        <ValidateIssueDialog
-          owner={owner}
-          name={name}
-          number={validateTarget.number}
-          title={validateTarget.title}
-          onClose={() => setValidateTarget(null)}
-        />
-      )}
     </Box>
   );
 }
 
-function IssueRow({ issue, isLast, onValidate }: { issue: IssueDto; isLast: boolean; onValidate: () => void }) {
+function IssueRow({ issue, isLast }: { issue: IssueDto; isLast: boolean }) {
   return (
     <Box
       sx={{
@@ -139,9 +125,6 @@ function IssueRow({ issue, isLast, onValidate }: { issue: IssueDto; isLast: bool
         <IssueStatusBadge issue={issue} />
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Box sx={{ float: 'right' }}>
-          <ValidateButton onClick={onValidate} />
-        </Box>
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}>
           <PrimerLink
             href={issue.html_url ?? '#'}

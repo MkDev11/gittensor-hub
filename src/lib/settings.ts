@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { ModelId } from '@/lib/models';
 
 const STORAGE_KEY = 'gittensor.settings';
 
@@ -10,7 +9,6 @@ export type DensityMode = 'comfortable' | 'compact';
 export type ContentDisplayMode = 'modal' | 'accordion' | 'side';
 
 export interface AppSettings {
-  defaultModel: ModelId;
   defaultIssueState: IssueDefaultState;
   density: DensityMode;
   showPredictScore: boolean;
@@ -21,14 +19,12 @@ export interface AppSettings {
   showRateLimit: boolean;
   defaultRepoSort: 'weight' | 'name' | 'tracked';
   contentDisplay: ContentDisplayMode;
-  validateDisplay: 'modal' | 'side';
   renderMarkdown: boolean;
   autoExpandFirst: boolean;
   pageSize: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  defaultModel: 'claude-opus-4-7',
   defaultIssueState: 'all',
   density: 'comfortable',
   showPredictScore: true,
@@ -39,7 +35,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showRateLimit: true,
   defaultRepoSort: 'weight',
   contentDisplay: 'modal',
-  validateDisplay: 'modal',
   renderMarkdown: true,
   autoExpandFirst: false,
   pageSize: 25,

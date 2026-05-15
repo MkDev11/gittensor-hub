@@ -8,9 +8,9 @@ module.exports = {
     {
       name: 'gittensor-miner-dashboard',
       cwd: '/root/_GittensorDashboard',
-      script: 'npm',
-      args: 'run start',
-      // npm needs argv[0]
+      script: 'pnpm',
+      args: 'start',
+      // pnpm needs argv[0]
       interpreter: 'none',
       autorestart: true,
       max_restarts: 50,

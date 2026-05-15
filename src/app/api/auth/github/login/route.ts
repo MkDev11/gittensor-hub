@@ -33,7 +33,9 @@ export async function GET(req: NextRequest) {
   const cookieOpts = {
     httpOnly: true,
     sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
+    // Tied to the actual request scheme — Secure cookies aren't sent over
+    // plain HTTP, so the callback would lose the state cookie and fail.
+    secure: publicOrigin(req).startsWith('https://'),
     path: '/',
     maxAge: STATE_MAX_AGE_SEC,
   };

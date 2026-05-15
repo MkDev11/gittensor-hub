@@ -13,7 +13,6 @@ import {
   PersonIcon,
   GearIcon,
   BellIcon,
-  CpuIcon,
   CheckCircleIcon,
   EyeIcon,
   ZapIcon,
@@ -33,7 +32,6 @@ const SECTIONS: Section[] = [
   { id: 'pulls', title: 'Pull Requests', icon: <GitPullRequestIcon size={16} /> },
   { id: 'my-prs', title: 'My PRs', icon: <PersonIcon size={16} /> },
   { id: 'manage', title: 'Manage Repositories', icon: <RepoIcon size={16} /> },
-  { id: 'validate', title: 'AI Validation', icon: <CpuIcon size={16} /> },
   { id: 'predict', title: 'Predict Score', icon: <ZapIcon size={16} /> },
   { id: 'notifications', title: 'Notifications', icon: <BellIcon size={16} /> },
   { id: 'settings', title: 'Settings', icon: <GearIcon size={16} /> },
@@ -153,7 +151,6 @@ export default function DocsPage() {
               <P>
                 The dashboard polls GitHub for issues and pull requests across all 200+ SN74 whitelisted repos plus any
                 custom repos you add, caches them locally, and surfaces the data through several interconnected views.
-                It also integrates Anthropic and OpenAI models for AI-driven issue validation and prompt generation.
               </P>
               <H3>Tech stack</H3>
               <Ul>
@@ -161,7 +158,6 @@ export default function DocsPage() {
                 <Li>SQLite cache for issues / PRs / linked-issue map</Li>
                 <Li>TanStack Query for client-side polling and cache</Li>
                 <Li>Octokit for GitHub REST + raw fetch for SN74 whitelist auto-sync</Li>
-                <Li>Anthropic + OpenAI SDKs for AI validation</Li>
               </Ul>
             </Article>
 
@@ -178,11 +174,11 @@ export default function DocsPage() {
                 <Li>
                   <strong>Middle pane</strong> — Issues / Pull Requests tabs for the selected repo. Each table shows
                   state badges, author with avatar, opened/updated/closed timestamps (recent items in bold green),
-                  predicted SN74 score, related-PR count for issues, and a Validate button.
+                  predicted SN74 score, and related-PR count for issues.
                 </Li>
                 <Li>
-                  <strong>Right rail (when open)</strong> — issue/PR content viewer or the AI Validate dialog. Slides in
-                  from the right and pushes the table left so nothing is hidden.
+                  <strong>Right rail (when open)</strong> — issue/PR content viewer. Slides in from the right and
+                  pushes the table left so nothing is hidden.
                 </Li>
               </Ul>
               <P>Both side rails are <strong>resizable</strong> — drag the vertical separators.</P>
@@ -262,42 +258,6 @@ export default function DocsPage() {
               <P>Stored in SQLite (<Code>user_repos</Code> table) so they persist across server restarts.</P>
             </Article>
 
-            <Article id="validate" title="AI Validation">
-              <P>
-                Each issue has a <strong>Validate</strong> button. Opens a dialog with two layers of analysis:
-              </P>
-              <H3>1. Deterministic checks (no AI)</H3>
-              <P>Mirrors SN74's own validity rules — fast, free, always runs:</P>
-              <Ul>
-                <Li>Repo in SN74 whitelist?</Li>
-                <Li>Issue has identified author</Li>
-                <Li>Author is repo maintainer (1.66x bonus) vs contributor (1.33x)</Li>
-                <Li>Issue state is solvable (open or completed)</Li>
-                <Li>No disqualifying labels (wontfix, invalid, duplicate)</Li>
-              </Ul>
-              <H3>2. AI judgment</H3>
-              <P>
-                Calls Claude Opus 4.7 / GPT-5.5 / GPT-5.3 Codex (your choice), running at max reasoning effort.
-                Returns a structured verdict: <Code>valid</Code> / <Code>invalid</Code> / <Code>uncertain</Code>,
-                confidence %, engineering-effort estimate (the human coding work needed to fix the issue —
-                <em>not</em> the model&apos;s reasoning budget), reasoning, risks.
-              </P>
-              <H3>Prompt generation</H3>
-              <P>
-                Once validated, click <strong>Generate prompt</strong> to produce a high-quality coding-task prompt for
-                the selected model. Includes acceptance criteria, file-discovery strategy, test guidance, scope
-                guardrails. Copy and paste into Claude Code, Cursor, or your preferred AI dev tool.
-              </P>
-              <P>
-                Verdicts and prompts are cached in SQLite per <Code>(issue, model)</Code> — re-clicking is free and
-                instant.
-              </P>
-              <P>
-                Display mode is configurable in Settings: <Code>modal</Code> (centered overlay), <Code>side</Code>{' '}
-                (slides from right, doesn't cover the table), or <Code>accordion</Code> (expands inline).
-              </P>
-            </Article>
-
             <Article id="predict" title="Predict Score">
               <P>
                 Predicted SN74 reward for solving an issue. Formula:
@@ -312,10 +272,6 @@ export default function DocsPage() {
                 <Li><strong>Label multiplier</strong>: feature 1.5x, bug 1.25x, refactor 0.5x — best-case from issue labels</Li>
                 <Li><strong>Time decay</strong>: 1.0 if PR merges within 12h grace; sigmoid decay over a 35-day window</Li>
               </Ul>
-              <P>
-                The validate dialog shows <strong>predicted / worst / best</strong> range so you can estimate downside if
-                the PR ends up labeled differently.
-              </P>
             </Article>
 
             <Article id="notifications" title="Notifications">
@@ -338,9 +294,7 @@ export default function DocsPage() {
               <Ul>
                 <Li><strong>Theme</strong>: dark / light</Li>
                 <Li><strong>Density</strong>: comfortable / compact</Li>
-                <Li><strong>Default AI model</strong>: Claude Opus 4.7 / GPT-5.5 / GPT-5.3 Codex</Li>
                 <Li><strong>Issue / PR content display</strong>: modal / side panel / inline accordion</Li>
-                <Li><strong>Validate dialog display</strong>: modal / side panel</Li>
                 <Li><strong>Render markdown</strong>: on/off for issue & PR bodies</Li>
                 <Li><strong>Default issue state filter</strong> and <strong>repo sort order</strong></Li>
                 <Li><strong>Page size</strong>: 10/25/50/100/All for paginated tables</Li>
