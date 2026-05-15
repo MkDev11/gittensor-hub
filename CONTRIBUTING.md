@@ -17,13 +17,13 @@ Before contributing, please:
 
 ### Creating Issues
 
-When opening an issue, use the appropriate template:
+Click **New issue** on GitHub and one of these templates will load automatically:
 
-* **Bug Report** — Report bugs or unexpected behavior. Include steps to reproduce, expected vs. actual behavior, and environment details.
-* **Feature Request** — Suggest new features or improvements. Explain the motivation and the proposed solution.
-* **Blank Issue** — For issues that don't fit the above templates.
+* **[Bug Report](./.github/ISSUE_TEMPLATE/bug_report.yml)** — Report bugs or unexpected behavior. Include steps to reproduce, expected vs. actual behavior, and environment details.
+* **[Feature Request](./.github/ISSUE_TEMPLATE/feature_request.yml)** — Suggest new features or improvements. Explain the motivation and the proposed solution.
+* **Open a blank issue** — For issues that don't fit the above templates.
 
-For security vulnerabilities, **do not create a public issue**. Report them privately via GitHub Security Advisories.
+For security vulnerabilities, **do not create a public issue**. Report them privately via [GitHub Security Advisories](https://github.com/MkDev11/gittensor-hub/security/advisories/new) — see [SECURITY.md](./SECURITY.md).
 
 ### Lifecycle of a Pull Request
 
@@ -46,12 +46,12 @@ For security vulnerabilities, **do not create a public issue**. Report them priv
 
 1. Push your branch to your fork
 2. Open a PR targeting the `main` branch of `MkDev11/gittensor-hub`
-3. Fill out the PR description with:
+3. The [PR template](./.github/PULL_REQUEST_TEMPLATE.md) loads automatically — fill in:
    * **Summary** — Clear description of changes
    * **Related Issues** — Link issues using `Fixes #123` or `Closes #456`
    * **Type of Change** — Bug fix, new feature, refactor, documentation, or other
    * **Testing** — Confirm manual testing performed (browser smoke test if UI, build pass otherwise)
-   * **Checklist** — Verify code style, self-review, and documentation updates
+   * **Checklist** — Self-review, no unrelated changes, docs updated if needed
 
 #### 4. Code Review
 
@@ -79,13 +79,12 @@ Apply appropriate labels to help categorize and track your contribution:
 * Avoid adding unnecessary dependencies
 * Ensure `pnpm build` passes (TypeScript compilation + Next.js build)
 
-#### Formatting
+#### Pre-submission check
 
-This project uses TypeScript with `next lint`. Run before submitting:
+Make sure the project still builds — this covers TypeScript and Next.js compilation:
 
 ```
-pnpm build           # type-check + Next.js build
-pnpm lint            # ESLint via Next.js
+pnpm build
 ```
 
 ### Branches
