@@ -4,10 +4,7 @@ const nextConfig = {
   compiler: {
     styledComponents: true,
   },
-  experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3'],
-    instrumentationHook: true,
-  },
+  serverExternalPackages: ['better-sqlite3'],
 };
 
 module.exports = nextConfig;

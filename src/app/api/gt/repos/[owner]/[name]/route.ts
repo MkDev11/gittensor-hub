@@ -61,7 +61,8 @@ async function getAggregates(): Promise<CachedAggregates> {
   return inFlight;
 }
 
-export async function GET(_req: Request, { params }: { params: { owner: string; name: string } }) {
+export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
+  const params = await ctx.params;
   const fullName = `${params.owner}/${params.name}`;
   try {
     const [agg, gh] = await Promise.all([

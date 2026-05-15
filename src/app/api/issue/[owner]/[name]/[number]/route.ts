@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { owner: string; name: string; number: string } }
+  ctx: { params: Promise<{ owner: string; name: string; number: string }> }
 ) {
+  const params = await ctx.params;
   const { owner, name } = params;
   const num = parseInt(params.number, 10);
   const repoFullName = `${owner}/${name}`;

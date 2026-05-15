@@ -127,7 +127,16 @@ export function useSession(): AuthSession & { signOut: () => Promise<void> } {
 
   useEffect(() => {
     void refresh();
-    const handler = () => void refresh();
+    // `kind: 'logout'` means the caller already cleared the cookie — refetching
+    // /api/auth/me would just produce a 401. Skip the fetch and reset locally.
+    const handler = (e: Event) => {
+      const kind = (e as CustomEvent<{ kind?: string }>).detail?.kind;
+      if (kind === 'logout') {
+        setSession({ ...EMPTY, loading: false });
+        return;
+      }
+      void refresh();
+    };
     window.addEventListener('session-changed', handler);
     return () => window.removeEventListener('session-changed', handler);
   }, [refresh]);
@@ -135,7 +144,7 @@ export function useSession(): AuthSession & { signOut: () => Promise<void> } {
   const signOut = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     setSession({ ...EMPTY, loading: false });
-    window.dispatchEvent(new Event('session-changed'));
+    window.dispatchEvent(new CustomEvent('session-changed', { detail: { kind: 'logout' } }));
   }, []);
 
   return { ...session, signOut };

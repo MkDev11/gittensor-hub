@@ -11,7 +11,8 @@ const CANDIDATES = [
   'contributing.md',
 ];
 
-export async function GET(_req: Request, { params }: { params: { owner: string; name: string } }) {
+export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
+  const params = await ctx.params;
   for (const path of CANDIDATES) {
     try {
       const r = await withRotation((octokit) =>

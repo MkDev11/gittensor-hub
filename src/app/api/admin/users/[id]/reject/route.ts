@@ -3,7 +3,8 @@ import { getSessionFromCookies, getUserById, rejectUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const params = await ctx.params;
   const sess = await getSessionFromCookies();
   if (!sess) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const me = getUserById(sess.uid);

@@ -3,7 +3,8 @@ import { withRotation } from '@/lib/github';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(_req: Request, { params }: { params: { owner: string; name: string } }) {
+export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
+  const params = await ctx.params;
   try {
     const [profileR, repoR] = await Promise.all([
       withRotation((octokit) => octokit.rest.repos.getCommunityProfileMetrics({ owner: params.owner, repo: params.name })).catch(() => null),

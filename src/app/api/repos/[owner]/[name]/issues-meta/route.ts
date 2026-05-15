@@ -10,8 +10,9 @@ export const dynamic = 'force-dynamic';
 // per-author OPEN/DONE/NP badges stay populated as the user paginates.
 export async function GET(
   req: NextRequest,
-  { params }: { params: { owner: string; name: string } }
+  ctx: { params: Promise<{ owner: string; name: string }> }
 ) {
+  const params = await ctx.params;
   const full = `${params.owner}/${params.name}`;
   const db = getReadDb();
   const url = new URL(req.url);

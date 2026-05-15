@@ -12,7 +12,8 @@ function isProbablyText(buf: Buffer): boolean {
   return true;
 }
 
-export async function GET(req: Request, { params }: { params: { owner: string; name: string } }) {
+export async function GET(req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
+  const params = await ctx.params;
   const { searchParams } = new URL(req.url);
   const path = searchParams.get('path') ?? '';
   try {

@@ -48,8 +48,8 @@ ensureSessionSecret();
 
 // Mirror the request scheme so cookies aren't dropped on HTTP-only deploys —
 // browsers refuse to send Secure cookies over plain HTTP.
-function isHttpsRequest(): boolean {
-  const h = headers();
+async function isHttpsRequest(): Promise<boolean> {
+  const h = await headers();
   const proto = h.get('x-forwarded-proto') || '';
   if (proto) return proto.split(',')[0].trim() === 'https';
   return (h.get('host') || '').endsWith(':443');
@@ -65,31 +65,34 @@ export async function setSessionCookieFor(user: UserRow): Promise<void> {
     avatar_url: user.avatar_url,
     exp,
   });
-  cookies().set({
+  const jar = await cookies();
+  jar.set({
     name: SESSION_COOKIE_NAME,
     value: token,
     httpOnly: true,
     sameSite: 'lax',
-    secure: isHttpsRequest(),
+    secure: await isHttpsRequest(),
     path: '/',
     maxAge: SESSION_MAX_AGE_SEC,
   });
 }
 
-export function clearSessionCookie(): void {
-  cookies().set({
+export async function clearSessionCookie(): Promise<void> {
+  const jar = await cookies();
+  jar.set({
     name: SESSION_COOKIE_NAME,
     value: '',
     httpOnly: true,
     sameSite: 'lax',
-    secure: isHttpsRequest(),
+    secure: await isHttpsRequest(),
     path: '/',
     maxAge: 0,
   });
 }
 
 export async function getSessionFromCookies() {
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
 }
 
@@ -150,30 +153,40 @@ export function upsertGithubUser(input: {
 
   if (!existing) {
     const isAdmin = isLoginAutoAdmin(input.github_login);
-    const initialStatus: SessionStatus = isAdmin ? 'approved' : 'pending';
     const info = db
       .prepare(
         `INSERT INTO users (github_id, github_login, avatar_url, status, is_admin, created_at, last_login_at, approved_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, 'approved', ?, ?, ?, ?)`,
       )
       .run(
         input.github_id,
         input.github_login,
         input.avatar_url,
-        initialStatus,
         isAdmin ? 1 : 0,
         now,
         now,
-        isAdmin ? now : null,
+        now,
       );
     return getUserById(Number(info.lastInsertRowid))!;
   }
 
-  db.prepare(
-    `UPDATE users
-       SET github_login = ?, avatar_url = ?, last_login_at = ?
-     WHERE id = ?`,
-  ).run(input.github_login, input.avatar_url, now, existing.id);
+  // Backfill: any user still flagged 'pending' from the old approval flow gets
+  // promoted on their next login. 'rejected' users stay rejected — that's the
+  // admin-ban path and must remain gated by middleware.
+  if (existing.status === 'pending') {
+    db.prepare(
+      `UPDATE users
+         SET github_login = ?, avatar_url = ?, last_login_at = ?,
+             status = 'approved', approved_at = COALESCE(approved_at, ?)
+       WHERE id = ?`,
+    ).run(input.github_login, input.avatar_url, now, now, existing.id);
+  } else {
+    db.prepare(
+      `UPDATE users
+         SET github_login = ?, avatar_url = ?, last_login_at = ?
+       WHERE id = ?`,
+    ).run(input.github_login, input.avatar_url, now, existing.id);
+  }
   return getUserById(existing.id)!;
 }
 

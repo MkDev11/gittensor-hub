@@ -4,9 +4,7 @@ import './globals.css';
 import StyledComponentsRegistry from '@/lib/StyledRegistry';
 import Providers from '@/components/Providers';
 import AppHeader from '@/components/AppHeader';
-import NewIssuesWatcher from '@/components/NewIssuesWatcher';
-import NewPendingUsersWatcher from '@/components/NewPendingUsersWatcher';
-import PollerStatusBar from '@/components/PollerStatusBar';
+import BackgroundWatchers from '@/components/BackgroundWatchers';
 import TopProgressBar from '@/components/TopProgressBar';
 
 export const metadata: Metadata = {
@@ -20,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-color-mode="dark" data-dark-theme="dark">
+    <html lang="en" data-color-mode="dark" data-dark-theme="dark" suppressHydrationWarning>
       <body>
         <StyledComponentsRegistry>
           <Providers>
@@ -28,10 +26,8 @@ export default function RootLayout({
               <TopProgressBar />
             </Suspense>
             <AppHeader />
-            <NewIssuesWatcher />
-            <NewPendingUsersWatcher />
+            <BackgroundWatchers />
             <main>{children}</main>
-            <PollerStatusBar />
           </Providers>
         </StyledComponentsRegistry>
       </body>

@@ -11,10 +11,6 @@ function isPublic(pathname: string): boolean {
   return false;
 }
 
-// Pages a session-holder may visit even when status !== 'approved'. Anything
-// not in this list redirects to /pending-approval for pending/rejected users.
-const PENDING_ALLOWED_PAGES = new Set(['/pending-approval', '/sign-in']);
-
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
@@ -43,22 +39,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Pending or rejected users get bounced to /pending-approval (except a small
-  // allow-list so the polling refresh + sign-out still work).
-  if (session.status !== 'approved') {
-    if (pathname.startsWith('/api/')) return NextResponse.next();
-    if (PENDING_ALLOWED_PAGES.has(pathname)) return NextResponse.next();
+  // Rejected users are admin-banned: clear their session and bounce to sign-in
+  // with an error so they can't silently retry.
+  if (session.status === 'rejected') {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Account suspended' }, { status: 403 });
+    }
     const url = req.nextUrl.clone();
-    url.pathname = '/pending-approval';
+    url.pathname = '/sign-in';
     url.search = '';
-    return NextResponse.redirect(url);
-  }
-
-  // Approved sessions trying to revisit /pending-approval just go home.
-  if (pathname === '/pending-approval') {
-    const url = req.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
+    url.searchParams.set('error', 'account_rejected');
+    const res = NextResponse.redirect(url);
+    res.cookies.delete(SESSION_COOKIE_NAME);
+    return res;
   }
 
   return NextResponse.next();
