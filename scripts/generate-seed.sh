@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Generate a sanitized SQLite snapshot of the dashboard cache for distribution
-# to contributors. User-side tables (users, issue_validations, user_repos) are
-# always wiped. The --light flag also trims issues/PRs to recent entries from
-# the top-weighted repos so the seed fits under GitHub's 2 GB asset limit.
+# MAINTAINER ONLY — runs on the production VPS to generate the snapshot you
+# upload to a GitHub Release. Contributors do NOT run this; they use
+# scripts/seed-db.sh to download the published seed.
+#
+# Generates a sanitized SQLite snapshot of the dashboard cache. User-side
+# tables (users, issue_validations, user_repos) are always wiped, along with
+# orphan tables left behind from the removed AI feature. The --light flag
+# also trims issues/PRs to recent entries from the top-weighted repos so the
+# seed fits under GitHub's 2 GB release-asset limit.
 #
 # Usage:
 #   ./scripts/generate-seed.sh                # full snapshot (large)
