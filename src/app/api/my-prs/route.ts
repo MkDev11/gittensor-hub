@@ -31,6 +31,7 @@ interface MyPullDto {
   state: string;
   draft: number;
   merged: number;
+  author_association: string | null;
   created_at: string | null;
   updated_at: string | null;
   closed_at: string | null;
@@ -58,13 +59,14 @@ async function refreshMyPRsIfStale(login: string) {
           const repo_full_name = it.repository_url.replace('https://api.github.com/repos/', '');
           const merged_at = it.pull_request.merged_at ?? null;
           db.prepare(
-            `INSERT INTO pulls (repo_full_name, number, title, body, state, draft, merged, author_login,
+            `INSERT INTO pulls (repo_full_name, number, title, body, state, draft, merged, author_login, author_association,
                                 created_at, updated_at, closed_at, merged_at, html_url, raw_json, fetched_at, first_seen_at)
-             VALUES (@repo_full_name, @number, @title, @body, @state, @draft, @merged, @author_login,
+             VALUES (@repo_full_name, @number, @title, @body, @state, @draft, @merged, @author_login, @author_association,
                      @created_at, @updated_at, @closed_at, @merged_at, @html_url, @raw_json, @fetched_at, @first_seen_at)
              ON CONFLICT(repo_full_name, number) DO UPDATE SET
                title=excluded.title, body=excluded.body, state=excluded.state, draft=excluded.draft,
-               merged=excluded.merged, updated_at=excluded.updated_at, closed_at=excluded.closed_at,
+               merged=excluded.merged, author_association=excluded.author_association,
+               updated_at=excluded.updated_at, closed_at=excluded.closed_at,
                merged_at=excluded.merged_at, html_url=excluded.html_url, raw_json=excluded.raw_json,
                fetched_at=excluded.fetched_at`
           ).run({
@@ -76,6 +78,7 @@ async function refreshMyPRsIfStale(login: string) {
             draft: it.draft ? 1 : 0,
             merged: merged_at ? 1 : 0,
             author_login: it.user?.login ?? login,
+            author_association: it.author_association ?? null,
             created_at: it.created_at,
             updated_at: it.updated_at,
             closed_at: it.closed_at,
@@ -109,7 +112,7 @@ export async function GET() {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT repo_full_name, number, title, body, state, draft, merged,
+      `SELECT repo_full_name, number, title, body, state, draft, merged, author_association,
               created_at, updated_at, closed_at, merged_at, html_url
        FROM pulls
        WHERE LOWER(author_login) = LOWER(?)

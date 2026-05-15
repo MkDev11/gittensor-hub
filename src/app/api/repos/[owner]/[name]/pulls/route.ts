@@ -118,7 +118,7 @@ export async function GET(
   const rows = db
     .prepare(
       `SELECT id, repo_full_name, number, title, NULL as body, state, draft, merged,
-              author_login, created_at, updated_at, closed_at, merged_at,
+              author_login, author_association, created_at, updated_at, closed_at, merged_at,
               html_url, fetched_at, first_seen_at
        FROM pulls
        WHERE ${whereSql}

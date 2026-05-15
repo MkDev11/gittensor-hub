@@ -1,5 +1,3 @@
-import rawRepos from '@/data/master_repositories.json';
-
 export interface RepoEntry {
   fullName: string;
   owner: string;
@@ -14,60 +12,14 @@ export interface RepoEntry {
   inactiveAt: string | null;
 }
 
-interface MasterRepoEntry {
-  weight: number;
-  inactive_at?: string | null;
-}
-
-function buildRepos(map: Record<string, MasterRepoEntry>): RepoEntry[] {
-  return Object.entries(map)
-    .map(([fullName, entry]) => {
-      const [owner, name] = fullName.split('/');
-      return {
-        fullName,
-        owner,
-        name,
-        weight: entry.weight,
-        inactiveAt: entry.inactive_at ?? null,
-      };
-    })
-    .sort((a, b) => b.weight - a.weight);
-}
-
-const bundledMap = rawRepos as Record<string, MasterRepoEntry>;
-
 /**
- * Bundled snapshot of master_repositories.json baked in at build time. Used
- * as the synchronous fallback before the live fetch resolves and whenever
- * GitHub is unreachable. Most callers should prefer `getLiveRepos()` which
- * returns this on cold start and switches to the live source thereafter.
+ * Empty by design — the bundled `master_repositories.json` is no longer
+ * consulted. Live data flows from `/api/sn74-repos` (server-side) into
+ * client components via `useSn74Repos()`. Anything that imported this for
+ * a synchronous initial value now just gets an empty list until the live
+ * fetch lands; render an empty/loading state accordingly.
  */
-export const ALL_REPOS: RepoEntry[] = buildRepos(bundledMap);
-
-// Client-safe accessor: returns just the bundled snapshot. Server-side code
-// that wants the bundled-plus-discovered merge should import
-// `getLiveReposServer` / `getLiveReposAsyncServer` from `repos-server.ts`.
-export function getLiveRepos(): RepoEntry[] {
-  return ALL_REPOS;
-}
-
-export async function getLiveReposAsync(): Promise<{
-  repos: RepoEntry[];
-  source: 'live' | 'bundled';
-  fetchedAt: number;
-}> {
-  return { repos: ALL_REPOS, source: 'bundled', fetchedAt: 0 };
-}
-
-export function isRepoInactive(repo: RepoEntry | { inactiveAt: string | null }): boolean {
-  return repo.inactiveAt != null;
-}
-
-export const REPO_COUNT = ALL_REPOS.length;
-
-export function getRepo(fullName: string): RepoEntry | undefined {
-  return getLiveRepos().find((r) => r.fullName.toLowerCase() === fullName.toLowerCase());
-}
+export const ALL_REPOS: RepoEntry[] = [];
 
 export function weightBand(weight: number): {
   label: string;

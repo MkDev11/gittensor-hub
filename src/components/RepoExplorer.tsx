@@ -79,12 +79,24 @@ interface RepoBadgesResponse {
 const EMPTY_PRS: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }> = [];
 const EMPTY_ISSUES: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }> = [];
 
+// Placeholder used while the live SN74 list is loading. We can't render with a
+// `null` selection without making every downstream read nullable, so we hold a
+// dummy entry that yields empty issues/PRs and gets swapped out the moment
+// `allRepos` populates (see the `selected`-hydration effect below).
+const EMPTY_REPO: RepoEntry = {
+  fullName: '',
+  owner: '',
+  name: '',
+  weight: 0,
+  inactiveAt: null,
+};
+
 export default function RepoExplorer() {
   const { tracked, toggle: toggleTrack } = useTrackedRepos();
   const [repoQuery, setRepoQuery] = useState('');
   const [repoSort, setRepoSort] = useState<RepoSort>('weight');
   const [trackedOnly, setTrackedOnly] = useState(false);
-  const [selected, setSelected] = useState<RepoEntry>(ALL_REPOS[0]);
+  const [selected, setSelected] = useState<RepoEntry>(EMPTY_REPO);
   const [tab, setTabState] = useState<Tab>('issues');
   const [issueQuery, setIssueQuery] = useState('');
   const [issueState, setIssueState] = useState<IssueState>('all');
@@ -391,7 +403,7 @@ export default function RepoExplorer() {
   // Server polls master_repositories.json every 5 min and persists any new
   // repos at weight 0; nothing is ever removed. Client refetches on the same
   // cadence so newly discovered repos appear without a page reload.
-  const { data: sn74ReposData } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'bundled'; count: number }>({
+  const { data: sn74ReposData } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
     queryKey: ['sn74-repos'],
     queryFn: async ({ signal }) => {
       const r = await fetch('/api/sn74-repos', { signal });
@@ -433,15 +445,21 @@ export default function RepoExplorer() {
   // the URL caught up. The functional setter below makes the equality check
   // self-contained without needing the dep.
   useEffect(() => {
-    if (!searchParams) return;
-    const r = searchParams.get('repo');
-    if (!r) return;
+    const urlRepo = searchParams?.get('repo') ?? null;
     setSelected((prev) => {
-      if (prev.fullName === r) return prev; // no change needed
-      const found = allRepos.find((x) => x.fullName === r);
-      if (!found) return prev;
-      selectedFromUrlRef.current = true;
-      return found;
+      // Prefer the URL-specified repo when present.
+      if (urlRepo) {
+        if (prev.fullName === urlRepo) return prev;
+        const found = allRepos.find((x) => x.fullName === urlRepo);
+        if (!found) return prev;
+        selectedFromUrlRef.current = true;
+        return found;
+      }
+      // No `?repo=` and we're still on the placeholder: promote the
+      // first real repo from the live list so the page has something
+      // to render once `/api/sn74-repos` lands.
+      if (!prev.fullName && allRepos.length > 0) return allRepos[0];
+      return prev;
     });
   }, [searchParams, allRepos]);
 
@@ -543,7 +561,11 @@ export default function RepoExplorer() {
 
   // issuesAllMode + INFINITE_CHUNK are hoisted to the top of the component.
   const issuesPageSize = issuesAllMode ? INFINITE_CHUNK : (settings.pageSize > 0 ? settings.pageSize : 50);
-  const queriesReady = settingsReady && routeReady;
+  // `selected.fullName === ''` is the `EMPTY_REPO` placeholder we hold before
+  // `allRepos` arrives. Gating queries on this prevents firing `/api/repos//…`
+  // requests with empty owner/name path segments — the server would just
+  // return empty payloads but it's wasted work.
+  const queriesReady = settingsReady && routeReady && selected.fullName !== '';
   const shouldLoadIssues = tab === 'issues';
 
   const buildIssuesUrl = (page: number, size: number) => {
@@ -3195,7 +3217,7 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
         </Box>
       </Box>
       <Box as="td" sx={{ ...tableCellSx, fontSize: 0 }}>
-        <AuthorCell login={pr.author_login} highlight={mine} />
+        <AuthorCell login={pr.author_login} association={pr.author_association} highlight={mine} />
       </Box>
       <Box as="td" sx={tableTimeSx} title={pr.created_at ?? undefined}>
         <RecentTime iso={pr.created_at} />

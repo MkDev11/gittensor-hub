@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Text, TextInput, Link as PrimerLink } from '@primer/react';
+import { Box, Label, Text, TextInput, Link as PrimerLink } from '@primer/react';
 import Spinner from '@/components/Spinner';
 import Dropdown from '@/components/Dropdown';
 import { SearchIcon, ClockIcon, PersonIcon } from '@primer/octicons-react';
@@ -154,6 +154,11 @@ function PullRow({ pr, isLast, mine }: { pr: PullDto; isLast: boolean; mine: boo
             <ClockIcon size={12} />
             opened {formatRelativeTime(pr.created_at)} by{' '}
             <Text sx={{ color: mine ? 'attention.fg' : 'fg.default', fontWeight: 500 }}>{pr.author_login ?? 'unknown'}</Text>
+            {pr.author_association && pr.author_association !== 'NONE' && (
+              <Label variant="secondary" sx={{ ml: 1, fontSize: '10px' }}>
+                {pr.author_association.toLowerCase()}
+              </Label>
+            )}
           </Box>
           {pr.merged_at && <Text>· merged {formatRelativeTime(pr.merged_at)}</Text>}
           {!pr.merged_at && pr.closed_at && <Text>· closed {formatRelativeTime(pr.closed_at)}</Text>}

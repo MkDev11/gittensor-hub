@@ -6,7 +6,7 @@ import { ALL_REPOS, type RepoEntry } from '@/lib/repos';
 
 interface Sn74ReposResp {
   repos: RepoEntry[];
-  source: 'live' | 'bundled';
+  source: 'live' | 'empty';
   fetched_at: string | null;
   count: number;
 }
