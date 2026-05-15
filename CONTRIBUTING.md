@@ -79,13 +79,12 @@ Apply appropriate labels to help categorize and track your contribution:
 * Avoid adding unnecessary dependencies
 * Ensure `pnpm build` passes (TypeScript compilation + Next.js build)
 
-#### Formatting
+#### Pre-submission check
 
-This project uses TypeScript with `next lint`. Run before submitting:
+Make sure the project still builds — this covers TypeScript and Next.js compilation:
 
 ```
-pnpm build           # type-check + Next.js build
-pnpm lint            # ESLint via Next.js
+pnpm build
 ```
 
 ### Branches
