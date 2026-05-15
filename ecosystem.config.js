@@ -1,13 +1,13 @@
-// pm2 process config for the gittensor miner dashboard.
+// pm2 process config for gittensor-hub.
 // Usage:
 //   pm2 start ecosystem.config.js
 //   pm2 save               # persist for `pm2 resurrect` on reboot
-//   pm2 logs gittensor-miner-dashboard
+//   pm2 logs gittensor-hub
 module.exports = {
   apps: [
     {
-      name: 'gittensor-miner-dashboard',
-      cwd: '/root/_GittensorDashboard',
+      name: 'gittensor-hub',
+      cwd: '/root/gittensor-hub',
       script: 'pnpm',
       args: 'start',
       // pnpm needs argv[0]
@@ -20,8 +20,8 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: '12074',
       },
-      out_file: '/root/.pm2/logs/gittensor-miner-dashboard-out.log',
-      error_file: '/root/.pm2/logs/gittensor-miner-dashboard-error.log',
+      out_file: '/root/.pm2/logs/gittensor-hub-out.log',
+      error_file: '/root/.pm2/logs/gittensor-hub-error.log',
       time: true,
     },
   ],
