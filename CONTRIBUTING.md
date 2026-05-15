@@ -19,8 +19,8 @@ Before contributing, please:
 
 Click **New issue** on GitHub and one of these templates will load automatically:
 
-* **[Bug Report](./.github/ISSUE_TEMPLATE/bug_report.yml)** — Report bugs or unexpected behavior. Include steps to reproduce, expected vs. actual behavior, and environment details.
-* **[Feature Request](./.github/ISSUE_TEMPLATE/feature_request.yml)** — Suggest new features or improvements. Explain the motivation and the proposed solution.
+* **[Bug Report](./.github/ISSUE_TEMPLATE/bug_report.md)** — Report bugs or unexpected behavior. Include steps to reproduce, expected vs. actual behavior, and environment details.
+* **[Feature Request](./.github/ISSUE_TEMPLATE/feature_request.md)** — Suggest new features or improvements. Explain the motivation and the proposed solution.
 * **Open a blank issue** — For issues that don't fit the above templates.
 
 For security vulnerabilities, **do not create a public issue**. Report them privately via [GitHub Security Advisories](https://github.com/MkDev11/gittensor-hub/security/advisories/new) — see [SECURITY.md](./SECURITY.md).
