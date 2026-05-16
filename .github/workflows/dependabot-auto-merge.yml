@@ -16,10 +16,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Auto-merge patch + minor updates. Major bumps are ignored at the
-      # dependabot.yml level so they never reach this workflow.
-      - if: contains(fromJson('["version-update:semver-patch","version-update:semver-minor"]'), steps.meta.outputs.update-type)
-        run: gh pr merge --auto --squash "$PR_URL"
+      # Auto-merge any dependabot PR. Majors are already ignored upstream by
+      # dependabot.yml, and grouped PRs (where update-type is empty) need to
+      # auto-merge too — so we don't gate on update-type here.
+      - run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
