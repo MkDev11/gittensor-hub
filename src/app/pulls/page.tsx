@@ -185,9 +185,9 @@ export default function AllPullsPage() {
               px: '12px',
               height: 32,
               border: '1px solid',
-              borderColor: mineOnly ? '#d29922' : 'var(--border-default)',
-              bg: mineOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
-              color: mineOnly ? '#d29922' : 'var(--fg-default)',
+              borderColor: mineOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+              bg: mineOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
+              color: mineOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
               borderRadius: '6px',
               cursor: 'pointer',
               fontSize: '14px',
@@ -199,14 +199,14 @@ export default function AllPullsPage() {
               type="checkbox"
               checked={mineOnly}
               onChange={(e) => setMineOnly(e.target.checked)}
-              style={{ margin: 0, width: 14, height: 14, accentColor: '#d29922', cursor: 'pointer' }}
+              style={{ margin: 0, width: 14, height: 14, accentColor: 'var(--attention-emphasis)', cursor: 'pointer' }}
             />
             My PRs only
             {myCount > 0 && (
               <Box
                 sx={{
                   px: '6px',
-                  bg: mineOnly ? '#d29922' : 'var(--bg-emphasis)',
+                  bg: mineOnly ? 'var(--attention-emphasis)' : 'var(--bg-emphasis)',
                   color: mineOnly ? '#ffffff' : 'var(--fg-default)',
                   fontSize: '11px',
                   fontWeight: 700,
@@ -502,11 +502,11 @@ function PullTableRow({
       sx={{
         borderBottom: '1px solid',
         borderColor: 'border.muted',
-        bg: expanded ? 'accent.muted' : mine ? 'rgba(187, 128, 9, 0.08)' : 'transparent',
+        bg: expanded ? 'accent.muted' : mine ? 'rgba(242, 201, 76, 0.08)' : 'transparent',
         borderLeft: '3px solid',
-        borderLeftColor: mine ? '#d29922' : 'transparent',
+        borderLeftColor: mine ? 'var(--attention-emphasis)' : 'transparent',
         cursor: 'pointer',
-        '&:hover': { bg: mine ? 'rgba(187, 128, 9, 0.12)' : 'canvas.subtle' },
+        '&:hover': { bg: mine ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'canvas.subtle' },
       }}
     >
       <Box as="td" sx={{ px: 2, py: '6px', verticalAlign: 'middle' }}>
@@ -574,7 +574,7 @@ function PullTableRow({
               loading="lazy"
               style={{ width: 20, height: 20, borderRadius: '50%', border: '1px solid var(--border-muted)', flexShrink: 0 }}
             />
-            <Text sx={{ fontWeight: 500, color: mine ? '#d29922' : 'fg.default', '&:hover': { color: 'accent.fg' } }}>
+            <Text sx={{ fontWeight: 500, color: mine ? 'var(--attention-emphasis)' : 'fg.default', '&:hover': { color: 'accent.fg' } }}>
               {pr.author_login}
             </Text>
             {pr.author_association && pr.author_association !== 'NONE' && (

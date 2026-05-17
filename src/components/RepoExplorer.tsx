@@ -1254,9 +1254,9 @@ export default function RepoExplorer() {
                 px: '10px',
                 borderRadius: '6px',
                 border: '1px solid',
-                borderColor: trackedOnly ? '#d29922' : 'var(--border-default)',
-                bg: trackedOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
-                color: trackedOnly ? '#d29922' : 'var(--fg-default)',
+                borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+                bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
+                color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
                 cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: 500,
@@ -1300,19 +1300,19 @@ export default function RepoExplorer() {
                   bg: isSelected
                     ? 'var(--bg-emphasis)'
                     : priority
-                    ? 'rgba(210, 153, 34, 0.12)'
+                    ? 'var(--attention-subtle)'
                     : 'transparent',
                   borderLeft: '3px solid',
                   borderLeftColor: isSelected
                     ? 'var(--accent-emphasis)'
                     : priority
-                    ? '#d29922'
+                    ? 'var(--attention-emphasis)'
                     : 'transparent',
                   '&:hover': {
                     bg: isSelected
                       ? 'var(--bg-emphasis)'
                       : priority
-                      ? 'rgba(210, 153, 34, 0.20)'
+                      ? 'var(--attention-subtle-strong)'
                       : 'var(--bg-subtle)',
                   },
                 }}
@@ -1327,13 +1327,13 @@ export default function RepoExplorer() {
                     cursor: 'pointer',
                     border: 'none',
                     bg: 'transparent',
-                    color: isTracked ? '#d29922' : 'var(--fg-muted)',
+                    color: isTracked ? 'var(--attention-emphasis)' : 'var(--fg-muted)',
                     p: 1,
                     borderRadius: 1,
                     display: 'inline-flex',
                     alignItems: 'center',
                     flexShrink: 0,
-                    '&:hover': { color: '#d29922' },
+                    '&:hover': { color: 'var(--attention-emphasis)' },
                   }}
                 >
                   {isTracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
@@ -1437,7 +1437,7 @@ export default function RepoExplorer() {
                     sx={{
                       px: '5px',
                       py: '1px',
-                      bg: 'rgba(31, 111, 235, 0.15)',
+                      bg: 'var(--accent-subtle)',
                       color: 'var(--accent-fg)',
                       fontSize: '9px',
                       fontWeight: 700,
@@ -1494,7 +1494,7 @@ export default function RepoExplorer() {
               {selected.fullName}
             </PrimerLink>
             {tracked.has(selected.fullName) && (
-              <Box sx={{ color: '#d29922', display: 'inline-flex', alignItems: 'center', gap: 1, fontSize: 0 }}>
+              <Box sx={{ color: 'var(--attention-emphasis)', display: 'inline-flex', alignItems: 'center', gap: 1, fontSize: 0 }}>
                 <StarFillIcon size={12} />
                 <Text>Tracked</Text>
               </Box>
@@ -1746,16 +1746,16 @@ export default function RepoExplorer() {
                     py: '5px',
                     height: 32,
                     border: '1px solid',
-                    borderColor: prMineOnly ? '#d29922' : 'var(--border-default)',
-                    bg: prMineOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
-                    color: prMineOnly ? '#d29922' : 'var(--fg-default)',
+                    borderColor: prMineOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+                    bg: prMineOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
+                    color: prMineOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     fontSize: '14px',
                     fontWeight: 500,
                     userSelect: 'none',
                     transition: 'border-color 80ms, background 80ms, color 80ms',
-                    '&:hover': { borderColor: prMineOnly ? '#d29922' : 'var(--border-strong)' },
+                    '&:hover': { borderColor: prMineOnly ? 'var(--attention-emphasis)' : 'var(--border-strong)' },
                   }}
                 >
                   <input
@@ -1766,7 +1766,7 @@ export default function RepoExplorer() {
                       margin: 0,
                       width: 14,
                       height: 14,
-                      accentColor: '#d29922',
+                      accentColor: 'var(--attention-emphasis)',
                       cursor: 'pointer',
                     }}
                   />
@@ -1777,7 +1777,7 @@ export default function RepoExplorer() {
                       sx={{
                         px: '6px',
                         py: 0,
-                        bg: prMineOnly ? '#d29922' : 'var(--bg-emphasis)',
+                        bg: prMineOnly ? 'var(--attention-emphasis)' : 'var(--bg-emphasis)',
                         color: prMineOnly ? '#ffffff' : 'var(--fg-default)',
                         fontSize: '11px',
                         fontWeight: 700,
@@ -2330,10 +2330,10 @@ function AuthorSidebar({
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 2, textAlign: 'center' }}>
             <Metric label="Total" value={stats?.total ?? issues.length} fg="var(--fg-default)" bg="var(--bg-emphasis)" />
-            <Metric label="Open" value={stats?.open ?? 0} fg="var(--success-fg)" bg="rgba(46, 160, 67, 0.18)" />
-            <Metric label="Done" value={stats?.completed ?? 0} fg="#a371f7" bg="rgba(163, 113, 247, 0.18)" />
+            <Metric label="Open" value={stats?.open ?? 0} fg="var(--success-fg)" bg="var(--success-subtle)" />
+            <Metric label="Done" value={stats?.completed ?? 0} fg="var(--done-fg)" bg="var(--done-subtle)" />
             <Metric label="NP" value={stats?.not_planned ?? 0} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
-            <Metric label="CL" value={stats?.closed ?? 0} fg="var(--danger-fg)" bg="rgba(248, 81, 73, 0.15)" />
+            <Metric label="CL" value={stats?.closed ?? 0} fg="var(--danger-fg)" bg="var(--danger-subtle)" />
           </Box>
         )}
       </Box>
@@ -2472,7 +2472,7 @@ function ValidationPicker({
           borderTopLeftRadius: 6,
           borderBottomLeftRadius: 6,
           borderRight: 'none',
-          background: value === 'valid' ? 'rgba(46, 160, 67, 0.28)' : 'var(--bg-emphasis)',
+          background: value === 'valid' ? 'rgba(76, 183, 130, 0.28)' : 'var(--bg-emphasis)',
           color: value === 'valid' ? 'var(--success-fg)' : 'var(--fg-muted)',
         }}
       >
@@ -2489,7 +2489,7 @@ function ValidationPicker({
           ...cellSx,
           borderTopRightRadius: 6,
           borderBottomRightRadius: 6,
-          background: value === 'invalid' ? 'rgba(248, 81, 73, 0.28)' : 'var(--bg-emphasis)',
+          background: value === 'invalid' ? 'rgba(235, 87, 87, 0.28)' : 'var(--bg-emphasis)',
           color: value === 'invalid' ? 'var(--danger-fg)' : 'var(--fg-muted)',
         }}
       >
@@ -2831,7 +2831,7 @@ const AuthorCell = React.memo(function AuthorCell({
       />
       <Text
         sx={{
-          color: highlight ? '#d29922' : 'var(--fg-default)',
+          color: highlight ? 'var(--attention-emphasis)' : 'var(--fg-default)',
           fontWeight: 500,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -3000,7 +3000,7 @@ const CountBadge = React.memo(function CountBadge({ n, fg, bg }: { n: number; fg
 function weightColor(w: number): string {
   if (w >= 0.5) return 'var(--success-fg)';
   if (w >= 0.3) return 'var(--accent-fg)';
-  if (w >= 0.15) return '#d29922';
+  if (w >= 0.15) return 'var(--attention-emphasis)';
   if (w >= 0.05) return 'var(--fg-default)';
   return 'var(--fg-subtle)';
 }
@@ -3115,7 +3115,7 @@ function TabButton({
             padding: '0 6px',
             height: 18,
             minWidth: 18,
-            background: '#cf222e',
+            background: 'var(--danger-emphasis)',
             color: '#ffffff',
             borderRadius: 999,
             fontSize: 11,
@@ -3156,10 +3156,10 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
         height: 36,
         borderBottom: '1px solid',
         borderColor: 'var(--border-muted)',
-        bg: mine ? 'rgba(187, 128, 9, 0.08)' : 'transparent',
+        bg: mine ? 'rgba(242, 201, 76, 0.08)' : 'transparent',
         borderLeft: '3px solid',
-        borderLeftColor: mine ? '#d29922' : expanded ? 'var(--accent-emphasis)' : 'transparent',
-        '&:hover': { bg: mine ? 'rgba(187, 128, 9, 0.12)' : 'var(--bg-subtle)' },
+        borderLeftColor: mine ? 'var(--attention-emphasis)' : expanded ? 'var(--accent-emphasis)' : 'transparent',
+        '&:hover': { bg: mine ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-subtle)' },
         cursor: 'pointer',
       }}
       onClick={onView}
@@ -3199,7 +3199,7 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
             <Box
               sx={{
                 px: 1,
-                bg: '#d29922',
+                bg: 'var(--attention-emphasis)',
                 color: '#ffffff',
                 fontSize: '10px',
                 fontWeight: 700,
@@ -3338,10 +3338,10 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
           onClick={onAuthorClick}
         />
       </Box>
-      <AuthorStatCell value={authorStats?.open ?? null} fg="var(--success-fg)" bg="rgba(46, 160, 67, 0.18)" />
-      <AuthorStatCell value={authorStats?.completed ?? null} fg="#a371f7" bg="rgba(163, 113, 247, 0.18)" />
+      <AuthorStatCell value={authorStats?.open ?? null} fg="var(--success-fg)" bg="var(--success-subtle)" />
+      <AuthorStatCell value={authorStats?.completed ?? null} fg="var(--done-fg)" bg="var(--done-subtle)" />
       <AuthorStatCell value={authorStats?.not_planned ?? null} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
-      <AuthorStatCell value={authorStats?.closed ?? null} fg="var(--danger-fg)" bg="rgba(248, 81, 73, 0.15)" />
+      <AuthorStatCell value={authorStats?.closed ?? null} fg="var(--danger-fg)" bg="var(--danger-subtle)" />
       <Box as="td" sx={tableTimeSx} title={issue.created_at ?? undefined}>
         <RecentTime iso={issue.created_at} />
       </Box>

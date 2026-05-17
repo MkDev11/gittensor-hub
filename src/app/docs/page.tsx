@@ -385,7 +385,7 @@ function Pill({ children }: { children: React.ReactNode }) {
         alignItems: 'center',
         px: '6px',
         py: '1px',
-        bg: 'rgba(31, 111, 235, 0.15)',
+        bg: 'var(--accent-subtle)',
         color: 'accent.fg',
         fontSize: 0,
         fontWeight: 700,
