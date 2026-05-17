@@ -3,11 +3,19 @@
 //   pm2 start ecosystem.config.js
 //   pm2 save               # persist for `pm2 resurrect` on reboot
 //   pm2 logs gittensor-hub
+//
+// Paths resolve relative to the running user:
+//   cwd        → the directory this config file lives in
+//   log files  → ~/.pm2/logs/ for whichever user owns the pm2 daemon
+// So no edits needed when deploying to a new box or user.
+const path = require('path');
+const os = require('os');
+
 module.exports = {
   apps: [
     {
       name: 'gittensor-hub',
-      cwd: '/root/gittensor-hub',
+      cwd: __dirname,
       script: 'pnpm',
       args: 'start',
       // pnpm needs argv[0]
@@ -20,8 +28,8 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: '12074',
       },
-      out_file: '/root/.pm2/logs/gittensor-hub-out.log',
-      error_file: '/root/.pm2/logs/gittensor-hub-error.log',
+      out_file: path.join(os.homedir(), '.pm2/logs/gittensor-hub-out.log'),
+      error_file: path.join(os.homedir(), '.pm2/logs/gittensor-hub-error.log'),
       time: true,
     },
   ],
