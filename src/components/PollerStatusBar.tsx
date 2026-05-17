@@ -22,7 +22,7 @@ export default function PollerStatusBar() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
-    refetchInterval: 2000,
+    refetchInterval: 5000,
   });
 
   // Reserve the bar's footprint even before the first /api/poller-status
