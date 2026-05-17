@@ -63,17 +63,26 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
     setError(null);
   }, [target]);
 
-  // Fetch the primary target's body if missing. Both the per-repo listing
-  // endpoints AND the aggregate /api/{issues,pulls} routes strip `body` to
-  // keep payload sizes manageable for big repos, so the preloaded DTO almost
-  // always lacks body. Fetch the single-item detail endpoint, which returns
-  // the cached row with body intact (and falls back to live GitHub if absent).
+  // Fetch the primary target's body if the listing endpoint didn't return one.
+  // Some listing endpoints strip `body` to keep payloads small (returns the DTO
+  // without the field); others (`/api/my-prs`) include body as-is — which can
+  // be null or "" for PRs/issues genuinely opened with no description.
+  //
+  // The check below is "the listing didn't tell us anything about body", not
+  // "body is empty". Empty body ("" or null) means we KNOW the body and it's
+  // empty — re-fetching would just return the same empty value. The previous
+  // version of this check treated "" as "not yet fetched" and the effect's
+  // own state setters made `issueData`/`pullData` re-trigger the effect,
+  // producing an infinite re-fetch loop on empty-body PRs.
+  //
+  // Deps are `[target]` only: the effect mutates issueData/pullData inside
+  // itself, so including them would also loop.
   useEffect(() => {
-    const hasBody = (d: { body?: string | null } | null) => !!d && d.body != null && d.body !== '';
-    const issueComplete = target.kind === 'issue' && hasBody(issueData);
-    const pullComplete = target.kind === 'pull' && hasBody(pullData);
-    if (issueComplete || pullComplete) return;
+    const preloaded = target.preloaded as { body?: string | null } | undefined;
+    const bodyKnown = preloaded !== undefined && 'body' in preloaded;
+    if (bodyKnown) return;
 
+    let cancelled = false;
     setLoading(true);
     setError(null);
     const path =
@@ -86,12 +95,22 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
         return r.json();
       })
       .then((j) => {
+        if (cancelled) return;
         if (target.kind === 'issue') setIssueData(j as IssueDto);
         else setPullData(j as PullDto);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
-  }, [target, issueData, pullData]);
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
 
   // Fetch related PRs for issue mode (so we can show tabs)
   useEffect(() => {
@@ -624,9 +643,7 @@ function Body({
   if (!body) {
     return (
       <Box sx={{ color: 'var(--fg-muted)', fontStyle: 'italic', fontSize: 1 }}>
-        {kind === 'pull' && !data.body
-          ? 'PR body not yet cached. The poller is filling these in — try again in a few seconds.'
-          : 'No description provided.'}
+        {kind === 'pull' ? 'No PR description provided.' : 'No description provided.'}
       </Box>
     );
   }
