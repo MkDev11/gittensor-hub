@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   XIcon,
   IssueOpenedIcon,
@@ -63,26 +63,24 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
     setError(null);
   }, [target]);
 
-  // Fetch the primary target's body if the listing endpoint didn't return one.
-  // Some listing endpoints strip `body` to keep payloads small (returns the DTO
-  // without the field); others (`/api/my-prs`) include body as-is — which can
-  // be null or "" for PRs/issues genuinely opened with no description.
+  // Always fetch the detail endpoint once per opened target. We can't trust
+  // `preloaded.body` to decide whether to skip — listing endpoints sometimes
+  // omit the field, sometimes set it to null explicitly (SELECT NULL as body),
+  // and sometimes return real values.
   //
-  // The check below is "the listing didn't tell us anything about body", not
-  // "body is empty". Empty body ("" or null) means we KNOW the body and it's
-  // empty — re-fetching would just return the same empty value. The previous
-  // version of this check treated "" as "not yet fetched" and the effect's
-  // own state setters made `issueData`/`pullData` re-trigger the effect,
-  // producing an infinite re-fetch loop on empty-body PRs.
-  //
-  // Deps are `[target]` only: the effect mutates issueData/pullData inside
-  // itself, so including them would also loop.
+  // The ref does double duty: (1) "have we already initiated a fetch for this
+  // target?" so the same modal doesn't refetch on parent re-renders, and
+  // (2) "is the in-flight fetch's result still relevant?" by comparing the
+  // captured key against the ref at resolve time. No cleanup-based cancel
+  // flag — that fights StrictMode's mount/unmount/mount cycle (the second
+  // mount would see ref === key and skip the new fetch, while the first
+  // fetch's resolve had the cancelled flag set, leaving loading stuck true).
+  const fetchedForRef = useRef<string | null>(null);
   useEffect(() => {
-    const preloaded = target.preloaded as { body?: string | null } | undefined;
-    const bodyKnown = preloaded !== undefined && 'body' in preloaded;
-    if (bodyKnown) return;
+    const key = `${target.kind}-${target.owner}-${target.name}-${target.number}`;
+    if (fetchedForRef.current === key) return;
+    fetchedForRef.current = key;
 
-    let cancelled = false;
     setLoading(true);
     setError(null);
     const path =
@@ -95,21 +93,18 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
         return r.json();
       })
       .then((j) => {
-        if (cancelled) return;
+        if (fetchedForRef.current !== key) return; // user moved to another target
         if (target.kind === 'issue') setIssueData(j as IssueDto);
         else setPullData(j as PullDto);
       })
       .catch((e) => {
-        if (cancelled) return;
+        if (fetchedForRef.current !== key) return;
         setError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
-        if (cancelled) return;
+        if (fetchedForRef.current !== key) return;
         setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [target]);
 
   // Fetch related PRs for issue mode (so we can show tabs)
@@ -371,8 +366,8 @@ function TabStrip({
     ...relatedPRs.map((pr) => {
       const status = pr.merged ? 'merged' : pr.draft ? 'draft' : pr.state === 'open' ? 'open' : 'closed';
       const tone =
-        status === 'merged' ? 'var(--done-emphasis)' :
-        status === 'open' ? 'var(--success-emphasis)' :
+        status === 'merged' ? 'var(--success-emphasis)' :
+        status === 'open' ? 'var(--accent-emphasis)' :
         status === 'draft' ? 'var(--fg-muted)' :
         'var(--danger-fg)';
       return {
