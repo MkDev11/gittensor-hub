@@ -67,6 +67,7 @@ type PullSortKey = 'opened' | 'updated' | 'closed' | 'author' | 'state';
 type SortDir = 'asc' | 'desc';
 type AuthorTarget = { login: string; association?: string | null };
 type RelatedPopoverLayout = { placement: 'down' | 'up'; maxHeight: number };
+type StickyBadge = { issues: number; pulls: number; priority?: boolean };
 interface RepoBadgesResponse {
   repo: string;
   issues_count: number;
@@ -429,7 +430,7 @@ export default function RepoExplorer() {
     setPullsPage(1);
   }, [prQuery, prState, prMineOnly, prAuthor, pullSortKey, pullSortDir]);
 
-  const { data: userReposData } = useQuery<{
+  const { data: userReposData, isSuccess: userReposReady } = useQuery<{
     count: number;
     repos: Array<{ full_name: string; weight: number; notes: string | null; added_at: string }>;
   }>({
@@ -448,7 +449,7 @@ export default function RepoExplorer() {
   // Server polls master_repositories.json every 5 min and persists any new
   // repos at weight 0; nothing is ever removed. Client refetches on the same
   // cadence so newly discovered repos appear without a page reload.
-  const { data: sn74ReposData, isLoading: sn74ReposLoading } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
+  const { data: sn74ReposData, isLoading: sn74ReposLoading, isSuccess: sn74ReposReady } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
     queryKey: ['sn74-repos'],
     queryFn: async ({ signal }) => {
       const r = await fetch('/api/sn74-repos', { signal });
@@ -472,6 +473,13 @@ export default function RepoExplorer() {
       });
     return [...sn74Repos, ...userExtras];
   }, [sn74Repos, userReposData]);
+
+  const visibleRepoNamesByLc = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const repo of allRepos) m.set(repo.fullName.toLowerCase(), repo.fullName);
+    return m;
+  }, [allRepos]);
+  const repoAllowlistReady = sn74ReposReady && userReposReady;
 
   const userRepoNames = useMemo(
     () => new Set((userReposData?.repos ?? []).map((u) => u.full_name)),
@@ -749,7 +757,7 @@ export default function RepoExplorer() {
   // `priority` flag is set when an owner or collaborator opens an issue
   // there, and unlike the count it persists across renders until the user
   // visits the repo (the sidebar row gets a yellow accent border).
-  const [stickyBadges, setStickyBadges] = useState<Record<string, { issues: number; pulls: number; priority?: boolean }>>({});
+  const [stickyBadges, setStickyBadges] = useState<Record<string, StickyBadge>>({});
 
   const { data: activityData } = useQuery<{
     since: string;
@@ -824,18 +832,48 @@ export default function RepoExplorer() {
   }, [viewedAt]);
 
   useEffect(() => {
-    if (!activityData?.activity) return;
+    if (!hydrated || !repoAllowlistReady) return;
+    setStickyBadges((prev) => {
+      let changed = false;
+      const next: Record<string, StickyBadge> = {};
+      for (const [repo, badge] of Object.entries(prev)) {
+        const canonicalRepo = visibleRepoNamesByLc.get(repo.toLowerCase());
+        if (!canonicalRepo) {
+          changed = true;
+          continue;
+        }
+        const existing = next[canonicalRepo];
+        if (existing) {
+          const merged: StickyBadge = {
+            issues: Math.max(existing.issues, badge.issues),
+            pulls: Math.max(existing.pulls, badge.pulls),
+          };
+          if (existing.priority || badge.priority) merged.priority = true;
+          next[canonicalRepo] = merged;
+          changed = true;
+        } else {
+          next[canonicalRepo] = badge;
+          if (canonicalRepo !== repo) changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [hydrated, repoAllowlistReady, visibleRepoNamesByLc]);
+
+  useEffect(() => {
+    if (!activityData?.activity || !repoAllowlistReady) return;
     setStickyBadges((prev) => {
       let changed = false;
       const next = { ...prev };
       const viewed = viewedAtRef.current;
       for (const [repo, info] of Object.entries(activityData.activity)) {
-        if (viewed[repo]) continue;
-        const cur = next[repo] ?? { issues: 0, pulls: 0 };
+        const canonicalRepo = visibleRepoNamesByLc.get(repo.toLowerCase());
+        if (!canonicalRepo || viewed[canonicalRepo]) continue;
+        const cur = next[canonicalRepo] ?? { issues: 0, pulls: 0 };
         const mergedIssues = Math.max(cur.issues, info.issues);
         const mergedPulls = Math.max(cur.pulls, info.pulls);
         if (mergedIssues !== cur.issues || mergedPulls !== cur.pulls) {
-          next[repo] = { issues: mergedIssues, pulls: mergedPulls };
+          next[canonicalRepo] = { issues: mergedIssues, pulls: mergedPulls };
           changed = true;
         }
       }
@@ -843,7 +881,7 @@ export default function RepoExplorer() {
       // returning `prev` lets React bail out of the re-render.
       return changed ? next : prev;
     });
-  }, [activityData]);
+  }, [activityData, repoAllowlistReady, visibleRepoNamesByLc]);
 
   // When user views a repo, drop its sticky badge entry.
   useEffect(() => {
@@ -873,12 +911,13 @@ export default function RepoExplorer() {
       const e = ev as CustomEvent<{ repo: string; kind: 'issue' | 'pull'; priority?: boolean }>;
       if (!e.detail) return;
       const { repo, kind, priority } = e.detail;
-      if (repo === selected.fullName) return; // currently viewing — no badge needed
+      const canonicalRepo = visibleRepoNamesByLc.get(repo.toLowerCase());
+      if (!canonicalRepo || canonicalRepo === selected.fullName) return; // currently viewing — no badge needed
       setStickyBadges((prev) => {
-        const cur = prev[repo] ?? { issues: 0, pulls: 0 };
+        const cur = prev[canonicalRepo] ?? { issues: 0, pulls: 0 };
         return {
           ...prev,
-          [repo]: {
+          [canonicalRepo]: {
             issues: cur.issues + (kind === 'issue' ? 1 : 0),
             pulls: cur.pulls + (kind === 'pull' ? 1 : 0),
             // Priority is sticky once set — sticks until the user views the
@@ -890,16 +929,17 @@ export default function RepoExplorer() {
     };
     window.addEventListener('gittensor-new-content', handler as EventListener);
     return () => window.removeEventListener('gittensor-new-content', handler as EventListener);
-  }, [selected]);
+  }, [selected, visibleRepoNamesByLc]);
 
-  // Total unread count across all repos.
+  // Total unread count across visible repos.
   const totalUnread = useMemo(() => {
     let count = 0;
-    for (const v of Object.values(stickyBadges)) {
+    for (const [repo, v] of Object.entries(stickyBadges)) {
+      if (!visibleRepoNamesByLc.has(repo.toLowerCase())) continue;
       count += (v.issues ?? 0) + (v.pulls ?? 0);
     }
     return count;
-  }, [stickyBadges]);
+  }, [stickyBadges, visibleRepoNamesByLc]);
 
   const markAllAsRead = () => {
     const now = new Date().toISOString();
