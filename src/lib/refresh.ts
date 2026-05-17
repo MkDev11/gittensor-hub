@@ -520,6 +520,12 @@ export async function refreshCommentsIfStale(owner: string, name: string, force 
         if (i + UPSERT_CHUNK < items.length) await yieldEventLoop();
       }
       lastCommentsFetch.set(full, Date.now());
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[comments] ${full} fetch failed: ${msg.slice(0, 200)}`);
+      // Throttle retries — without this the next call immediately retries
+      // because lastCommentsFetch was never set on the failed path.
+      lastCommentsFetch.set(full, Date.now());
     } finally {
       inFlightComments.delete(full);
     }
