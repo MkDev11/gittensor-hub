@@ -117,16 +117,16 @@ function pickClient(kind: 'core' | 'search'): PatClient {
   const eligible = clients.filter((c) => c.cooldownUntil <= now);
   const pool = eligible.length > 0 ? eligible : clients;
   // Prefer the client with the highest remaining quota for this kind
-  pool.sort((a, b) => {
+  const sorted = pool.slice().sort((a, b) => {
     const aR = kind === 'search' ? a.searchRemaining : a.coreRemaining;
     const bR = kind === 'search' ? b.searchRemaining : b.coreRemaining;
     if (aR !== bR) return bR - aR;
     return a.index - b.index;
   });
   // Round-robin among the top tier (within 100 calls of the leader) to spread load
-  const top = pool[0];
+  const top = sorted[0];
   const topR = kind === 'search' ? top.searchRemaining : top.coreRemaining;
-  const tier = pool.filter((c) => {
+  const tier = sorted.filter((c) => {
     const r = kind === 'search' ? c.searchRemaining : c.coreRemaining;
     return topR - r <= 100;
   });
