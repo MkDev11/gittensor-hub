@@ -811,13 +811,26 @@ export default function RepoExplorer() {
     localStorage.setItem('gittensor.stickyBadges', JSON.stringify(stickyBadges));
   }, [stickyBadges, hydrated]);
 
+  // Keep a ref to the latest viewedAt so the activity-data effect can read
+  // it without making it a dependency. setViewedAt always allocates a new
+  // object (fresh timestamp on each repo selection), so depending on
+  // `viewedAt` directly made this effect re-fire on every click. The
+  // setStickyBadges updater below bails out via `return prev`, but React's
+  // per-call depth counter still incremented — eventually tripping
+  // "Maximum update depth exceeded".
+  const viewedAtRef = useRef(viewedAt);
+  useEffect(() => {
+    viewedAtRef.current = viewedAt;
+  }, [viewedAt]);
+
   useEffect(() => {
     if (!activityData?.activity) return;
     setStickyBadges((prev) => {
       let changed = false;
       const next = { ...prev };
+      const viewed = viewedAtRef.current;
       for (const [repo, info] of Object.entries(activityData.activity)) {
-        if (viewedAt[repo]) continue;
+        if (viewed[repo]) continue;
         const cur = next[repo] ?? { issues: 0, pulls: 0 };
         const mergedIssues = Math.max(cur.issues, info.issues);
         const mergedPulls = Math.max(cur.pulls, info.pulls);
@@ -830,7 +843,7 @@ export default function RepoExplorer() {
       // returning `prev` lets React bail out of the re-render.
       return changed ? next : prev;
     });
-  }, [activityData, viewedAt]);
+  }, [activityData]);
 
   // When user views a repo, drop its sticky badge entry.
   useEffect(() => {
