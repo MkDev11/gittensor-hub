@@ -93,7 +93,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
         borderLeft: '3px solid',
         borderLeftColor: variantStyle.bar,
         borderRadius: 2,
-        boxShadow: 'shadow.large',
+        boxShadow: 'var(--shadow-overlay)',
         p: 3,
         display: 'flex',
         gap: 2,

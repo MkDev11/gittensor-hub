@@ -11,6 +11,7 @@ import {
   Link as PrimerLink,
 } from '@primer/react';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import AuthorFilter from '@/components/AuthorFilter';
 import {
@@ -201,15 +202,15 @@ export default function IssuesTable() {
             py: '5px',
             borderRadius: '6px',
             border: '1px solid',
-            borderColor: trackedOnly ? '#d29922' : '#30363d',
-            bg: trackedOnly ? 'rgba(187, 128, 9, 0.15)' : '#21262d',
-            color: trackedOnly ? '#d29922' : '#c9d1d9',
+            borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+            bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-emphasis)',
+            color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: 500,
             lineHeight: '20px',
             userSelect: 'none',
-            '&:hover': { borderColor: '#8b949e' },
+            '&:hover': { borderColor: 'var(--border-strong)' },
           }}
         >
           {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
@@ -268,10 +269,21 @@ export default function IssuesTable() {
           <Box as="tbody">
             {isLoading && filtered.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={9} sx={{ p: 0, height: 320 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                    <Spinner size="xl" tone="accent" label="Loading issues…" />
-                  </Box>
+                <Box as="td" colSpan={9} sx={{ p: 0 }}>
+                  <TableRowsSkeleton
+                    rows={12}
+                    cols={[
+                      { width: 24 },
+                      { width: 60 },
+                      { flex: 1 },
+                      { width: 120 },
+                      { width: 100 },
+                      { width: 60 },
+                      { width: 60 },
+                      { width: 60 },
+                      { width: 60 },
+                    ]}
+                  />
                 </Box>
               </Box>
             )}
@@ -341,7 +353,8 @@ export default function IssuesTable() {
           <Box
             sx={{
               position: 'fixed',
-              top: 64,
+              // 0 in sidebar mode, 64px in top-nav mode (header clearance).
+              top: 'var(--header-height)',
               right: 0,
               bottom: 0,
               width: 480,

@@ -26,22 +26,25 @@ export default function AppHeader() {
   const pathname = usePathname();
   if (HIDE_HEADER_ROUTES.has(pathname)) return null;
 
+  // Wrap in a plain div so the `data-app-header` attribute reliably lands
+  // on a DOM node — Primer's <Header> doesn't forward arbitrary data
+  // attributes, which is why CSS-driven show/hide couldn't target it before.
+  // `userSelect: none` prevents nav-item text from getting highlighted on
+  // accidental double-clicks (the sidebar applies the same to its <aside>).
   return (
+    <div data-app-header="" style={{ position: 'sticky', top: 0, zIndex: 100, userSelect: 'none' }}>
     <Header
       sx={{
         bg: 'canvas.subtle',
         borderBottom: '1px solid',
         borderColor: 'border.default',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
       }}
     >
       <Header.Item>
         <Header.Link href="/" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/gt-logo.png" alt="Gittensor Hub" width={28} height={28} style={{ display: 'block' }} />
-          <Text sx={{ fontWeight: 'bold', fontSize: 2, letterSpacing: '0.5px' }}>Gittensor Hub</Text>
+          <Text sx={{ fontWeight: 600, fontSize: 2, letterSpacing: '-0.015em' }}>Gittensor Hub</Text>
         </Header.Link>
       </Header.Item>
       {navItems.map((item) => {
@@ -78,5 +81,6 @@ export default function AppHeader() {
         <UserMenu />
       </Header.Item>
     </Header>
+    </div>
   );
 }

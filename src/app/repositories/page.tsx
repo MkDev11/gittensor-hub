@@ -21,7 +21,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
 } from '@primer/octicons-react';
-import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import { formatRelativeTime } from '@/lib/format';
 
@@ -358,9 +358,22 @@ export default function RepositoriesPage() {
           </Box>
         )}
         {isLoading && !data && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 5, color: 'fg.muted' }}>
-            <Spinner size="lg" tone="accent" />
-          </Box>
+          view === 'grid' ? (
+            <CardGridSkeleton count={9} columns={3} cardHeight={140} />
+          ) : (
+            <TableRowsSkeleton
+              rows={12}
+              cols={[
+                { width: 24 },
+                { flex: 1 },
+                { width: 60 },
+                { width: 60 },
+                { width: 60 },
+                { width: 60 },
+                { width: 80 },
+              ]}
+            />
+          )
         )}
 
         {data && view === 'list' && (
@@ -793,12 +806,12 @@ function RepoTable({
                       height: 24,
                       px: 1,
                       border: '1px solid',
-                      borderColor: rank <= 3 ? '#d29922' : 'border.default',
+                      borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
                       borderRadius: 1,
                       fontFamily: 'mono',
                       fontWeight: 700,
                       fontSize: 0,
-                      color: rank <= 3 ? '#d29922' : 'fg.default',
+                      color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
                     }}
                   >
                     {rank}
@@ -925,12 +938,12 @@ function RepoGridCard({
             justifyContent: 'center',
             px: 1,
             border: '1px solid',
-            borderColor: rank <= 3 ? '#d29922' : 'border.default',
+            borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
             borderRadius: 1,
             fontFamily: 'mono',
             fontWeight: 700,
             fontSize: '11px',
-            color: rank <= 3 ? '#d29922' : 'fg.default',
+            color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
           }}
         >
           {rank}

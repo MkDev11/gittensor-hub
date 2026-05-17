@@ -14,7 +14,7 @@ import {
   TriangleDownIcon,
   TriangleUpIcon,
 } from '@primer/octicons-react';
-import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
 import { useMinerLogin } from '@/lib/use-miner';
 import { useTrackedMiners } from '@/lib/tracked-miners';
 
@@ -340,9 +340,23 @@ export default function MinersPage() {
               </Box>
             )}
             {isLoading && !data && (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 5, color: 'fg.muted' }}>
-                <Spinner size="lg" tone="accent" />
-              </Box>
+              view === 'grid' ? (
+                <CardGridSkeleton count={9} columns={3} cardHeight={140} />
+              ) : (
+                <TableRowsSkeleton
+                  rows={12}
+                  cols={[
+                    { width: 24 },
+                    { width: 28, flex: 0 },
+                    { flex: 1 },
+                    { width: 60 },
+                    { width: 60 },
+                    { width: 60 },
+                    { width: 60 },
+                    { width: 80 },
+                  ]}
+                />
+              )
             )}
 
             {data && view === 'grid' && (
@@ -381,7 +395,7 @@ export default function MinersPage() {
           </Box>
 
           {/* Sidebar */}
-          <Box sx={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, position: 'sticky', top: 80 }}>
+          <Box sx={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, position: 'sticky', top: 'calc(var(--header-height) + 16px)' }}>
             <SidebarCard title="Miners Activity">
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', rowGap: '6px', columnGap: 2 }}>
                 <Text sx={{ fontSize: 0, color: 'fg.muted' }}></Text>
@@ -408,10 +422,10 @@ export default function MinersPage() {
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>OPEN</Text>
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>CLOSED</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.pr.merged}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'accent.fg' }}>{stats.pr.open}</Text>
+                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.pr.open}</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'danger.fg' }}>{stats.pr.closed}</Text>
               </Box>
-              <Bar label="Merge Rate" pct={stats.pr.mergeRate} color={stats.pr.mergeRate >= 75 ? 'var(--success-fg)' : '#d29922'} />
+              <Bar label="Merge Rate" pct={stats.pr.mergeRate} color={stats.pr.mergeRate >= 75 ? 'var(--success-fg)' : 'var(--attention-emphasis)'} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, fontSize: 1 }}>
                 <Text sx={{ color: 'fg.muted' }}>Total $/day</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>${stats.pr.totalDay.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Text>
@@ -424,10 +438,10 @@ export default function MinersPage() {
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>OPEN</Text>
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>CLOSED</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.issue.solved}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'accent.fg' }}>{stats.issue.open}</Text>
+                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.issue.open}</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'danger.fg' }}>{stats.issue.closed}</Text>
               </Box>
-              <Bar label="Solve Rate" pct={stats.issue.solveRate} color={stats.issue.solveRate >= 75 ? 'var(--success-fg)' : '#d29922'} />
+              <Bar label="Solve Rate" pct={stats.issue.solveRate} color={stats.issue.solveRate >= 75 ? 'var(--success-fg)' : 'var(--attention-emphasis)'} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, fontSize: 1 }}>
                 <Text sx={{ color: 'fg.muted' }}>Total $/day</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>${stats.issue.totalDay.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Text>
@@ -451,7 +465,7 @@ export default function MinersPage() {
                   <Bar
                     label="Avg Credibility"
                     pct={Math.round(stats.code.avgCred * 100)}
-                    color={stats.code.avgCred >= 0.5 ? 'var(--success-fg)' : stats.code.avgCred >= 0.2 ? '#d29922' : 'var(--danger-fg)'}
+                    color={stats.code.avgCred >= 0.5 ? 'var(--success-fg)' : stats.code.avgCred >= 0.2 ? 'var(--attention-emphasis)' : 'var(--danger-fg)'}
                   />
                 </Box>
               </Box>
@@ -636,7 +650,7 @@ function CredibilityRing({ value, size = 56, dim = false }: { value: number; siz
   const c = 2 * Math.PI * r;
   const pct = Math.min(1, Math.max(0, value));
   const offset = c * (1 - pct);
-  const stroke = pct >= 0.5 ? 'var(--success-emphasis)' : pct >= 0.2 ? '#d29922' : 'var(--fg-muted)';
+  const stroke = pct >= 0.5 ? 'var(--success-emphasis)' : pct >= 0.2 ? 'var(--attention-emphasis)' : 'var(--fg-muted)';
   return (
     <Box sx={{ position: 'relative', width: size, height: size, opacity: dim ? 0.5 : 1, flexShrink: 0 }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
@@ -850,7 +864,7 @@ function MinerListView({
                 sx={{
                   borderBottom: '1px solid',
                   borderColor: 'border.muted',
-                  bg: isMe ? 'rgba(31, 111, 235, 0.08)' : 'transparent',
+                  bg: isMe ? 'rgba(94, 106, 210, 0.10)' : 'transparent',
                   '&:hover': { bg: 'canvas.default' },
                   '&:last-child': { borderBottom: 'none' },
                   opacity: dim ? 0.55 : 1,
@@ -866,12 +880,12 @@ function MinerListView({
                       height: 24,
                       px: 1,
                       border: '1px solid',
-                      borderColor: rank <= 3 ? '#d29922' : 'border.default',
+                      borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
                       borderRadius: 1,
                       fontFamily: 'mono',
                       fontWeight: 700,
                       fontSize: 0,
-                      color: rank <= 3 ? '#d29922' : 'fg.default',
+                      color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
                     }}
                   >
                     {rank}

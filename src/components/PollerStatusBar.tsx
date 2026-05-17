@@ -22,10 +22,38 @@ export default function PollerStatusBar() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
-    refetchInterval: 2000,
+    refetchInterval: 5000,
   });
 
-  if (!data) return null;
+  // Reserve the bar's footprint even before the first /api/poller-status
+  // response — otherwise the bottom of the viewport is empty until the
+  // query lands, which reads as "missing bar" mid-load.
+  if (!data) {
+    return (
+      <Box
+        sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 'var(--sidebar-width, 240px)',
+          right: 0,
+          bg: 'canvas.subtle',
+          borderTop: '1px solid',
+          borderColor: 'border.default',
+          height: 30,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 3,
+          px: 3,
+          zIndex: 50,
+        }}
+      >
+        <span className="gt-skeleton" style={{ width: 80, height: 10 }} />
+        <span className="gt-skeleton" style={{ width: 140, height: 10 }} />
+        <span className="gt-skeleton" style={{ width: 120, height: 4, borderRadius: 999 }} />
+        <span className="gt-skeleton" style={{ width: 180, height: 10 }} />
+      </Box>
+    );
+  }
 
   const pct = data.repos_total > 0 ? (data.repos_cached / data.repos_total) * 100 : 0;
 
@@ -34,7 +62,9 @@ export default function PollerStatusBar() {
       sx={{
         position: 'fixed',
         bottom: 0,
-        left: 0,
+        // Sit to the right of the fixed sidebar instead of edge-to-edge so
+        // the status bar doesn't overlap nav items.
+        left: 'var(--sidebar-width, 240px)',
         right: 0,
         bg: 'canvas.subtle',
         borderTop: '1px solid',

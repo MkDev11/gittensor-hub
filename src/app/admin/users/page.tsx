@@ -6,7 +6,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, Label } from '@primer/react';
 import { CheckIcon, XIcon, ShieldLockIcon, PersonIcon, PersonAddIcon } from '@primer/octicons-react';
-import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import { formatRelativeTime } from '@/lib/format';
 
 interface AdminUser {
@@ -166,9 +166,17 @@ export default function AdminUsersPage() {
         )}
 
         {isLoading && !data && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
-            <Spinner size="lg" tone="accent" />
-          </Box>
+          <TableRowsSkeleton
+            rows={10}
+            cols={[
+              { width: 36, flex: 0 },
+              { flex: 1 },
+              { width: 80 },
+              { width: 80 },
+              { width: 100 },
+              { width: 100 },
+            ]}
+          />
         )}
 
         {data && (

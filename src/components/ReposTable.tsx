@@ -147,15 +147,15 @@ export default function ReposTable({
             py: '5px',
             borderRadius: '6px',
             border: '1px solid',
-            borderColor: trackedOnly ? '#d29922' : '#30363d',
-            bg: trackedOnly ? 'rgba(187, 128, 9, 0.15)' : '#21262d',
-            color: trackedOnly ? '#d29922' : '#c9d1d9',
+            borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+            bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-emphasis)',
+            color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: 500,
             lineHeight: '20px',
             userSelect: 'none',
-            '&:hover': { borderColor: '#8b949e' },
+            '&:hover': { borderColor: 'var(--border-strong)' },
           }}
         >
           {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
@@ -389,7 +389,7 @@ function RepoRow({
               sx={{
                 px: '6px',
                 py: '1px',
-                bg: 'rgba(31, 111, 235, 0.15)',
+                bg: 'var(--accent-subtle)',
                 color: 'accent.fg',
                 fontSize: '10px',
                 fontWeight: 700,
@@ -452,7 +452,7 @@ function RepoRow({
       <StatCell value={stats?.issues_total} icon={<IssueOpenedIcon size={12} />} color="fg.default" />
       <StatCell value={stats?.issues_open} icon={<IssueOpenedIcon size={12} />} color="success.fg" />
       <StatCell value={stats?.pulls_total} icon={<GitPullRequestIcon size={12} />} color="fg.default" />
-      <StatCell value={stats?.pulls_open} icon={<GitPullRequestIcon size={12} />} color="accent.fg" />
+      <StatCell value={stats?.pulls_open} icon={<GitPullRequestIcon size={12} />} color="success.fg" />
       <StatCell value={stats?.pulls_merged} icon={<GitMergeIcon size={12} />} color="done.fg" />
       <Box as="td" sx={{ px: 3, py: 2, verticalAlign: 'middle', fontSize: 0, color: 'fg.muted', whiteSpace: 'nowrap' }}>
         {stats?.last_activity_at ? (

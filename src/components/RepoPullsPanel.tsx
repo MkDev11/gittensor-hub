@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Label, Text, TextInput, Link as PrimerLink } from '@primer/react';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import { SearchIcon, ClockIcon, PersonIcon } from '@primer/octicons-react';
 import type { PullDto, PullsResponse } from '@/lib/api-types';
@@ -88,9 +89,15 @@ export default function RepoPullsPanel({ owner, name }: { owner: string; name: s
       )}
 
       <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, bg: 'canvas.default', overflow: 'hidden' }}>
-        {filtered.length === 0 && !isLoading && (
+        {filtered.length === 0 && isLoading ? (
+          <TableRowsSkeleton
+            rows={8}
+            cols={[{ width: 60 }, { flex: 1 }, { width: 80 }, { width: 60 }]}
+            rowHeight={48}
+          />
+        ) : filtered.length === 0 && !isLoading ? (
           <Box sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>No pull requests match these filters.</Box>
-        )}
+        ) : null}
         {filtered.map((pr, idx) => (
           <PullRow key={pr.id} pr={pr} isLast={idx === filtered.length - 1} mine={pr.author_login?.toLowerCase() === me.toLowerCase()} />
         ))}

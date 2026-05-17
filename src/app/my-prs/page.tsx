@@ -14,6 +14,7 @@ import {
   Link as PrimerLink,
 } from '@primer/react';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import { SearchIcon, RepoIcon, ClockIcon, TriangleUpIcon, TriangleDownIcon } from '@primer/octicons-react';
 import { PullStatusBadge } from '@/components/StatusBadge';
@@ -125,7 +126,7 @@ export default function MyPrsPage() {
         <Box sx={{ display: 'flex', gap: 2, mt: 3, flexWrap: 'wrap' }}>
           <StatBlock label="Total" value={data?.count ?? 0} />
           <StatBlock label="In SN74 whitelist" value={data?.in_whitelist_count ?? 0} tone="success" />
-          <StatBlock label="Open" value={counts.open} tone="accent" />
+          <StatBlock label="Open" value={counts.open} tone="success" />
           <StatBlock label="Merged" value={counts.merged} tone="done" />
           <StatBlock label="Draft" value={counts.draft} />
           <StatBlock label="Closed (unmerged)" value={counts.closed} tone="closed" />
@@ -181,7 +182,20 @@ export default function MyPrsPage() {
         )}
 
         <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, bg: 'canvas.default', overflow: 'hidden' }}>
-          {filtered.length === 0 && !isLoading ? (
+          {filtered.length === 0 && isLoading ? (
+            <TableRowsSkeleton
+              rows={10}
+              cols={[
+                { width: 60 },
+                { flex: 1 },
+                { width: 140 },
+                { width: 60 },
+                { width: 70 },
+                { width: 70 },
+                { width: 100 },
+              ]}
+            />
+          ) : filtered.length === 0 && !isLoading ? (
             <Box sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
               {data && data.count === 0
                 ? `No PRs found for ${me} yet — wait a moment for the GitHub search to populate.`
@@ -249,7 +263,7 @@ export default function MyPrsPage() {
           <Box
             sx={{
               position: 'fixed',
-              top: 64,
+              top: 'var(--header-height)',
               right: 0,
               bottom: 0,
               width: 480,

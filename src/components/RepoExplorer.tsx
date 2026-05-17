@@ -46,6 +46,7 @@ import { useSettings } from '@/lib/settings';
 import { useToast } from '@/lib/toast';
 import { pullStatus } from '@/lib/api-types';
 import type { IssueDto, IssuesResponse, IssuesMetaResponse, PullDto, PullsResponse, PullsMetaResponse } from '@/lib/api-types';
+import { RepoListSkeleton, TableRowsSkeleton } from '@/components/Skeleton';
 
 type RepoSort = 'weight' | 'name' | 'tracked';
 type IssueState = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed';
@@ -65,6 +66,7 @@ type IssueSortKey =
 type PullSortKey = 'opened' | 'updated' | 'closed' | 'author' | 'state';
 type SortDir = 'asc' | 'desc';
 type AuthorTarget = { login: string; association?: string | null };
+type RelatedPopoverLayout = { placement: 'down' | 'up'; maxHeight: number };
 interface RepoBadgesResponse {
   repo: string;
   issues_count: number;
@@ -78,6 +80,49 @@ interface RepoBadgesResponse {
 // render, defeating prop equality).
 const EMPTY_PRS: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }> = [];
 const EMPTY_ISSUES: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }> = [];
+
+const DEFAULT_RELATED_POPOVER_LAYOUT: RelatedPopoverLayout = { placement: 'down', maxHeight: 420 };
+
+function relatedPopoverLayout(anchor: HTMLElement | null, rowCount: number): RelatedPopoverLayout {
+  if (!anchor || typeof window === 'undefined') return DEFAULT_RELATED_POPOVER_LAYOUT;
+  const rect = anchor.getBoundingClientRect();
+  const estimatedHeight = Math.min(480, 36 + rowCount * 32);
+  const spaceBelow = window.innerHeight - rect.bottom - 44;
+  const spaceAbove = rect.top - 8;
+  const placement = spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove ? 'down' : 'up';
+  const available = Math.max(120, placement === 'down' ? spaceBelow : spaceAbove);
+  return { placement, maxHeight: Math.min(480, available) };
+}
+
+function relatedPopoverOffset(layout: RelatedPopoverLayout) {
+  return layout.placement === 'up'
+    ? { bottom: '100%', mb: 1 }
+    : { top: '100%', mt: 1 };
+}
+
+function useRelatedPopoverLayout(
+  open: boolean,
+  rowCount: number,
+  anchorRef: React.RefObject<HTMLDivElement | null>,
+) {
+  const [layout, setLayout] = useState<RelatedPopoverLayout>(DEFAULT_RELATED_POPOVER_LAYOUT);
+  const update = useCallback(() => {
+    setLayout(relatedPopoverLayout(anchorRef.current, rowCount));
+  }, [anchorRef, rowCount]);
+
+  useEffect(() => {
+    if (!open) return;
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open, update]);
+
+  return [layout, update] as const;
+}
 
 // Placeholder used while the live SN74 list is loading. We can't render with a
 // `null` selection without making every downstream read nullable, so we hold a
@@ -403,7 +448,7 @@ export default function RepoExplorer() {
   // Server polls master_repositories.json every 5 min and persists any new
   // repos at weight 0; nothing is ever removed. Client refetches on the same
   // cadence so newly discovered repos appear without a page reload.
-  const { data: sn74ReposData } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
+  const { data: sn74ReposData, isLoading: sn74ReposLoading } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
     queryKey: ['sn74-repos'],
     queryFn: async ({ signal }) => {
       const r = await fetch('/api/sn74-repos', { signal });
@@ -1174,7 +1219,7 @@ export default function RepoExplorer() {
   const pagedPulls = filteredPulls;
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: 'calc(100vh - var(--header-height) - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
       {/* LEFT: REPO LIST */}
       <Box
         sx={{
@@ -1186,9 +1231,9 @@ export default function RepoExplorer() {
         }}
       >
         <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'var(--border-default)', flexShrink: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Text sx={{ fontWeight: 600, fontSize: 1, color: 'var(--fg-default)' }}>Repositories</Text>
-            <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap', rowGap: 1 }}>
+            <Text sx={{ fontWeight: 600, fontSize: 1, color: 'var(--fg-default)', whiteSpace: 'nowrap' }}>Repositories</Text>
+            <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, whiteSpace: 'nowrap' }}>
               {filteredRepos.length} of {allRepos.length}
             </Text>
             {totalUnread > 0 && (
@@ -1254,9 +1299,9 @@ export default function RepoExplorer() {
                 px: '10px',
                 borderRadius: '6px',
                 border: '1px solid',
-                borderColor: trackedOnly ? '#d29922' : 'var(--border-default)',
-                bg: trackedOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
-                color: trackedOnly ? '#d29922' : 'var(--fg-default)',
+                borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+                bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
+                color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
                 cursor: 'pointer',
                 fontSize: '14px',
                 fontWeight: 500,
@@ -1300,19 +1345,19 @@ export default function RepoExplorer() {
                   bg: isSelected
                     ? 'var(--bg-emphasis)'
                     : priority
-                    ? 'rgba(210, 153, 34, 0.12)'
+                    ? 'var(--attention-subtle)'
                     : 'transparent',
                   borderLeft: '3px solid',
                   borderLeftColor: isSelected
                     ? 'var(--accent-emphasis)'
                     : priority
-                    ? '#d29922'
+                    ? 'var(--attention-emphasis)'
                     : 'transparent',
                   '&:hover': {
                     bg: isSelected
                       ? 'var(--bg-emphasis)'
                       : priority
-                      ? 'rgba(210, 153, 34, 0.20)'
+                      ? 'var(--attention-subtle-strong)'
                       : 'var(--bg-subtle)',
                   },
                 }}
@@ -1327,13 +1372,13 @@ export default function RepoExplorer() {
                     cursor: 'pointer',
                     border: 'none',
                     bg: 'transparent',
-                    color: isTracked ? '#d29922' : 'var(--fg-muted)',
+                    color: isTracked ? 'var(--attention-emphasis)' : 'var(--fg-muted)',
                     p: 1,
                     borderRadius: 1,
                     display: 'inline-flex',
                     alignItems: 'center',
                     flexShrink: 0,
-                    '&:hover': { color: '#d29922' },
+                    '&:hover': { color: 'var(--attention-emphasis)' },
                   }}
                 >
                   {isTracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
@@ -1437,7 +1482,7 @@ export default function RepoExplorer() {
                     sx={{
                       px: '5px',
                       py: '1px',
-                      bg: 'rgba(31, 111, 235, 0.15)',
+                      bg: 'var(--accent-subtle)',
                       color: 'var(--accent-fg)',
                       fontSize: '9px',
                       fontWeight: 700,
@@ -1470,9 +1515,16 @@ export default function RepoExplorer() {
             );
           })}
           {filteredRepos.length === 0 && (
-            <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 1 }}>
-              No repos match your filters.
-            </Box>
+            // Distinguish "still fetching" from "actually no results": before
+            // sn74-repos resolves we have no data to compare against the
+            // filter, so the empty-state message would be misleading.
+            sn74ReposLoading || !sn74ReposData ? (
+              <RepoListSkeleton />
+            ) : (
+              <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 1 }}>
+                No repos match your filters.
+              </Box>
+            )
           )}
         </Box>
       </Box>
@@ -1494,7 +1546,7 @@ export default function RepoExplorer() {
               {selected.fullName}
             </PrimerLink>
             {tracked.has(selected.fullName) && (
-              <Box sx={{ color: '#d29922', display: 'inline-flex', alignItems: 'center', gap: 1, fontSize: 0 }}>
+              <Box sx={{ color: 'var(--attention-emphasis)', display: 'inline-flex', alignItems: 'center', gap: 1, fontSize: 0 }}>
                 <StarFillIcon size={12} />
                 <Text>Tracked</Text>
               </Box>
@@ -1602,12 +1654,30 @@ export default function RepoExplorer() {
               </Box>
             </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
-              {issueTotalCount === 0 && !issuesLoading ? (
-                <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
-                  {issuesData && issuesData.count === 0
-                    ? 'No issues cached yet for this repo. The poller will fill it shortly.'
-                    : 'No issues match these filters.'}
-                </Box>
+              {issueTotalCount === 0 ? (
+                issuesLoading || !queriesReady || !issuesData ? (
+                  <TableRowsSkeleton
+                    rows={10}
+                    cols={[
+                      { width: 14 },
+                      { width: 60 },
+                      { flex: 1 },
+                      { width: 100 },
+                      { width: 28 },
+                      { width: 28 },
+                      { width: 28 },
+                      { width: 28 },
+                      { width: 60 },
+                      { width: 60 },
+                    ]}
+                  />
+                ) : (
+                  <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                    {issuesData && issuesData.count === 0
+                      ? 'No issues cached yet for this repo. The poller will fill it shortly.'
+                      : 'No issues match these filters.'}
+                  </Box>
+                )
               ) : (
                 <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
@@ -1746,16 +1816,16 @@ export default function RepoExplorer() {
                     py: '5px',
                     height: 32,
                     border: '1px solid',
-                    borderColor: prMineOnly ? '#d29922' : 'var(--border-default)',
-                    bg: prMineOnly ? 'rgba(187, 128, 9, 0.15)' : 'var(--bg-canvas)',
-                    color: prMineOnly ? '#d29922' : 'var(--fg-default)',
+                    borderColor: prMineOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+                    bg: prMineOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
+                    color: prMineOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
                     borderRadius: '6px',
                     cursor: 'pointer',
                     fontSize: '14px',
                     fontWeight: 500,
                     userSelect: 'none',
                     transition: 'border-color 80ms, background 80ms, color 80ms',
-                    '&:hover': { borderColor: prMineOnly ? '#d29922' : 'var(--border-strong)' },
+                    '&:hover': { borderColor: prMineOnly ? 'var(--attention-emphasis)' : 'var(--border-strong)' },
                   }}
                 >
                   <input
@@ -1766,7 +1836,7 @@ export default function RepoExplorer() {
                       margin: 0,
                       width: 14,
                       height: 14,
-                      accentColor: '#d29922',
+                      accentColor: 'var(--attention-emphasis)',
                       cursor: 'pointer',
                     }}
                   />
@@ -1777,7 +1847,7 @@ export default function RepoExplorer() {
                       sx={{
                         px: '6px',
                         py: 0,
-                        bg: prMineOnly ? '#d29922' : 'var(--bg-emphasis)',
+                        bg: prMineOnly ? 'var(--attention-emphasis)' : 'var(--bg-emphasis)',
                         color: prMineOnly ? '#ffffff' : 'var(--fg-default)',
                         fontSize: '11px',
                         fontWeight: 700,
@@ -1822,12 +1892,27 @@ export default function RepoExplorer() {
               </Box>
             </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
-              {pullTotalCount === 0 && !pullsLoading ? (
-                <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
-                  {pullsData && pullsData.count === 0
-                    ? 'No pull requests cached yet.'
-                    : 'No pull requests match these filters.'}
-                </Box>
+              {pullTotalCount === 0 ? (
+                pullsLoading || !queriesReady || !pullsData ? (
+                  <TableRowsSkeleton
+                    rows={10}
+                    cols={[
+                      { width: 14 },
+                      { width: 60 },
+                      { flex: 1 },
+                      { width: 100 },
+                      { width: 60 },
+                      { width: 60 },
+                      { width: 60 },
+                    ]}
+                  />
+                ) : (
+                  <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                    {pullsData && pullsData.count === 0
+                      ? 'No pull requests cached yet.'
+                      : 'No pull requests match these filters.'}
+                  </Box>
+                )
               ) : (
                 <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
@@ -2330,10 +2415,10 @@ function AuthorSidebar({
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 2, textAlign: 'center' }}>
             <Metric label="Total" value={stats?.total ?? issues.length} fg="var(--fg-default)" bg="var(--bg-emphasis)" />
-            <Metric label="Open" value={stats?.open ?? 0} fg="var(--success-fg)" bg="rgba(46, 160, 67, 0.18)" />
-            <Metric label="Done" value={stats?.completed ?? 0} fg="#a371f7" bg="rgba(163, 113, 247, 0.18)" />
+            <Metric label="Open" value={stats?.open ?? 0} fg="var(--success-fg)" bg="var(--success-subtle)" />
+            <Metric label="Done" value={stats?.completed ?? 0} fg="var(--done-fg)" bg="var(--done-subtle)" />
             <Metric label="NP" value={stats?.not_planned ?? 0} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
-            <Metric label="CL" value={stats?.closed ?? 0} fg="var(--danger-fg)" bg="rgba(248, 81, 73, 0.15)" />
+            <Metric label="CL" value={stats?.closed ?? 0} fg="var(--danger-fg)" bg="var(--danger-subtle)" />
           </Box>
         )}
       </Box>
@@ -2343,7 +2428,17 @@ function AuthorSidebar({
       </Box>
 
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {!isLoading && !isError && issues.length === 0 ? (
+        {isLoading && !data ? (
+          <TableRowsSkeleton
+            rows={6}
+            cols={[
+              { width: 80 },
+              { width: 40 },
+              { flex: 1 },
+              { width: 80 },
+            ]}
+          />
+        ) : !isLoading && !isError && issues.length === 0 ? (
           <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
             No cached issues by {login} in this repo.
           </Box>
@@ -2472,7 +2567,7 @@ function ValidationPicker({
           borderTopLeftRadius: 6,
           borderBottomLeftRadius: 6,
           borderRight: 'none',
-          background: value === 'valid' ? 'rgba(46, 160, 67, 0.28)' : 'var(--bg-emphasis)',
+          background: value === 'valid' ? 'rgba(76, 183, 130, 0.28)' : 'var(--bg-emphasis)',
           color: value === 'valid' ? 'var(--success-fg)' : 'var(--fg-muted)',
         }}
       >
@@ -2489,7 +2584,7 @@ function ValidationPicker({
           ...cellSx,
           borderTopRightRadius: 6,
           borderBottomRightRadius: 6,
-          background: value === 'invalid' ? 'rgba(248, 81, 73, 0.28)' : 'var(--bg-emphasis)',
+          background: value === 'invalid' ? 'rgba(235, 87, 87, 0.28)' : 'var(--bg-emphasis)',
           color: value === 'invalid' ? 'var(--danger-fg)' : 'var(--fg-muted)',
         }}
       >
@@ -2831,7 +2926,7 @@ const AuthorCell = React.memo(function AuthorCell({
       />
       <Text
         sx={{
-          color: highlight ? '#d29922' : 'var(--fg-default)',
+          color: highlight ? 'var(--attention-emphasis)' : 'var(--fg-default)',
           fontWeight: 500,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -3000,7 +3095,7 @@ const CountBadge = React.memo(function CountBadge({ n, fg, bg }: { n: number; fg
 function weightColor(w: number): string {
   if (w >= 0.5) return 'var(--success-fg)';
   if (w >= 0.3) return 'var(--accent-fg)';
-  if (w >= 0.15) return '#d29922';
+  if (w >= 0.15) return 'var(--attention-emphasis)';
   if (w >= 0.05) return 'var(--fg-default)';
   return 'var(--fg-subtle)';
 }
@@ -3115,7 +3210,7 @@ function TabButton({
             padding: '0 6px',
             height: 18,
             minWidth: 18,
-            background: '#cf222e',
+            background: 'var(--danger-emphasis)',
             color: '#ffffff',
             borderRadius: 999,
             fontSize: 11,
@@ -3156,10 +3251,10 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
         height: 36,
         borderBottom: '1px solid',
         borderColor: 'var(--border-muted)',
-        bg: mine ? 'rgba(187, 128, 9, 0.08)' : 'transparent',
+        bg: mine ? 'rgba(242, 201, 76, 0.08)' : 'transparent',
         borderLeft: '3px solid',
-        borderLeftColor: mine ? '#d29922' : expanded ? 'var(--accent-emphasis)' : 'transparent',
-        '&:hover': { bg: mine ? 'rgba(187, 128, 9, 0.12)' : 'var(--bg-subtle)' },
+        borderLeftColor: mine ? 'var(--attention-emphasis)' : expanded ? 'var(--accent-emphasis)' : 'transparent',
+        '&:hover': { bg: mine ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-subtle)' },
         cursor: 'pointer',
       }}
       onClick={onView}
@@ -3199,7 +3294,7 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
             <Box
               sx={{
                 px: 1,
-                bg: '#d29922',
+                bg: 'var(--attention-emphasis)',
                 color: '#ffffff',
                 fontSize: '10px',
                 fontWeight: 700,
@@ -3338,10 +3433,10 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
           onClick={onAuthorClick}
         />
       </Box>
-      <AuthorStatCell value={authorStats?.open ?? null} fg="var(--success-fg)" bg="rgba(46, 160, 67, 0.18)" />
-      <AuthorStatCell value={authorStats?.completed ?? null} fg="#a371f7" bg="rgba(163, 113, 247, 0.18)" />
+      <AuthorStatCell value={authorStats?.open ?? null} fg="var(--success-fg)" bg="var(--success-subtle)" />
+      <AuthorStatCell value={authorStats?.completed ?? null} fg="var(--done-fg)" bg="var(--done-subtle)" />
       <AuthorStatCell value={authorStats?.not_planned ?? null} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
-      <AuthorStatCell value={authorStats?.closed ?? null} fg="var(--danger-fg)" bg="rgba(248, 81, 73, 0.15)" />
+      <AuthorStatCell value={authorStats?.closed ?? null} fg="var(--danger-fg)" bg="var(--danger-subtle)" />
       <Box as="td" sx={tableTimeSx} title={issue.created_at ?? undefined}>
         <RecentTime iso={issue.created_at} />
       </Box>
@@ -3379,6 +3474,7 @@ function RelatedPRsCell({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [popoverLayout, updatePopoverLayout] = useRelatedPopoverLayout(open, prs.length, wrapRef);
 
   useEffect(() => {
     if (!open) return;
@@ -3403,7 +3499,7 @@ function RelatedPRsCell({
   }
   const merged = prs.filter((p) => p.merged).length;
   const open_ = prs.filter((p) => !p.merged && p.state === 'open').length;
-  const tone = merged > 0 ? 'var(--success-emphasis)' : open_ > 0 ? 'var(--accent-emphasis)' : 'var(--fg-muted)';
+  const tone = open_ > 0 ? 'var(--success-emphasis)' : merged > 0 ? 'var(--done-emphasis)' : 'var(--fg-muted)';
 
   return (
     <Box
@@ -3411,6 +3507,7 @@ function RelatedPRsCell({
       sx={{ position: 'relative', display: 'inline-block' }}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!open) updatePopoverLayout();
         setOpen((v) => !v);
       }}
     >
@@ -3442,11 +3539,12 @@ function RelatedPRsCell({
         <Box
           sx={{
             position: 'absolute',
-            top: '100%',
+            ...relatedPopoverOffset(popoverLayout),
             right: 0,
-            mt: 1,
             minWidth: 280,
             maxWidth: 360,
+            maxHeight: popoverLayout.maxHeight,
+            overflowY: 'auto',
             bg: 'var(--bg-subtle)',
             border: '1px solid',
             borderColor: 'var(--border-default)',
@@ -3463,8 +3561,8 @@ function RelatedPRsCell({
           {prs.map((pr) => {
             const status = pr.merged ? 'merged' : pr.draft ? 'draft' : pr.state === 'open' ? 'open' : 'closed';
             const statusColor =
-              status === 'merged' ? 'var(--success-emphasis)' :
-              status === 'open' ? 'var(--accent-emphasis)' :
+              status === 'merged' ? 'var(--done-emphasis)' :
+              status === 'open' ? 'var(--success-emphasis)' :
               status === 'draft' ? 'var(--fg-muted)' :
               'var(--danger-fg)';
             return (
@@ -3545,6 +3643,7 @@ function RelatedIssuesCell({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [popoverLayout, updatePopoverLayout] = useRelatedPopoverLayout(open, issues.length, wrapRef);
 
   useEffect(() => {
     if (!open) return;
@@ -3567,9 +3666,9 @@ function RelatedIssuesCell({
   }
 
   // Tone the badge based on the dominant state so a glance tells you whether
-  // the linked issues are still open (accent) or all resolved (success).
+  // the linked issues are still open (green) or all resolved (purple).
   const openIssues = issues.filter((i) => i.state === 'open').length;
-  const tone = openIssues > 0 ? 'var(--accent-emphasis)' : 'var(--success-emphasis)';
+  const tone = openIssues > 0 ? 'var(--success-emphasis)' : 'var(--done-emphasis)';
 
   return (
     <Box
@@ -3577,6 +3676,7 @@ function RelatedIssuesCell({
       sx={{ position: 'relative', display: 'inline-block' }}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!open) updatePopoverLayout();
         setOpen((v) => !v);
       }}
     >
@@ -3608,11 +3708,12 @@ function RelatedIssuesCell({
         <Box
           sx={{
             position: 'absolute',
-            top: '100%',
+            ...relatedPopoverOffset(popoverLayout),
             right: 0,
-            mt: 1,
             minWidth: 280,
             maxWidth: 360,
+            maxHeight: popoverLayout.maxHeight,
+            overflowY: 'auto',
             bg: 'var(--bg-subtle)',
             border: '1px solid',
             borderColor: 'var(--border-default)',
@@ -3636,7 +3737,7 @@ function RelatedIssuesCell({
               'closed';
             const statusColor =
               status === 'open' ? 'var(--success-fg)' :
-              status === 'done' ? 'var(--success-fg)' :
+              status === 'done' ? 'var(--done-fg)' :
               status === 'not_planned' ? 'var(--fg-muted)' :
               'var(--danger-fg)';
             const StatusIcon =
