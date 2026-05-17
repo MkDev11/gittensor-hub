@@ -454,7 +454,7 @@ function Header({
       }}
       onMouseEnter={(e) => {
         const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'rgba(248, 81, 73, 0.15)';
+        el.style.background = 'var(--danger-subtle)';
         el.style.borderColor = 'var(--danger-fg)';
         el.style.color = 'var(--danger-fg)';
       }}

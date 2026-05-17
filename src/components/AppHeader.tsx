@@ -41,7 +41,7 @@ export default function AppHeader() {
         <Header.Link href="/" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/gt-logo.png" alt="Gittensor Hub" width={28} height={28} style={{ display: 'block' }} />
-          <Text sx={{ fontWeight: 'bold', fontSize: 2, letterSpacing: '0.5px' }}>Gittensor Hub</Text>
+          <Text sx={{ fontWeight: 600, fontSize: 2, letterSpacing: '-0.015em' }}>Gittensor Hub</Text>
         </Header.Link>
       </Header.Item>
       {navItems.map((item) => {

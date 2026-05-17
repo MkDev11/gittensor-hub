@@ -201,15 +201,15 @@ export default function IssuesTable() {
             py: '5px',
             borderRadius: '6px',
             border: '1px solid',
-            borderColor: trackedOnly ? '#d29922' : '#30363d',
-            bg: trackedOnly ? 'rgba(187, 128, 9, 0.15)' : '#21262d',
-            color: trackedOnly ? '#d29922' : '#c9d1d9',
+            borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+            bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-emphasis)',
+            color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
             cursor: 'pointer',
             fontSize: '14px',
             fontWeight: 500,
             lineHeight: '20px',
             userSelect: 'none',
-            '&:hover': { borderColor: '#8b949e' },
+            '&:hover': { borderColor: 'var(--border-strong)' },
           }}
         >
           {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
