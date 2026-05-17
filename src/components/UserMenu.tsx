@@ -364,7 +364,7 @@ function MenuItem({
         cursor: 'pointer',
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = danger ? 'rgba(248, 81, 73, 0.15)' : 'var(--menu-item-hover-bg)';
+        (e.currentTarget as HTMLButtonElement).style.background = danger ? 'var(--danger-subtle)' : 'var(--menu-item-hover-bg)';
         (e.currentTarget as HTMLButtonElement).style.color = danger ? 'var(--danger-fg)' : 'var(--menu-item-hover-fg)';
       }}
       onMouseLeave={(e) => {

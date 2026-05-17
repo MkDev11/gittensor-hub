@@ -1,71 +1,154 @@
+/* Linear-inspired palette + base styles. Both schemes ride on CSS custom
+ * properties so existing `var(--bg-canvas)` callers pick up the new look. */
+
 :root,
 [data-theme='dark'] {
-  --bg-canvas: #0d1117;
-  --bg-subtle: #161b22;
-  --bg-inset: #010409;
-  --bg-emphasis: #21262d;
-  --border-default: #30363d;
-  --border-muted: #21262d;
-  --border-strong: #8b949e;
-  --fg-default: #c9d1d9;
-  --fg-muted: #8b949e;
-  --fg-subtle: #7d8590;
-  --accent-fg: #2f81f7;
-  --accent-emphasis: #1f6feb;
-  --accent-glow: rgba(31, 111, 235, 0.3);
-  --success-fg: #3fb950;
-  --success-emphasis: #2ea043;
-  --attention-fg: #d29922;
-  --attention-emphasis: #d29922;
-  --danger-fg: #f85149;
-  --menu-item-hover-bg: #1f6feb;
-  --menu-item-hover-fg: #ffffff;
-  --selected-check: #3fb950;
-  --shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.5);
+  /* Surfaces (near-black with subtle steps for hierarchy) */
+  --bg-canvas: #08090a;
+  --bg-subtle: #101113;
+  --bg-inset: #050506;
+  --bg-emphasis: #1c1d20;
+  --bg-overlay: #1c1d20;
+
+  /* Borders — minimal, almost invisible at rest */
+  --border-default: #23252a;
+  --border-muted: #1a1c1f;
+  --border-strong: #3a3d44;
+
+  /* Foreground (text) */
+  --fg-default: #f7f8f8;
+  --fg-muted: #b4bcd0;
+  --fg-subtle: #8a8f98;
+
+  /* Accent — Linear's signature indigo */
+  --accent-fg: #b4bdff;
+  --accent-emphasis: #5e6ad2;
+  --accent-glow: rgba(94, 106, 210, 0.32);
+
+  /* State colors */
+  --success-fg: #4cb782;
+  --success-emphasis: #3fa672;
+  --attention-fg: #f2c94c;
+  --attention-emphasis: #e0b53d;
+  --danger-fg: #eb5757;
+  --danger-emphasis: #d63b3b;
+  --done-fg: #a584ff;
+  --done-emphasis: #8866ee;
+
+  /* Menu / list hover surface — Linear uses a very subtle tint, no full bg fill */
+  --menu-item-hover-bg: rgba(94, 106, 210, 0.12);
+  --menu-item-hover-fg: #f7f8f8;
+  --selected-check: #4cb782;
+
+  /* Shadows — minimal; Linear leans on borders + bg shifts instead */
+  --shadow-overlay: 0 16px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border-default);
+
+  /* Semantic state tints. Kept in sync with `linear-theme.ts`. */
+  --accent-subtle: rgba(94, 106, 210, 0.16);
+  --success-subtle: rgba(76, 183, 130, 0.16);
+  --attention-subtle: rgba(242, 201, 76, 0.14);
+  --attention-subtle-strong: rgba(242, 201, 76, 0.22);
+  --danger-subtle: rgba(235, 87, 87, 0.14);
+  --done-subtle: rgba(165, 132, 255, 0.14);
+  --neutral-subtle: rgba(255, 255, 255, 0.06);
+  --neutral-emphasis: #2a2c30;
+
+  /* Primer v37 <Button> reads these CSS vars directly, not the React theme. */
+  --button-primary-bgColor-rest: #5e6ad2;
+  --button-primary-bgColor-hover: #6e79de;
+  --button-primary-bgColor-active: #4b56b9;
+  --button-primary-bgColor-disabled: rgba(94, 106, 210, 0.40);
+  --button-primary-fgColor-rest: #ffffff;
+  --button-primary-fgColor-disabled: rgba(255, 255, 255, 0.65);
+  --button-primary-borderColor-rest: transparent;
+  --button-primary-borderColor-hover: transparent;
+  --button-primary-borderColor-disabled: transparent;
+  --button-primary-shadow-selected: inset 0 0 0 transparent;
+  /* Accent — used by Primer for links and active states */
+  --fgColor-accent: #b4bdff;
+  --bgColor-accent-emphasis: #5e6ad2;
+  /* Route Primer's BaseStyles wrapper through Inter; without this, every
+   * element inside <BaseStyles> falls back to the system font stack. */
+  --BaseStyles-fontFamily: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
 :root,
 [data-theme='dark'] {
-  --btn-primary-bg: linear-gradient(180deg, #2ea043 0%, #238636 100%);
-  --btn-primary-hover-bg: linear-gradient(180deg, #3fb950 0%, #2ea043 100%);
-  --btn-primary-active-bg: #1a7f37;
-  --btn-primary-border: rgba(240, 246, 252, 0.1);
+  /* Primary action button — flat indigo, no gradient */
+  --btn-primary-bg: #5e6ad2;
+  --btn-primary-hover-bg: #6e79de;
+  --btn-primary-active-bg: #4b56b9;
+  --btn-primary-border: transparent;
   --btn-primary-fg: #ffffff;
-  --btn-primary-shadow: 0 0 transparent, 0 1px 0 rgba(31, 35, 40, 0.04);
-}
-
-[data-theme='light'] {
-  --btn-primary-bg: linear-gradient(180deg, #1f883d 0%, #1a7f37 100%);
-  --btn-primary-hover-bg: linear-gradient(180deg, #2ea043 0%, #1f883d 100%);
-  --btn-primary-active-bg: #1a7f37;
-  --btn-primary-border: rgba(31, 35, 40, 0.15);
-  --btn-primary-fg: #ffffff;
-  --btn-primary-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --btn-primary-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 [data-theme='light'] {
   --bg-canvas: #ffffff;
-  --bg-subtle: #f6f8fa;
-  --bg-inset: #f6f8fa;
-  --bg-emphasis: #f6f8fa;
-  --border-default: #d1d9e0;
-  --border-muted: #d8dee4;
-  --border-strong: #6e7781;
-  --fg-default: #1f2328;
-  --fg-muted: #59636e;
-  --fg-subtle: #6e7781;
-  --accent-fg: #0969da;
-  --accent-emphasis: #0969da;
-  --accent-glow: rgba(9, 105, 218, 0.3);
-  --success-fg: #1a7f37;
-  --success-emphasis: #1f883d;
-  --attention-fg: #9a6700;
-  --attention-emphasis: #bf8700;
-  --danger-fg: #d1242f;
-  --menu-item-hover-bg: #0969da;
-  --menu-item-hover-fg: #ffffff;
-  --selected-check: #1a7f37;
-  --shadow-overlay: 0 8px 24px rgba(140, 149, 159, 0.2);
+  --bg-subtle: #f9fafb;
+  --bg-inset: #f4f5f7;
+  --bg-emphasis: #ebebed;
+  --bg-overlay: #ffffff;
+
+  --border-default: #e6e6e8;
+  --border-muted: #efeff1;
+  --border-strong: #c2c3c9;
+
+  --fg-default: #161617;
+  --fg-muted: #4a4d54;
+  /* Bumped from #8a8f98 → #6b7280 so subtle text on white hits WCAG AA (≥4.5:1). */
+  --fg-subtle: #6b7280;
+
+  --accent-fg: #5e6ad2;
+  --accent-emphasis: #5e6ad2;
+  --accent-glow: rgba(94, 106, 210, 0.22);
+
+  /* Light-mode semantic fgs darkened so badges with subtle/strong tinted
+   * bgs still pass WCAG AA. Verified ≥5.85:1 on *-subtle@0.10 over white. */
+  --success-fg: #1a6943;
+  --success-emphasis: #1a6943;
+  --attention-fg: #7d5614;
+  --attention-emphasis: #7d5614;
+  --danger-fg: #a72424;
+  --danger-emphasis: #a72424;
+  --done-fg: #5635c3;
+  --done-emphasis: #5635c3;
+
+  --menu-item-hover-bg: rgba(94, 106, 210, 0.08);
+  --menu-item-hover-fg: #161617;
+  --selected-check: #2a8054;
+
+  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--border-default);
+
+  --btn-primary-bg: #5e6ad2;
+  --btn-primary-hover-bg: #4b56b9;
+  --btn-primary-active-bg: #4b56b9;
+  --btn-primary-border: transparent;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+
+  /* Light-mode semantic tints + Primer Button CSS-var overrides. */
+  --accent-subtle: rgba(94, 106, 210, 0.10);
+  --success-subtle: rgba(26, 105, 67, 0.10);
+  --attention-subtle: rgba(125, 86, 20, 0.10);
+  --attention-subtle-strong: rgba(125, 86, 20, 0.16);
+  --danger-subtle: rgba(167, 36, 36, 0.10);
+  --done-subtle: rgba(86, 53, 195, 0.10);
+  --neutral-subtle: rgba(0, 0, 0, 0.06);
+  --neutral-emphasis: #4a4d54;
+
+  --button-primary-bgColor-rest: #5e6ad2;
+  --button-primary-bgColor-hover: #4b56b9;
+  --button-primary-bgColor-active: #4b56b9;
+  --button-primary-bgColor-disabled: rgba(94, 106, 210, 0.32);
+  --button-primary-fgColor-rest: #ffffff;
+  --button-primary-fgColor-disabled: rgba(255, 255, 255, 0.65);
+  --button-primary-borderColor-rest: transparent;
+  --button-primary-borderColor-hover: transparent;
+  --button-primary-borderColor-disabled: transparent;
+  --button-primary-shadow-selected: inset 0 0 0 transparent;
+  --fgColor-accent: #5e6ad2;
+  --bgColor-accent-emphasis: #5e6ad2;
 }
 
 html,
@@ -74,12 +157,16 @@ body {
   padding: 0;
   background-color: var(--bg-canvas);
   color: var(--fg-default);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif,
-    'Apple Color Emoji', 'Segoe UI Emoji';
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI',
+    Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   font-size: 14px;
-  line-height: 1.5;
+  /* Linear uses tighter line-height than GitHub's 1.5 default */
+  line-height: 1.45;
+  /* Slight negative tracking is part of the Inter-on-Linear look */
+  letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
   transition: background-color 120ms, color 120ms;
 }
 
@@ -108,34 +195,68 @@ main {
   padding-bottom: 36px;
 }
 
+/* Linear's focus ring: subtle inset glow, no harsh 2px outline. */
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 [role='option']:focus-visible {
-  outline: 2px solid var(--accent-emphasis);
-  outline-offset: -1px;
-  box-shadow: 0 0 0 1px var(--accent-emphasis);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 4px var(--accent-glow);
 }
 
+/* Forced-colors / high-contrast: box-shadow is suppressed, so swap to a
+ * system-color outline for a visible focus indicator. */
+@media (forced-colors: active) {
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  [role='option']:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+}
+
+/* Scrollbar — thin, transparent track, low-opacity thumb that fades in */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-canvas);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-default);
-  border-radius: 6px;
-  border: 3px solid var(--bg-canvas);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 120ms;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
+  background: rgba(255, 255, 255, 0.12);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.08);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.18);
+  background-clip: padding-box;
 }
 
 select {
   color-scheme: light dark;
 }
+
+/* Selection — match accent */
+::selection {
+  background: var(--accent-glow);
+  color: var(--fg-default);
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
 
 @keyframes gtSpin {
   from { transform: rotate(0deg); }
@@ -172,21 +293,21 @@ select {
   );
   background-size: 200% 100%;
   animation: gtSkeleton 1.4s ease-in-out infinite;
-  border-radius: 4px;
+  border-radius: 6px;
   display: inline-block;
 }
 
 @keyframes badgePulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 0 rgba(207, 34, 46, 0.7); }
-  50% { transform: scale(1.05); box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 6px rgba(207, 34, 46, 0); }
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 0 rgba(235, 87, 87, 0.7); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 6px rgba(235, 87, 87, 0); }
 }
 
-/* GitHub-flavored markdown rendering for issue / PR bodies.
-   Mirrors github.com's primer-rendered styles for parity with the source page. */
+/* ── Markdown rendering for issue / PR bodies ───────────────────────────── */
+
 .md-content {
   color: var(--fg-default);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
   overflow-wrap: break-word;
   word-wrap: break-word;
   max-width: 100%;
@@ -203,14 +324,15 @@ select {
   margin-top: 24px;
   margin-bottom: 16px;
   font-weight: 600;
+  letter-spacing: -0.015em;
   line-height: 1.25;
   color: var(--fg-default);
 }
-.md-content h1 { font-size: 2em;    padding-bottom: 0.3em; border-bottom: 1px solid var(--border-muted); }
-.md-content h2 { font-size: 1.5em;  padding-bottom: 0.3em; border-bottom: 1px solid var(--border-muted); }
-.md-content h3 { font-size: 1.25em; }
+.md-content h1 { font-size: 1.75em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border-muted); }
+.md-content h2 { font-size: 1.4em;  padding-bottom: 0.3em; border-bottom: 1px solid var(--border-muted); }
+.md-content h3 { font-size: 1.2em; }
 .md-content h4 { font-size: 1em; }
-.md-content h5 { font-size: 0.875em; }
+.md-content h5 { font-size: 0.9em; }
 .md-content h6 { font-size: 0.85em; color: var(--fg-muted); }
 
 .md-content p { margin: 0 0 16px; }
@@ -232,7 +354,6 @@ select {
 .md-content li { margin-top: 0.25em; }
 .md-content li > p { margin-top: 16px; }
 .md-content li + li { margin-top: 0.25em; }
-/* GFM task lists */
 .md-content ul.contains-task-list { padding-left: 1.2em; list-style: none; }
 .md-content li.task-list-item { list-style: none; }
 .md-content input[type="checkbox"] { margin: 0 0.35em 0.25em -1.4em; vertical-align: middle; }
@@ -244,10 +365,10 @@ select {
 .md-content a:hover { text-decoration: underline; }
 
 .md-content code {
-  background: rgba(110, 118, 129, 0.4);
-  padding: 0.2em 0.4em;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: var(--bg-emphasis);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace;
   font-size: 85%;
   word-break: normal;
   white-space: break-spaces;
@@ -255,13 +376,13 @@ select {
 .md-content pre {
   background: var(--bg-inset);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 16px;
   overflow: auto;
   margin: 0 0 16px;
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace;
   font-size: 85%;
-  line-height: 1.45;
+  line-height: 1.5;
   word-wrap: normal;
 }
 .md-content pre code {
@@ -278,7 +399,7 @@ select {
 .md-content blockquote {
   margin: 0 0 16px;
   padding: 0 1em;
-  border-left: 0.25em solid var(--border-default);
+  border-left: 2px solid var(--border-strong);
   color: var(--fg-muted);
 }
 .md-content blockquote > :first-child { margin-top: 0; }
@@ -286,7 +407,7 @@ select {
 
 .md-content hr {
   border: none;
-  height: 0.25em;
+  height: 1px;
   background: var(--border-muted);
   margin: 24px 0;
   padding: 0;
@@ -295,12 +416,11 @@ select {
 .md-content img {
   max-width: 100%;
   height: auto;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--bg-canvas);
   box-sizing: content-box;
 }
 
-/* GFM tables */
 .md-content table {
   display: block;
   width: max-content;
@@ -325,23 +445,24 @@ select {
 .md-content kbd {
   display: inline-block;
   padding: 3px 5px;
-  font: 11px ui-monospace, SFMono-Regular, monospace;
+  font: 11px var(--font-mono), ui-monospace, SFMono-Regular, monospace;
   line-height: 10px;
   color: var(--fg-default);
   vertical-align: middle;
-  background-color: var(--bg-canvas);
+  background-color: var(--bg-emphasis);
   border: solid 1px var(--border-default);
   border-bottom-color: var(--border-default);
   border-radius: 6px;
   box-shadow: inset 0 -1px 0 var(--border-default);
 }
 
-/* Force Primer TextInput to render with a real, visible 1px border that
-   matches Dropdown so the two components line up side-by-side. */
+/* ── Primer overrides ────────────────────────────────────────────────────── */
+
+/* TextInput — match Linear's flat, low-contrast inputs */
 [data-component='TextInput'],
 .prc-TextInput-Wrapper,
 span.TextInput-wrapper {
-  background-color: var(--bg-canvas) !important;
+  background-color: var(--bg-subtle) !important;
   min-height: 32px !important;
   height: 32px !important;
   border: 1px solid var(--border-default) !important;
@@ -365,7 +486,8 @@ span.TextInput-wrapper:focus-within {
 span.TextInput-wrapper input {
   background: transparent !important;
   color: var(--fg-default) !important;
-  font-size: 14px !important;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-size: 13px !important;
   outline: none !important;
   box-shadow: none !important;
 }
@@ -380,7 +502,7 @@ span.TextInput-wrapper input {
   color: var(--fg-subtle) !important;
 }
 
-/* Pagination — segmented borderless style used by InlinePagination. */
+/* Pagination — segmented borderless style used by InlinePagination */
 .gt-pag-group {
   display: inline-flex;
   align-items: center;
@@ -388,7 +510,7 @@ span.TextInput-wrapper input {
   padding: 2px;
   border: 1px solid var(--border-default);
   border-radius: 6px;
-  background: var(--bg-canvas);
+  background: var(--bg-subtle);
 }
 .gt-pag-btn {
   appearance: none;
@@ -408,11 +530,11 @@ span.TextInput-wrapper input {
   font-family: inherit;
 }
 .gt-pag-btn:hover:not([data-disabled='true']) {
-  background: var(--bg-overlay, rgba(177, 186, 196, 0.12));
+  background: var(--menu-item-hover-bg);
   color: var(--fg-default);
 }
 .gt-pag-btn:active:not([data-disabled='true']) {
-  background: var(--bg-overlay, rgba(177, 186, 196, 0.2));
+  background: var(--bg-emphasis);
 }
 .gt-pag-btn[data-disabled='true'] {
   color: var(--fg-subtle);

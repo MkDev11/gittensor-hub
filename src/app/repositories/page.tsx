@@ -793,12 +793,12 @@ function RepoTable({
                       height: 24,
                       px: 1,
                       border: '1px solid',
-                      borderColor: rank <= 3 ? '#d29922' : 'border.default',
+                      borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
                       borderRadius: 1,
                       fontFamily: 'mono',
                       fontWeight: 700,
                       fontSize: 0,
-                      color: rank <= 3 ? '#d29922' : 'fg.default',
+                      color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
                     }}
                   >
                     {rank}
@@ -925,12 +925,12 @@ function RepoGridCard({
             justifyContent: 'center',
             px: 1,
             border: '1px solid',
-            borderColor: rank <= 3 ? '#d29922' : 'border.default',
+            borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
             borderRadius: 1,
             fontFamily: 'mono',
             fontWeight: 700,
             fontSize: '11px',
-            color: rank <= 3 ? '#d29922' : 'fg.default',
+            color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
           }}
         >
           {rank}

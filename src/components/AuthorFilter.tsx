@@ -476,14 +476,14 @@ function AuthorRow({
             </span>
           )}
           {typeof count === 'number' && (
-            <span style={{ color: 'var(--fg-muted)', fontSize: 12, fontFamily: 'mono', flexShrink: 0, minWidth: 22, textAlign: 'right', fontWeight: 600 }}>{count}</span>
+            <span style={{ color: 'var(--fg-muted)', fontSize: 12, fontFamily: 'var(--font-mono), ui-monospace, monospace', flexShrink: 0, minWidth: 22, textAlign: 'right', fontWeight: 600 }}>{count}</span>
           )}
         </>
       ) : isExtra ? (
         <>
           <span style={{ flex: 1, fontWeight: 600 }}>{label}</span>
           {typeof count === 'number' && (
-            <span style={{ color: 'var(--fg-muted)', fontSize: 11, fontFamily: 'mono', flexShrink: 0 }}>{count}</span>
+            <span style={{ color: 'var(--fg-muted)', fontSize: 11, fontFamily: 'var(--font-mono), ui-monospace, monospace', flexShrink: 0 }}>{count}</span>
           )}
         </>
       ) : (
@@ -501,11 +501,13 @@ function BucketPill({ label, value, tone }: { label: string; value: number; tone
   const dim = value === 0;
   // Solid fills mirror the IssueStatusBadge palette so a glance at the
   // dropdown matches the State chips in the table.
+  // Theme-aware tokens so the pills pass WCAG AA in both modes. The earlier
+  // dark-tuned 0.40-alpha fills + bright pastel fgs were illegible on white.
   const PALETTE = {
-    open: { bg: 'rgba(35, 134, 54, 0.55)', fg: '#7ee787' },
-    done: { bg: 'rgba(130, 80, 223, 0.55)', fg: '#d2a8ff' },
-    np: { bg: 'rgba(110, 118, 129, 0.45)', fg: '#c9d1d9' },
-    closed: { bg: 'rgba(218, 54, 51, 0.50)', fg: '#ffa198' },
+    open: { bg: 'var(--success-subtle)', fg: 'var(--success-fg)' },
+    done: { bg: 'var(--done-subtle)', fg: 'var(--done-fg)' },
+    np: { bg: 'var(--bg-emphasis)', fg: 'var(--fg-default)' },
+    closed: { bg: 'var(--danger-subtle)', fg: 'var(--danger-fg)' },
   } as const;
   const { bg, fg } = PALETTE[tone];
   return (
@@ -519,11 +521,10 @@ function BucketPill({ label, value, tone }: { label: string; value: number; tone
         minWidth: 22,
         padding: '0 7px',
         borderRadius: 999,
-        background: dim ? 'rgba(110, 118, 129, 0.18)' : bg,
+        background: dim ? 'var(--neutral-subtle)' : bg,
         color: dim ? 'var(--fg-muted)' : fg,
         opacity: dim ? 0.6 : 1,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+        fontFamily: 'inherit',
         fontSize: 12,
         fontWeight: 600,
         fontVariantNumeric: 'tabular-nums',

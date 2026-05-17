@@ -6,23 +6,25 @@ import React, { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MarkGithubIcon } from '@primer/octicons-react';
 
-// Linear-inspired dark palette (matches the pong-agent dashboard's design tokens).
+// Linear-inspired dark palette — values come from CSS vars defined in
+// globals.css so the sign-in surface tracks any future palette tweaks
+// instead of drifting.
 const palette = {
-  bg: '#08090a',
-  bgGradientTop: '#0c0d10',
-  surface: '#101113',
-  surface2: '#151619',
-  line: '#25262b',
-  lineSoft: '#1a1b1f',
-  text: '#f7f8f8',
-  muted: '#8a8f98',
-  muted2: '#b6bbc6',
-  accent: '#5e6ad2',
-  accentSoft: 'rgba(94, 106, 210, 0.16)',
-  red: '#e26d6d',
-  redSoft: 'rgba(226, 109, 109, 0.12)',
-  redBorder: 'rgba(226, 109, 109, 0.32)',
-  shadow: '0 24px 80px rgba(0, 0, 0, 0.45)',
+  bg: 'var(--bg-canvas)',
+  bgGradientTop: 'var(--bg-subtle)',
+  surface: 'var(--bg-subtle)',
+  surface2: 'var(--bg-emphasis)',
+  line: 'var(--border-default)',
+  lineSoft: 'var(--border-muted)',
+  text: 'var(--fg-default)',
+  muted: 'var(--fg-subtle)',
+  muted2: 'var(--fg-muted)',
+  accent: 'var(--accent-emphasis)',
+  accentSoft: 'var(--accent-subtle, rgba(94, 106, 210, 0.16))',
+  red: 'var(--danger-fg)',
+  redSoft: 'rgba(235, 87, 87, 0.14)',
+  redBorder: 'rgba(235, 87, 87, 0.32)',
+  shadow: 'var(--shadow-overlay, 0 24px 80px rgba(0, 0, 0, 0.45))',
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -109,7 +111,7 @@ function SignInBody() {
             role="alert"
             style={{
               background: palette.redSoft,
-              color: '#ffcccc',
+              color: 'var(--danger-fg)',
               border: `1px solid ${palette.redBorder}`,
               borderRadius: 8,
               padding: '10px 12px',
@@ -131,7 +133,7 @@ function SignInBody() {
             gap: 8,
             width: '100%',
             height: 42,
-            background: '#1f2328',
+            background: 'var(--bg-emphasis)',
             color: palette.text,
             border: `1px solid ${palette.line}`,
             borderRadius: 8,
@@ -142,11 +144,11 @@ function SignInBody() {
             transition: 'background 140ms ease, border-color 140ms ease, transform 80ms ease',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = '#2a2f36';
-            e.currentTarget.style.borderColor = '#383a42';
+            e.currentTarget.style.background = 'var(--neutral-emphasis, #2a2c30)';
+            e.currentTarget.style.borderColor = 'var(--border-strong)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = '#1f2328';
+            e.currentTarget.style.background = 'var(--bg-emphasis)';
             e.currentTarget.style.borderColor = palette.line;
             e.currentTarget.style.transform = 'translateY(0)';
           }}

@@ -1211,7 +1211,7 @@ function HealthScoreCard({ pct }: { pct: number }) {
   const r = 50;
   const c = 2 * Math.PI * r;
   const offset = c * (1 - Math.max(0, Math.min(1, pct / 100)));
-  const stroke = pct >= 75 ? 'var(--success-emphasis)' : pct >= 50 ? '#d29922' : 'var(--danger-fg)';
+  const stroke = pct >= 75 ? 'var(--success-emphasis)' : pct >= 50 ? 'var(--attention-emphasis)' : 'var(--danger-fg)';
   return (
     <Panel>
       <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
