@@ -25,6 +25,7 @@ import {
 } from '@primer/octicons-react';
 import type { Icon } from '@primer/octicons-react';
 import Spinner from '@/components/Spinner';
+import { SkeletonBar } from '@/components/Skeleton';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import type { IssueDto, IssuesResponse } from '@/lib/api-types';
 import { renderMarkdownToHtml } from '@/lib/markdown';
@@ -236,7 +237,7 @@ export default function RepoDetailPage(ctx: { params: Promise<{ owner: string; n
             {tab === 'check' && <RepoCheckTab owner={params.owner} name={params.name} />}
           </Box>
 
-          <Box sx={{ width: 320, flexShrink: 0, position: 'sticky', top: 80, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <Box sx={{ width: 320, flexShrink: 0, position: 'sticky', top: 'calc(var(--header-height) + 16px)', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <SidebarSection title="Repository Stats">
               <KvRow label="Weight" value={summary.data?.weight != null ? summary.data.weight.toFixed(2) : '—'} />
               <KvRow label="Total Score" value={fmtScore(summary.data?.totalScore)} />
@@ -1424,10 +1425,22 @@ function Panel({ children }: { children: React.ReactNode }) {
 }
 
 function PanelLoading() {
+  // Generic skeleton for any tab panel — readme, code, issues, pulls, etc.
+  // A few text-line shapes feel more accurate than a centered spinner since
+  // most panels render text/table content.
   return (
     <Panel>
-      <Box sx={{ p: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'fg.muted' }}>
-        <Spinner size="lg" tone="accent" />
+      <Box sx={{ p: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Box
+            key={i}
+            sx={{ display: 'flex', alignItems: 'center', gap: 3, opacity: Math.max(0.25, 1 - i * 0.09) }}
+          >
+            <SkeletonBar width={i % 3 === 0 ? 14 : 12} height={i % 3 === 0 ? 14 : 12} rounded={i % 3 === 0 ? 999 : 6} />
+            <SkeletonBar flex={1} height={10} />
+            {i % 2 === 0 && <SkeletonBar width={60} height={10} />}
+          </Box>
+        ))}
       </Box>
     </Panel>
   );

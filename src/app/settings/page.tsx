@@ -125,16 +125,16 @@ export default function SettingsPage() {
               ariaLabel="Theme"
             />
           </Field>
-          <Field label="Density" hint="Comfortable for readability, compact for more rows on screen.">
+          <Field label="Layout" hint="Where the primary navigation lives — a left sidebar or a horizontal header at the top.">
             <Dropdown
-              value={settings.density}
-              onChange={(v) => update('density', v as 'comfortable' | 'compact')}
+              value={settings.layout}
+              onChange={(v) => update('layout', v as 'sidebar' | 'top-nav')}
               options={[
-                { value: 'comfortable', label: 'Comfortable' },
-                { value: 'compact', label: 'Compact' },
+                { value: 'sidebar', label: 'Sidebar' },
+                { value: 'top-nav', label: 'Header' },
               ]}
               width={200}
-              ariaLabel="Density"
+              ariaLabel="Layout"
             />
           </Field>
           <Field label="Show labels in tables" hint="Inline label chips on issues — turn off for a denser table.">

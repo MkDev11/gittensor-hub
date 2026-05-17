@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, TextInput, Label } from '@primer/react';
 import { RepoIcon, PlusIcon, TrashIcon, PencilIcon, CheckIcon, XIcon, LockIcon } from '@primer/octicons-react';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import SearchInput from '@/components/SearchInput';
 import { formatRelativeTime } from '@/lib/format';
 import { useSession } from '@/lib/settings';
@@ -236,8 +237,17 @@ export default function ManageReposPage() {
             <Box as="tbody">
               {isLoading && (
                 <Box as="tr">
-                  <Box as="td" colSpan={5} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
-                    <Spinner size="sm" tone="muted" inline label="Loading…" />
+                  <Box as="td" colSpan={5} sx={{ p: 0 }}>
+                    <TableRowsSkeleton
+                      rows={6}
+                      cols={[
+                        { flex: 1 },
+                        { width: 60 },
+                        { width: 60 },
+                        { width: 100 },
+                        { width: 110 },
+                      ]}
+                    />
                   </Box>
                 </Box>
               )}

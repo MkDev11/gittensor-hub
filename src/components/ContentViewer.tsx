@@ -371,8 +371,8 @@ function TabStrip({
     ...relatedPRs.map((pr) => {
       const status = pr.merged ? 'merged' : pr.draft ? 'draft' : pr.state === 'open' ? 'open' : 'closed';
       const tone =
-        status === 'merged' ? 'var(--success-emphasis)' :
-        status === 'open' ? 'var(--accent-emphasis)' :
+        status === 'merged' ? 'var(--done-emphasis)' :
+        status === 'open' ? 'var(--success-emphasis)' :
         status === 'draft' ? 'var(--fg-muted)' :
         'var(--danger-fg)';
       return {

@@ -5,12 +5,11 @@ import { useEffect, useState, useCallback } from 'react';
 const STORAGE_KEY = 'gittensor.settings';
 
 export type IssueDefaultState = 'all' | 'open' | 'completed' | 'not_planned' | 'closed_other';
-export type DensityMode = 'comfortable' | 'compact';
 export type ContentDisplayMode = 'modal' | 'accordion' | 'side';
+export type LayoutMode = 'sidebar' | 'top-nav';
 
 export interface AppSettings {
   defaultIssueState: IssueDefaultState;
-  density: DensityMode;
   showLabelsInTable: boolean;
   pollIntervalMs: number;
   uiTickMs: number;
@@ -21,11 +20,11 @@ export interface AppSettings {
   renderMarkdown: boolean;
   autoExpandFirst: boolean;
   pageSize: number;
+  layout: LayoutMode;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultIssueState: 'all',
-  density: 'comfortable',
   showLabelsInTable: true,
   pollIntervalMs: 1000,
   uiTickMs: 1000,
@@ -36,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   renderMarkdown: true,
   autoExpandFirst: false,
   pageSize: 25,
+  layout: 'sidebar',
 };
 
 function readStorage(): AppSettings {
@@ -43,7 +43,14 @@ function readStorage(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      layout: parsed.layout === 'top-nav' || parsed.layout === 'sidebar'
+        ? parsed.layout
+        : DEFAULT_SETTINGS.layout,
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }
