@@ -11,6 +11,7 @@ import { PullStatusBadge } from '@/components/StatusBadge';
 import { formatRelativeTime, isRecent } from '@/lib/format';
 import { useMinerLogin } from '@/lib/use-miner';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
@@ -269,10 +270,21 @@ export default function AllPullsPage() {
             <Box as="tbody">
               {isLoading && filtered.length === 0 && (
                 <Box as="tr">
-                  <Box as="td" colSpan={9} sx={{ p: 0, height: 320 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                      <Spinner size="xl" tone="accent" label="Loading pull requests…" />
-                    </Box>
+                  <Box as="td" colSpan={9} sx={{ p: 0 }}>
+                    <TableRowsSkeleton
+                      rows={12}
+                      cols={[
+                        { width: 24 },
+                        { width: 60 },
+                        { flex: 1 },
+                        { width: 100 },
+                        { width: 80 },
+                        { width: 60 },
+                        { width: 60 },
+                        { width: 60 },
+                        { width: 80 },
+                      ]}
+                    />
                   </Box>
                 </Box>
               )}
@@ -340,7 +352,7 @@ export default function AllPullsPage() {
           <Box
             sx={{
               position: 'fixed',
-              top: 64,
+              top: 'var(--header-height)',
               right: 0,
               bottom: 0,
               width: 480,

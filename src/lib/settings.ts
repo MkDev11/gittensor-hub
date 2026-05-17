@@ -5,12 +5,11 @@ import { useEffect, useState, useCallback } from 'react';
 const STORAGE_KEY = 'gittensor.settings';
 
 export type IssueDefaultState = 'all' | 'open' | 'completed' | 'not_planned' | 'closed_other';
-export type DensityMode = 'comfortable' | 'compact';
 export type ContentDisplayMode = 'modal' | 'accordion' | 'side';
+export type LayoutMode = 'sidebar' | 'top-nav';
 
 export interface AppSettings {
   defaultIssueState: IssueDefaultState;
-  density: DensityMode;
   showLabelsInTable: boolean;
   pollIntervalMs: number;
   uiTickMs: number;
@@ -21,11 +20,11 @@ export interface AppSettings {
   renderMarkdown: boolean;
   autoExpandFirst: boolean;
   pageSize: number;
+  layout: LayoutMode;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultIssueState: 'all',
-  density: 'comfortable',
   showLabelsInTable: true,
   pollIntervalMs: 1000,
   uiTickMs: 1000,
@@ -36,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   renderMarkdown: true,
   autoExpandFirst: false,
   pageSize: 25,
+  layout: 'sidebar',
 };
 
 function readStorage(): AppSettings {

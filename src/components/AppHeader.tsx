@@ -26,15 +26,18 @@ export default function AppHeader() {
   const pathname = usePathname();
   if (HIDE_HEADER_ROUTES.has(pathname)) return null;
 
+  // Wrap in a plain div so the `data-app-header` attribute reliably lands
+  // on a DOM node — Primer's <Header> doesn't forward arbitrary data
+  // attributes, which is why CSS-driven show/hide couldn't target it before.
+  // `userSelect: none` prevents nav-item text from getting highlighted on
+  // accidental double-clicks (the sidebar applies the same to its <aside>).
   return (
+    <div data-app-header="" style={{ position: 'sticky', top: 0, zIndex: 100, userSelect: 'none' }}>
     <Header
       sx={{
         bg: 'canvas.subtle',
         borderBottom: '1px solid',
         borderColor: 'border.default',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
       }}
     >
       <Header.Item>
@@ -78,5 +81,6 @@ export default function AppHeader() {
         <UserMenu />
       </Header.Item>
     </Header>
+    </div>
   );
 }

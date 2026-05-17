@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Text, TextInput, Label, Link as PrimerLink } from '@primer/react';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import { SearchIcon, CommentIcon, ClockIcon } from '@primer/octicons-react';
 import type { IssueDto, IssuesResponse } from '@/lib/api-types';
@@ -93,9 +94,15 @@ export default function RepoIssuesPanel({ owner, name }: { owner: string; name: 
           overflow: 'hidden',
         }}
       >
-        {filtered.length === 0 && !isLoading && (
+        {filtered.length === 0 && isLoading ? (
+          <TableRowsSkeleton
+            rows={8}
+            cols={[{ width: 60 }, { flex: 1 }, { width: 80 }, { width: 60 }]}
+            rowHeight={48}
+          />
+        ) : filtered.length === 0 && !isLoading ? (
           <Box sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>No issues match these filters.</Box>
-        )}
+        ) : null}
         {filtered.map((issue, idx) => (
           <IssueRow
             key={issue.id}

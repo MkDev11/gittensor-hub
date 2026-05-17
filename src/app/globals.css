@@ -52,6 +52,10 @@
   --done-subtle: rgba(165, 132, 255, 0.14);
   --neutral-subtle: rgba(255, 255, 255, 0.06);
   --neutral-emphasis: #2a2c30;
+  /* Skeleton placeholders need stronger contrast than --bg-subtle gives —
+   * those bgs are within 8 RGB units of canvas and read as solid black. */
+  --skeleton-base: rgba(255, 255, 255, 0.05);
+  --skeleton-shine: rgba(255, 255, 255, 0.13);
 
   /* Primer v37 <Button> reads these CSS vars directly, not the React theme. */
   --button-primary-bgColor-rest: #5e6ad2;
@@ -136,6 +140,8 @@
   --done-subtle: rgba(86, 53, 195, 0.10);
   --neutral-subtle: rgba(0, 0, 0, 0.06);
   --neutral-emphasis: #4a4d54;
+  --skeleton-base: rgba(0, 0, 0, 0.05);
+  --skeleton-shine: rgba(0, 0, 0, 0.12);
 
   --button-primary-bgColor-rest: #5e6ad2;
   --button-primary-bgColor-hover: #4b56b9;
@@ -188,6 +194,80 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Chrome shell. Two layouts ride on the same vars, toggled by
+ * `body[data-no-sidebar]` (set by AppShell):
+ *
+ *   sidebar mode (default): left-side fixed sidebar, body pads left.
+ *                           `--top-offset` is 0 (no top bar).
+ *   top-nav mode:            classic sticky top header above main.
+ *                           `--top-offset` clears that header for stickies.
+ *
+ * Padding (not margin on main) keeps the content box at the correct width
+ * — margin would overflow body by the sidebar width and trigger a
+ * horizontal scrollbar. */
+:root {
+  --sidebar-width: 240px;
+  /* Height of a top header bar. 0 in sidebar mode, 64px in top-nav mode.
+   * Sticky elements that need to clear chrome compose this with their own
+   * gap (e.g. `top: calc(var(--header-height) + 16px)`). */
+  --header-height: 0px;
+}
+
+body {
+  padding-left: var(--sidebar-width);
+}
+
+/* Attributes are set on `<html>` by an inline script in `app/layout.tsx`
+ * before React hydrates — so the very first paint already reflects the
+ * user's saved layout preference. AppShell keeps them in sync after that.
+ *
+ * Zeroing `--sidebar-width` collapses every consumer (body padding,
+ * PollerStatusBar's left anchor, etc.) in one move. */
+html[data-no-sidebar] {
+  --sidebar-width: 0px;
+}
+
+/* Narrow viewports (phones, small tablets, deliberately resized windows)
+ * can't afford the 240px sidebar — main content would be squeezed to
+ * single-column-width. Collapse the sidebar and hand the full viewport
+ * to main. The horizontal header is still usable at narrow widths so we
+ * leave that alone. */
+@media (max-width: 768px) {
+  html [data-app-sidebar] {
+    display: none;
+  }
+  html {
+    --sidebar-width: 0px;
+  }
+}
+
+/* Top-nav layout mode (legacy horizontal header). Reveals a non-zero
+ * header height so sticky inner-sidebars and fixed full-height panels
+ * shift down to clear it. */
+html[data-top-header] {
+  --header-height: 64px;
+}
+
+/* AppShell renders both chrome variants. CSS picks the active one based on
+ * the inline pre-hydration script's html attributes, so switching modes
+ * or refreshing in top-nav mode never causes a 64px layout shift from the
+ * header mounting late.
+ *
+ * `display: flex` on the sidebar lives here (not as an inline style) so
+ * the `display: none` hide rule below can override it — inline styles win
+ * against CSS at equal specificity. */
+[data-app-sidebar] {
+  display: flex;
+  flex-direction: column;
+}
+html[data-no-sidebar] [data-app-sidebar] {
+  display: none;
+}
+/* Default (sidebar mode): hide the top header. */
+html:not([data-top-header]) [data-app-header] {
+  display: none;
 }
 
 main {
@@ -284,12 +364,17 @@ select {
   100% { background-position: 200% 0; }
 }
 
+/* Skeleton uses `--skeleton-base` / `--skeleton-shine` (defined per theme
+ * below) instead of `--bg-subtle` / `--bg-emphasis` so the shimmer is
+ * visibly distinct from the canvas. The previous bg-subtle → bg-emphasis
+ * gradient gave only 8-20 RGB units of contrast on a near-black canvas
+ * and read as solid black to most viewers. */
 .gt-skeleton {
   background: linear-gradient(
     90deg,
-    var(--bg-subtle) 0%,
-    var(--bg-emphasis) 50%,
-    var(--bg-subtle) 100%
+    var(--skeleton-base) 0%,
+    var(--skeleton-shine) 50%,
+    var(--skeleton-base) 100%
   );
   background-size: 200% 100%;
   animation: gtSkeleton 1.4s ease-in-out infinite;

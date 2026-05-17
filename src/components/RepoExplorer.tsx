@@ -46,6 +46,7 @@ import { useSettings } from '@/lib/settings';
 import { useToast } from '@/lib/toast';
 import { pullStatus } from '@/lib/api-types';
 import type { IssueDto, IssuesResponse, IssuesMetaResponse, PullDto, PullsResponse, PullsMetaResponse } from '@/lib/api-types';
+import { RepoListSkeleton, TableRowsSkeleton } from '@/components/Skeleton';
 
 type RepoSort = 'weight' | 'name' | 'tracked';
 type IssueState = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed';
@@ -403,7 +404,7 @@ export default function RepoExplorer() {
   // Server polls master_repositories.json every 5 min and persists any new
   // repos at weight 0; nothing is ever removed. Client refetches on the same
   // cadence so newly discovered repos appear without a page reload.
-  const { data: sn74ReposData } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
+  const { data: sn74ReposData, isLoading: sn74ReposLoading } = useQuery<{ repos: RepoEntry[]; source: 'live' | 'empty'; count: number }>({
     queryKey: ['sn74-repos'],
     queryFn: async ({ signal }) => {
       const r = await fetch('/api/sn74-repos', { signal });
@@ -1174,7 +1175,7 @@ export default function RepoExplorer() {
   const pagedPulls = filteredPulls;
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: 'calc(100vh - var(--header-height) - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
       {/* LEFT: REPO LIST */}
       <Box
         sx={{
@@ -1186,9 +1187,9 @@ export default function RepoExplorer() {
         }}
       >
         <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'var(--border-default)', flexShrink: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Text sx={{ fontWeight: 600, fontSize: 1, color: 'var(--fg-default)' }}>Repositories</Text>
-            <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap', rowGap: 1 }}>
+            <Text sx={{ fontWeight: 600, fontSize: 1, color: 'var(--fg-default)', whiteSpace: 'nowrap' }}>Repositories</Text>
+            <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, whiteSpace: 'nowrap' }}>
               {filteredRepos.length} of {allRepos.length}
             </Text>
             {totalUnread > 0 && (
@@ -1470,9 +1471,16 @@ export default function RepoExplorer() {
             );
           })}
           {filteredRepos.length === 0 && (
-            <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 1 }}>
-              No repos match your filters.
-            </Box>
+            // Distinguish "still fetching" from "actually no results": before
+            // sn74-repos resolves we have no data to compare against the
+            // filter, so the empty-state message would be misleading.
+            sn74ReposLoading || !sn74ReposData ? (
+              <RepoListSkeleton />
+            ) : (
+              <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 1 }}>
+                No repos match your filters.
+              </Box>
+            )
           )}
         </Box>
       </Box>
@@ -1602,12 +1610,30 @@ export default function RepoExplorer() {
               </Box>
             </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
-              {issueTotalCount === 0 && !issuesLoading ? (
-                <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
-                  {issuesData && issuesData.count === 0
-                    ? 'No issues cached yet for this repo. The poller will fill it shortly.'
-                    : 'No issues match these filters.'}
-                </Box>
+              {issueTotalCount === 0 ? (
+                issuesLoading || !queriesReady || !issuesData ? (
+                  <TableRowsSkeleton
+                    rows={10}
+                    cols={[
+                      { width: 14 },
+                      { width: 60 },
+                      { flex: 1 },
+                      { width: 100 },
+                      { width: 28 },
+                      { width: 28 },
+                      { width: 28 },
+                      { width: 28 },
+                      { width: 60 },
+                      { width: 60 },
+                    ]}
+                  />
+                ) : (
+                  <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                    {issuesData && issuesData.count === 0
+                      ? 'No issues cached yet for this repo. The poller will fill it shortly.'
+                      : 'No issues match these filters.'}
+                  </Box>
+                )
               ) : (
                 <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
@@ -1822,12 +1848,27 @@ export default function RepoExplorer() {
               </Box>
             </Box>
             <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
-              {pullTotalCount === 0 && !pullsLoading ? (
-                <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
-                  {pullsData && pullsData.count === 0
-                    ? 'No pull requests cached yet.'
-                    : 'No pull requests match these filters.'}
-                </Box>
+              {pullTotalCount === 0 ? (
+                pullsLoading || !queriesReady || !pullsData ? (
+                  <TableRowsSkeleton
+                    rows={10}
+                    cols={[
+                      { width: 14 },
+                      { width: 60 },
+                      { flex: 1 },
+                      { width: 100 },
+                      { width: 60 },
+                      { width: 60 },
+                      { width: 60 },
+                    ]}
+                  />
+                ) : (
+                  <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
+                    {pullsData && pullsData.count === 0
+                      ? 'No pull requests cached yet.'
+                      : 'No pull requests match these filters.'}
+                  </Box>
+                )
               ) : (
                 <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
@@ -2343,7 +2384,17 @@ function AuthorSidebar({
       </Box>
 
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {!isLoading && !isError && issues.length === 0 ? (
+        {isLoading && !data ? (
+          <TableRowsSkeleton
+            rows={6}
+            cols={[
+              { width: 80 },
+              { width: 40 },
+              { flex: 1 },
+              { width: 80 },
+            ]}
+          />
+        ) : !isLoading && !isError && issues.length === 0 ? (
           <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
             No cached issues by {login} in this repo.
           </Box>

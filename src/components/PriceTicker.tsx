@@ -35,7 +35,28 @@ export default function PriceTicker() {
     staleTime: 30_000,
   });
 
-  if (!data) return null;
+  if (!data) {
+    // Reserve the ticker's footprint with skeleton bars so the chrome
+    // doesn't briefly collapse during the initial /api/prices fetch.
+    return (
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '4px 10px',
+          height: 32,
+          border: '1px solid var(--border-default)',
+          borderRadius: 6,
+          background: 'var(--bg-canvas)',
+        }}
+      >
+        <span className="gt-skeleton" style={{ width: 60, height: 10 }} />
+        <span style={{ color: 'var(--border-default)' }}>·</span>
+        <span className="gt-skeleton" style={{ width: 50, height: 10 }} />
+      </div>
+    );
+  }
   const ageSec = Math.max(0, Math.floor((Date.now() - data.fetched_at) / 1000));
   const tooltip = `TAO ${fmtUsd(data.tao_usd)} · α(SN74) ${fmtUsd(data.alpha_usd)} (${fmtTao(data.alpha_tao)} TAO) · updated ${ageSec}s ago`;
 
@@ -53,7 +74,7 @@ export default function PriceTicker() {
         background: 'var(--bg-canvas)',
         color: 'var(--fg-default)',
         fontSize: 12,
-        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+        fontFamily: 'var(--font-mono), ui-monospace, SFMono-Regular, monospace',
         fontVariantNumeric: 'tabular-nums',
         whiteSpace: 'nowrap',
         userSelect: 'none',

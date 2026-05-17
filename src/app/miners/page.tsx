@@ -15,6 +15,7 @@ import {
   TriangleUpIcon,
 } from '@primer/octicons-react';
 import Spinner from '@/components/Spinner';
+import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
 import { useMinerLogin } from '@/lib/use-miner';
 import { useTrackedMiners } from '@/lib/tracked-miners';
 
@@ -340,9 +341,23 @@ export default function MinersPage() {
               </Box>
             )}
             {isLoading && !data && (
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', p: 5, color: 'fg.muted' }}>
-                <Spinner size="lg" tone="accent" />
-              </Box>
+              view === 'grid' ? (
+                <CardGridSkeleton count={9} columns={3} cardHeight={140} />
+              ) : (
+                <TableRowsSkeleton
+                  rows={12}
+                  cols={[
+                    { width: 24 },
+                    { width: 28, flex: 0 },
+                    { flex: 1 },
+                    { width: 60 },
+                    { width: 60 },
+                    { width: 60 },
+                    { width: 60 },
+                    { width: 80 },
+                  ]}
+                />
+              )
             )}
 
             {data && view === 'grid' && (
@@ -381,7 +396,7 @@ export default function MinersPage() {
           </Box>
 
           {/* Sidebar */}
-          <Box sx={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, position: 'sticky', top: 80 }}>
+          <Box sx={{ width: 300, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, position: 'sticky', top: 'calc(var(--header-height) + 16px)' }}>
             <SidebarCard title="Miners Activity">
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', rowGap: '6px', columnGap: 2 }}>
                 <Text sx={{ fontSize: 0, color: 'fg.muted' }}></Text>

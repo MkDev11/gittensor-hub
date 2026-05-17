@@ -88,9 +88,10 @@ export default function DocsPage() {
               width: 220,
               flexShrink: 0,
               position: 'sticky',
-              // Sit below the sticky AppHeader (~64px tall) with a small gap.
-              top: 80,
-              maxHeight: 'calc(100vh - 96px)',
+              // Clears the optional top header (--header-height is 0 in
+              // sidebar mode, 64px in top-nav mode) plus a small gap.
+              top: 'calc(var(--header-height) + 16px)',
+              maxHeight: 'calc(100vh - var(--header-height) - 32px)',
               overflowY: 'auto',
               border: '1px solid',
               borderColor: 'border.default',
