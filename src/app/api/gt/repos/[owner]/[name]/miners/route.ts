@@ -43,8 +43,14 @@ function num(v: unknown): number {
 
 async function refresh(): Promise<CachedShared> {
   const [prs, miners] = await Promise.all([
-    fetch(PRS_URL, { cache: 'no-store', signal: AbortSignal.timeout(15_000) }).then((r) => r.json() as Promise<UpstreamPr[]>),
-    fetch(MINERS_URL, { cache: 'no-store', signal: AbortSignal.timeout(15_000) }).then((r) => r.json() as Promise<UpstreamMiner[]>),
+    fetch(PRS_URL, { cache: 'no-store', signal: AbortSignal.timeout(15_000) }).then((r) => {
+      if (!r.ok) throw new Error(`PRS upstream ${r.status} ${r.statusText}`);
+      return r.json() as Promise<UpstreamPr[]>;
+    }),
+    fetch(MINERS_URL, { cache: 'no-store', signal: AbortSignal.timeout(15_000) }).then((r) => {
+      if (!r.ok) throw new Error(`MINERS upstream ${r.status} ${r.statusText}`);
+      return r.json() as Promise<UpstreamMiner[]>;
+    }),
   ]);
   const ossRanked = [...miners].sort((a, b) => num(b.totalScore) - num(a.totalScore));
   const issueRanked = [...miners].sort((a, b) => num(b.issueDiscoveryScore) - num(a.issueDiscoveryScore));
