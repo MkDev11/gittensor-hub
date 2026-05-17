@@ -46,7 +46,7 @@ export default function RootLayout({
          * back to the server-default sidebar mode. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=JSON.parse(localStorage.getItem('gittensor.settings')||'{}');if(s.layout==='top-nav'){var h=document.documentElement;h.setAttribute('data-no-sidebar','');h.setAttribute('data-top-header','');}}catch(e){}})();`,
+            __html: `(function(){try{var h=document.documentElement;if(location.pathname==='/sign-in'){h.setAttribute('data-no-sidebar','');h.removeAttribute('data-top-header');return;}var s=JSON.parse(localStorage.getItem('gittensor.settings')||'{}');if(s.layout==='top-nav'){h.setAttribute('data-no-sidebar','');h.setAttribute('data-top-header','');}}catch(e){}})();`,
           }}
         />
         <StyledComponentsRegistry>

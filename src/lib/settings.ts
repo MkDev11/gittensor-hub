@@ -43,7 +43,14 @@ function readStorage(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      layout: parsed.layout === 'top-nav' || parsed.layout === 'sidebar'
+        ? parsed.layout
+        : DEFAULT_SETTINGS.layout,
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }

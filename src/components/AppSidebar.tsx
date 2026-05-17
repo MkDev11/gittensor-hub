@@ -72,7 +72,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
       }}
       onMouseEnter={(e) => {
         if (active) return;
-        (e.currentTarget as HTMLAnchorElement).style.background = 'rgba(255, 255, 255, 0.04)';
+        (e.currentTarget as HTMLAnchorElement).style.background = 'var(--menu-item-hover-bg)';
         (e.currentTarget as HTMLAnchorElement).style.color = 'var(--fg-default)';
       }}
       onMouseLeave={(e) => {
@@ -186,9 +186,10 @@ export default function AppSidebar() {
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 8,
+            minWidth: 0,
           }}
         >
-          <UserMenu />
+          <UserMenu maxWidth={156} />
           <ThemeToggle />
         </div>
       </div>

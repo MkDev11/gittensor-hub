@@ -14,7 +14,7 @@ import {
 } from '@primer/octicons-react';
 import { useSession } from '@/lib/settings';
 
-export default function UserMenu() {
+export default function UserMenu({ maxWidth }: { maxWidth?: number | string } = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -109,10 +109,13 @@ export default function UserMenu() {
           padding: 4,
           paddingRight: 8,
           height: 32,
+          flex: maxWidth == null ? undefined : '1 1 auto',
+          maxWidth,
+          minWidth: 0,
         }}
       >
         <span className="gt-skeleton" style={{ width: 24, height: 24, borderRadius: '50%' }} />
-        <span className="gt-skeleton" style={{ width: 60, height: 10 }} />
+        <span className="gt-skeleton" style={{ width: 60, height: 10, minWidth: 0 }} />
       </div>
     );
   }
@@ -135,10 +138,14 @@ export default function UserMenu() {
           fontWeight: 500,
           cursor: 'pointer',
           fontFamily: 'inherit',
+          flex: maxWidth == null ? undefined : '1 1 auto',
+          maxWidth,
+          minWidth: 0,
+          overflow: 'hidden',
         }}
       >
         <PersonIcon size={14} />
-        Sign in
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sign in</span>
       </button>
     );
   }
@@ -171,6 +178,10 @@ export default function UserMenu() {
           cursor: 'pointer',
           fontFamily: 'inherit',
           transition: 'background 80ms, border-color 80ms',
+          flex: maxWidth == null ? undefined : '1 1 auto',
+          maxWidth,
+          minWidth: 0,
+          overflow: 'hidden',
         }}
         onMouseEnter={(e) => {
           if (!open) {
@@ -238,8 +249,12 @@ export default function UserMenu() {
             </span>
           )}
         </span>
-        <span style={{ color: 'var(--fg-default)' }}>{display}</span>
-        <TriangleDownIcon size={12} />
+        <span style={{ color: 'var(--fg-default)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+          {display}
+        </span>
+        <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+          <TriangleDownIcon size={12} />
+        </span>
       </button>
 
       {mounted && open && coords &&

@@ -14,7 +14,6 @@ import {
   TriangleDownIcon,
   TriangleUpIcon,
 } from '@primer/octicons-react';
-import Spinner from '@/components/Spinner';
 import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
 import { useMinerLogin } from '@/lib/use-miner';
 import { useTrackedMiners } from '@/lib/tracked-miners';

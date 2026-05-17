@@ -21,7 +21,6 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
 } from '@primer/octicons-react';
-import Spinner from '@/components/Spinner';
 import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import { formatRelativeTime } from '@/lib/format';

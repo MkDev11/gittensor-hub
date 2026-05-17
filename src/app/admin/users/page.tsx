@@ -6,7 +6,6 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, Label } from '@primer/react';
 import { CheckIcon, XIcon, ShieldLockIcon, PersonIcon, PersonAddIcon } from '@primer/octicons-react';
-import Spinner from '@/components/Spinner';
 import { TableRowsSkeleton } from '@/components/Skeleton';
 import { formatRelativeTime } from '@/lib/format';
 
