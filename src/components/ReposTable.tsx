@@ -452,7 +452,7 @@ function RepoRow({
       <StatCell value={stats?.issues_total} icon={<IssueOpenedIcon size={12} />} color="fg.default" />
       <StatCell value={stats?.issues_open} icon={<IssueOpenedIcon size={12} />} color="success.fg" />
       <StatCell value={stats?.pulls_total} icon={<GitPullRequestIcon size={12} />} color="fg.default" />
-      <StatCell value={stats?.pulls_open} icon={<GitPullRequestIcon size={12} />} color="accent.fg" />
+      <StatCell value={stats?.pulls_open} icon={<GitPullRequestIcon size={12} />} color="success.fg" />
       <StatCell value={stats?.pulls_merged} icon={<GitMergeIcon size={12} />} color="done.fg" />
       <Box as="td" sx={{ px: 3, py: 2, verticalAlign: 'middle', fontSize: 0, color: 'fg.muted', whiteSpace: 'nowrap' }}>
         {stats?.last_activity_at ? (

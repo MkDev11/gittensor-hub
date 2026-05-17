@@ -66,6 +66,7 @@ type IssueSortKey =
 type PullSortKey = 'opened' | 'updated' | 'closed' | 'author' | 'state';
 type SortDir = 'asc' | 'desc';
 type AuthorTarget = { login: string; association?: string | null };
+type RelatedPopoverLayout = { placement: 'down' | 'up'; maxHeight: number };
 interface RepoBadgesResponse {
   repo: string;
   issues_count: number;
@@ -79,6 +80,49 @@ interface RepoBadgesResponse {
 // render, defeating prop equality).
 const EMPTY_PRS: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }> = [];
 const EMPTY_ISSUES: Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }> = [];
+
+const DEFAULT_RELATED_POPOVER_LAYOUT: RelatedPopoverLayout = { placement: 'down', maxHeight: 420 };
+
+function relatedPopoverLayout(anchor: HTMLElement | null, rowCount: number): RelatedPopoverLayout {
+  if (!anchor || typeof window === 'undefined') return DEFAULT_RELATED_POPOVER_LAYOUT;
+  const rect = anchor.getBoundingClientRect();
+  const estimatedHeight = Math.min(480, 36 + rowCount * 32);
+  const spaceBelow = window.innerHeight - rect.bottom - 44;
+  const spaceAbove = rect.top - 8;
+  const placement = spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove ? 'down' : 'up';
+  const available = Math.max(120, placement === 'down' ? spaceBelow : spaceAbove);
+  return { placement, maxHeight: Math.min(480, available) };
+}
+
+function relatedPopoverOffset(layout: RelatedPopoverLayout) {
+  return layout.placement === 'up'
+    ? { bottom: '100%', mb: 1 }
+    : { top: '100%', mt: 1 };
+}
+
+function useRelatedPopoverLayout(
+  open: boolean,
+  rowCount: number,
+  anchorRef: React.RefObject<HTMLDivElement | null>,
+) {
+  const [layout, setLayout] = useState<RelatedPopoverLayout>(DEFAULT_RELATED_POPOVER_LAYOUT);
+  const update = useCallback(() => {
+    setLayout(relatedPopoverLayout(anchorRef.current, rowCount));
+  }, [anchorRef, rowCount]);
+
+  useEffect(() => {
+    if (!open) return;
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open, update]);
+
+  return [layout, update] as const;
+}
 
 // Placeholder used while the live SN74 list is loading. We can't render with a
 // `null` selection without making every downstream read nullable, so we hold a
@@ -3430,6 +3474,7 @@ function RelatedPRsCell({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [popoverLayout, updatePopoverLayout] = useRelatedPopoverLayout(open, prs.length, wrapRef);
 
   useEffect(() => {
     if (!open) return;
@@ -3454,7 +3499,7 @@ function RelatedPRsCell({
   }
   const merged = prs.filter((p) => p.merged).length;
   const open_ = prs.filter((p) => !p.merged && p.state === 'open').length;
-  const tone = merged > 0 ? 'var(--success-emphasis)' : open_ > 0 ? 'var(--accent-emphasis)' : 'var(--fg-muted)';
+  const tone = open_ > 0 ? 'var(--success-emphasis)' : merged > 0 ? 'var(--done-emphasis)' : 'var(--fg-muted)';
 
   return (
     <Box
@@ -3462,6 +3507,7 @@ function RelatedPRsCell({
       sx={{ position: 'relative', display: 'inline-block' }}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!open) updatePopoverLayout();
         setOpen((v) => !v);
       }}
     >
@@ -3493,11 +3539,12 @@ function RelatedPRsCell({
         <Box
           sx={{
             position: 'absolute',
-            top: '100%',
+            ...relatedPopoverOffset(popoverLayout),
             right: 0,
-            mt: 1,
             minWidth: 280,
             maxWidth: 360,
+            maxHeight: popoverLayout.maxHeight,
+            overflowY: 'auto',
             bg: 'var(--bg-subtle)',
             border: '1px solid',
             borderColor: 'var(--border-default)',
@@ -3514,8 +3561,8 @@ function RelatedPRsCell({
           {prs.map((pr) => {
             const status = pr.merged ? 'merged' : pr.draft ? 'draft' : pr.state === 'open' ? 'open' : 'closed';
             const statusColor =
-              status === 'merged' ? 'var(--success-emphasis)' :
-              status === 'open' ? 'var(--accent-emphasis)' :
+              status === 'merged' ? 'var(--done-emphasis)' :
+              status === 'open' ? 'var(--success-emphasis)' :
               status === 'draft' ? 'var(--fg-muted)' :
               'var(--danger-fg)';
             return (
@@ -3596,6 +3643,7 @@ function RelatedIssuesCell({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [popoverLayout, updatePopoverLayout] = useRelatedPopoverLayout(open, issues.length, wrapRef);
 
   useEffect(() => {
     if (!open) return;
@@ -3618,9 +3666,9 @@ function RelatedIssuesCell({
   }
 
   // Tone the badge based on the dominant state so a glance tells you whether
-  // the linked issues are still open (accent) or all resolved (success).
+  // the linked issues are still open (green) or all resolved (purple).
   const openIssues = issues.filter((i) => i.state === 'open').length;
-  const tone = openIssues > 0 ? 'var(--accent-emphasis)' : 'var(--success-emphasis)';
+  const tone = openIssues > 0 ? 'var(--success-emphasis)' : 'var(--done-emphasis)';
 
   return (
     <Box
@@ -3628,6 +3676,7 @@ function RelatedIssuesCell({
       sx={{ position: 'relative', display: 'inline-block' }}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!open) updatePopoverLayout();
         setOpen((v) => !v);
       }}
     >
@@ -3659,11 +3708,12 @@ function RelatedIssuesCell({
         <Box
           sx={{
             position: 'absolute',
-            top: '100%',
+            ...relatedPopoverOffset(popoverLayout),
             right: 0,
-            mt: 1,
             minWidth: 280,
             maxWidth: 360,
+            maxHeight: popoverLayout.maxHeight,
+            overflowY: 'auto',
             bg: 'var(--bg-subtle)',
             border: '1px solid',
             borderColor: 'var(--border-default)',
@@ -3687,7 +3737,7 @@ function RelatedIssuesCell({
               'closed';
             const statusColor =
               status === 'open' ? 'var(--success-fg)' :
-              status === 'done' ? 'var(--success-fg)' :
+              status === 'done' ? 'var(--done-fg)' :
               status === 'not_planned' ? 'var(--fg-muted)' :
               'var(--danger-fg)';
             const StatusIcon =

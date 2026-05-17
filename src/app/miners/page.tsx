@@ -422,7 +422,7 @@ export default function MinersPage() {
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>OPEN</Text>
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>CLOSED</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.pr.merged}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'accent.fg' }}>{stats.pr.open}</Text>
+                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.pr.open}</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'danger.fg' }}>{stats.pr.closed}</Text>
               </Box>
               <Bar label="Merge Rate" pct={stats.pr.mergeRate} color={stats.pr.mergeRate >= 75 ? 'var(--success-fg)' : 'var(--attention-emphasis)'} />
@@ -438,7 +438,7 @@ export default function MinersPage() {
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>OPEN</Text>
                 <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>CLOSED</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.issue.solved}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'accent.fg' }}>{stats.issue.open}</Text>
+                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.issue.open}</Text>
                 <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'danger.fg' }}>{stats.issue.closed}</Text>
               </Box>
               <Bar label="Solve Rate" pct={stats.issue.solveRate} color={stats.issue.solveRate >= 75 ? 'var(--success-fg)' : 'var(--attention-emphasis)'} />

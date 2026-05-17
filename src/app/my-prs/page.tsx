@@ -126,7 +126,7 @@ export default function MyPrsPage() {
         <Box sx={{ display: 'flex', gap: 2, mt: 3, flexWrap: 'wrap' }}>
           <StatBlock label="Total" value={data?.count ?? 0} />
           <StatBlock label="In SN74 whitelist" value={data?.in_whitelist_count ?? 0} tone="success" />
-          <StatBlock label="Open" value={counts.open} tone="accent" />
+          <StatBlock label="Open" value={counts.open} tone="success" />
           <StatBlock label="Merged" value={counts.merged} tone="done" />
           <StatBlock label="Draft" value={counts.draft} />
           <StatBlock label="Closed (unmerged)" value={counts.closed} tone="closed" />
