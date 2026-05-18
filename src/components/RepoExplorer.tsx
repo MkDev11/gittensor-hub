@@ -209,9 +209,7 @@ export default function RepoExplorer() {
   // App-level baseline for per-repo new-content badges in the left rail.
   // Loaded from localStorage in a post-mount effect to avoid SSR/CSR
   // hydration mismatch.
-  const [appBaseline, setAppBaseline] = useState<string>(
-    () => new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-  );
+  const [appBaseline, setAppBaseline] = useState<string>('');
 
   // Pagination state
   const [issuesPage, setIssuesPage] = useState(1);
@@ -772,7 +770,7 @@ export default function RepoExplorer() {
     refetchInterval: 15000,
     staleTime: 10000,
     refetchOnWindowFocus: false,
-    enabled: hydrated,
+    enabled: hydrated && !!appBaseline,
   });
 
   useEffect(() => {
@@ -1271,6 +1269,16 @@ export default function RepoExplorer() {
   const pagedIssues = filteredIssues;
   const pagedPulls = filteredPulls;
 
+  const renderedRepos = hydrated ? filteredRepos : [];
+  const renderedRepoCount = hydrated ? filteredRepos.length : 0;
+  const renderedAllRepoCount = hydrated ? allRepos.length : 0;
+  const renderedTrackedCount = hydrated ? tracked.size : 0;
+  const renderedTotalUnread = hydrated ? totalUnread : 0;
+  const renderedIssueTabCount = hydrated ? issueTabCount : undefined;
+  const renderedPullTabCount = hydrated ? pullTabCount : undefined;
+  const renderedNewIssuesCount = hydrated ? newIssuesCount : 0;
+  const renderedNewPullsCount = hydrated ? newPullsCount : 0;
+
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - var(--header-height) - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
       {/* LEFT: REPO LIST */}
@@ -1287,13 +1295,13 @@ export default function RepoExplorer() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap', rowGap: 1 }}>
             <Text sx={{ fontWeight: 600, fontSize: 1, color: 'var(--fg-default)', whiteSpace: 'nowrap' }}>Repositories</Text>
             <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, whiteSpace: 'nowrap' }}>
-              {filteredRepos.length} of {allRepos.length}
+              {renderedRepoCount} of {renderedAllRepoCount}
             </Text>
-            {totalUnread > 0 && (
+            {renderedTotalUnread > 0 && (
               <Box
                 as="button"
                 onClick={markAllAsRead}
-                title={`Clear ${totalUnread} unread badge${totalUnread === 1 ? '' : 's'}`}
+                title={`Clear ${renderedTotalUnread} unread badge${renderedTotalUnread === 1 ? '' : 's'}`}
                 sx={{
                   ml: 'auto',
                   display: 'inline-flex',
@@ -1316,7 +1324,7 @@ export default function RepoExplorer() {
                 }}
               >
                 <CheckIcon size={11} />
-                Mark all read · {totalUnread}
+                Mark all read · {renderedTotalUnread}
               </Box>
             )}
           </Box>
@@ -1363,13 +1371,13 @@ export default function RepoExplorer() {
               title="Show only tracked repos"
             >
               {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
-              <Text>{tracked.size}</Text>
+              <Text>{renderedTrackedCount}</Text>
             </Box>
           </Box>
         </Box>
 
         <Box sx={{ flex: 1, overflowY: 'auto' }}>
-          {filteredRepos.map((repo) => {
+          {renderedRepos.map((repo) => {
             const isSelected = repo.fullName === selected.fullName;
             const isTracked = tracked.has(repo.fullName);
             const sticky = stickyBadges[repo.fullName];
@@ -1567,11 +1575,11 @@ export default function RepoExplorer() {
               </Box>
             );
           })}
-          {filteredRepos.length === 0 && (
+          {renderedRepos.length === 0 && (
             // Distinguish "still fetching" from "actually no results": before
             // sn74-repos resolves we have no data to compare against the
             // filter, so the empty-state message would be misleading.
-            sn74ReposLoading || !sn74ReposData ? (
+            !hydrated || sn74ReposLoading || !sn74ReposData ? (
               <RepoListSkeleton />
             ) : (
               <Box sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)', fontSize: 1 }}>
@@ -1613,16 +1621,16 @@ export default function RepoExplorer() {
               onClick={() => switchTab('issues')}
               icon={<IssueOpenedIcon size={16} />}
               label="Issues"
-              count={issueTabCount}
-              newCount={tab === 'issues' ? 0 : newIssuesCount}
+              count={renderedIssueTabCount}
+              newCount={tab === 'issues' ? 0 : renderedNewIssuesCount}
             />
             <TabButton
               active={tab === 'pulls'}
               onClick={() => switchTab('pulls')}
               icon={<GitPullRequestIcon size={16} />}
               label="Pull Requests"
-              count={pullTabCount}
-              newCount={tab === 'pulls' ? 0 : newPullsCount}
+              count={renderedPullTabCount}
+              newCount={tab === 'pulls' ? 0 : renderedNewPullsCount}
             />
           </Box>
         </Box>

@@ -29,10 +29,17 @@ interface ContentViewerProps {
   width?: number;
 }
 
+function preserveExistingBody<T extends IssueDto | PullDto>(next: T, current: T | null): T {
+  const currentBody = current?.body?.trim() ? current.body : null;
+  const nextHasBody = !!next.body?.trim();
+  return !nextHasBody && currentBody ? { ...next, body: currentBody } : next;
+}
+
 type ActiveTab = { kind: 'issue' } | { kind: 'pull'; number: number };
 
 export default function ContentViewer({ target, mode, onClose, width }: ContentViewerProps) {
   const { settings } = useSettings();
+  const targetKey = `${target.kind}:${target.owner}/${target.name}#${target.number}`;
   const [issueData, setIssueData] = useState<IssueDto | null>(
     target.kind === 'issue' ? ((target.preloaded as IssueDto | undefined) ?? null) : null
   );
@@ -61,7 +68,7 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
     setRelatedPRs([]);
     setRelatedPRsLoaded(false);
     setError(null);
-  }, [target]);
+  }, [targetKey]);
 
   // Always fetch the detail endpoint once per opened target. We can't trust
   // `preloaded.body` to decide whether to skip — listing endpoints sometimes
@@ -77,7 +84,7 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
   // fetch's resolve had the cancelled flag set, leaving loading stuck true).
   const fetchedForRef = useRef<string | null>(null);
   useEffect(() => {
-    const key = `${target.kind}-${target.owner}-${target.name}-${target.number}`;
+    const key = targetKey;
     if (fetchedForRef.current === key) return;
     fetchedForRef.current = key;
 
@@ -94,8 +101,11 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
       })
       .then((j) => {
         if (fetchedForRef.current !== key) return; // user moved to another target
-        if (target.kind === 'issue') setIssueData(j as IssueDto);
-        else setPullData(j as PullDto);
+        if (target.kind === 'issue') {
+          setIssueData((current) => preserveExistingBody(j as IssueDto, current));
+        } else {
+          setPullData((current) => preserveExistingBody(j as PullDto, current));
+        }
       })
       .catch((e) => {
         if (fetchedForRef.current !== key) return;
@@ -105,7 +115,7 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
         if (fetchedForRef.current !== key) return;
         setLoading(false);
       });
-  }, [target]);
+  }, [targetKey]);
 
   // Fetch related PRs for issue mode (so we can show tabs)
   useEffect(() => {
@@ -116,7 +126,7 @@ export default function ContentViewer({ target, mode, onClose, width }: ContentV
       .then((j) => setRelatedPRs(Array.isArray(j.pulls) ? (j.pulls as PullDto[]) : []))
       .catch(() => setRelatedPRs([]))
       .finally(() => setRelatedPRsLoaded(true));
-  }, [target]);
+  }, [targetKey]);
 
   useEffect(() => {
     if (mode !== 'modal') return;

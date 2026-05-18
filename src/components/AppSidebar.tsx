@@ -51,6 +51,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
     <Link
       href={item.href}
+      prefetch={false}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -129,6 +130,7 @@ export default function AppSidebar() {
       {/* Brand */}
       <Link
         href="/"
+        prefetch={false}
         style={{
           display: 'flex',
           alignItems: 'center',
