@@ -105,7 +105,7 @@ export default function RepoDetailPage(ctx: { params: Promise<{ owner: string; n
       <PageLayout.Header>
         {/* Back link */}
         <Box sx={{ mb: 3 }}>
-          <Link href="/repositories" style={{ textDecoration: 'none' }}>
+          <Link href="/repositories" prefetch={false} style={{ textDecoration: 'none' }}>
             <Box
               sx={{
                 display: 'inline-flex',

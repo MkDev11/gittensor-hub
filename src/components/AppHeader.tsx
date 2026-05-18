@@ -52,7 +52,7 @@ export default function AppHeader() {
         const Icon = item.icon;
         return (
           <Header.Item key={item.href}>
-            <Link href={item.href} style={{ textDecoration: 'none' }}>
+            <Link href={item.href} prefetch={false} style={{ textDecoration: 'none' }}>
               <Box
                 sx={{
                   display: 'flex',

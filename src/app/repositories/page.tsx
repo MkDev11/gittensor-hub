@@ -493,7 +493,7 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
 
 function CardRow({ repo, right }: { repo: GtRepo; right: React.ReactNode }) {
   return (
-    <Link href={`/repos/${repo.owner}/${repo.name}`} style={{ textDecoration: 'none' }}>
+    <Link href={`/repos/${repo.owner}/${repo.name}`} prefetch={false} style={{ textDecoration: 'none' }}>
       <Box
         sx={{
           display: 'flex',
@@ -568,6 +568,7 @@ function RecentPrRow({ pr }: { pr: GtPrSummary }) {
     <Link
       href={`https://github.com/${pr.repository}/pull/${pr.pullRequestNumber}`}
       target="_blank"
+      prefetch={false}
       style={{ textDecoration: 'none' }}
     >
       <Box
@@ -818,7 +819,7 @@ function RepoTable({
                   </Box>
                 </Box>
                 <Box as="td" sx={{ p: 2, verticalAlign: 'middle' }}>
-                  <Link href={`/repos/${r.owner}/${r.name}`} style={{ textDecoration: 'none' }}>
+                  <Link href={`/repos/${r.owner}/${r.name}`} prefetch={false} style={{ textDecoration: 'none' }}>
                     <Box
                       sx={{
                         display: 'inline-flex',
@@ -955,7 +956,7 @@ function RepoGridCard({
           loading="lazy"
           style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
         />
-        <Link href={`/repos/${repo.owner}/${repo.name}`} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
+        <Link href={`/repos/${repo.owner}/${repo.name}`} prefetch={false} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
           <Text
             sx={{
               fontWeight: 600,
