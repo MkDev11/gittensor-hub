@@ -13,6 +13,7 @@ import {
 import { Box, Text, Label, Link as PrimerLink } from '@primer/react';
 import Spinner from '@/components/Spinner';
 import { IssueStatusBadge, PullStatusBadge } from '@/components/StatusBadge';
+import { IssueLabels } from '@/components/IssueLabels';
 import { formatRelativeTime } from '@/lib/format';
 import { normalizeGitHubBodyMarkdown, renderMarkdownToHtml } from '@/lib/markdown';
 import { useSettings } from '@/lib/settings';
@@ -492,39 +493,69 @@ function Header({
       <XIcon size={16} />
     </button>
   ) : null;
+  const statusNode =
+    target.kind === 'issue' ? (
+      data && 'state_reason' in data ? (
+        <IssueStatusBadge issue={data as IssueDto} mergedPRCount={mergedPRCount} />
+      ) : (
+        <IssueOpenedIcon size={16} />
+      )
+    ) : data ? (
+      <PullStatusBadge pr={data as PullDto} />
+    ) : (
+      <GitPullRequestIcon size={16} />
+    );
+  // Derive the GitHub URL from the active tab's target rather than
+  // data.html_url — guarantees the link matches the visible content
+  // even if data and target ever fall out of sync during a tab switch.
+  const githubHref = `https://github.com/${target.owner}/${target.name}/${target.kind === 'pull' ? 'pull' : 'issues'}/${target.number}`;
   return (
     <Box
       sx={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 2,
-        p: 3,
+        p: [2, 3],
         borderBottom: '1px solid',
         borderColor: 'var(--border-default)',
         bg: 'var(--bg-subtle)',
       }}
     >
-      {mode === 'side' && closeButton}
-      <Box sx={{ pt: '2px' }}>
-        {target.kind === 'issue' ? (
-          data && 'state_reason' in data ? (
-            <IssueStatusBadge issue={data as IssueDto} mergedPRCount={mergedPRCount} />
-          ) : (
-            <IssueOpenedIcon size={16} />
-          )
-        ) : data ? (
-          <PullStatusBadge pr={data as PullDto} />
-        ) : (
-          <GitPullRequestIcon size={16} />
-        )}
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flexWrap: 'wrap' }}>
+          {mode === 'side' && closeButton}
+          {statusNode}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+          <a
+            href={githubHref}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 10px',
+              border: '1px solid var(--border-default)',
+              borderRadius: 6,
+              background: 'var(--bg-canvas)',
+              color: 'var(--fg-default)',
+              fontSize: 12,
+              fontWeight: 500,
+              textDecoration: 'none',
+            }}
+          >
+            <LinkExternalIcon size={12} />
+            GitHub
+          </a>
+          {mode !== 'side' && closeButton}
+        </Box>
       </Box>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap' }}>
-          <Text sx={{ fontWeight: 600, fontSize: 2, color: 'var(--fg-default)' }}>
-            {data?.title ?? 'Loading…'}
-          </Text>
+
+      <Box sx={{ minWidth: 0, mt: 2 }}>
+        <Text sx={{ display: 'block', fontWeight: 600, fontSize: 2, lineHeight: 1.35, color: 'var(--fg-default)', overflowWrap: 'anywhere' }}>
+          {data?.title ?? 'Loading…'}
+        </Text>
+        <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, flexWrap: 'wrap', mt: 2 }}>
           <Text sx={{ color: 'var(--fg-muted)', fontSize: 1 }}>#{target.number}</Text>
-          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0 }}>
+          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, overflowWrap: 'anywhere' }}>
             {target.owner}/{target.name}
           </Text>
         </Box>
@@ -590,45 +621,9 @@ function Header({
         )}
         {data && target.kind === 'issue' && (data as IssueDto).labels && (data as IssueDto).labels.length > 0 && (
           <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-            {(data as IssueDto).labels.slice(0, 8).map((l) => (
-              <Label key={l.name} variant="secondary" sx={{ fontSize: '10px' }}>
-                {l.name}
-              </Label>
-            ))}
+            <IssueLabels labels={(data as IssueDto).labels} maxVisible={8} maxLabelWidth={180} wrap />
           </Box>
         )}
-      </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-        {(() => {
-          // Derive the GitHub URL from the active tab's target rather than
-          // data.html_url — guarantees the link matches the visible content
-          // even if data and target ever fall out of sync during a tab switch.
-          const githubHref = `https://github.com/${target.owner}/${target.name}/${target.kind === 'pull' ? 'pull' : 'issues'}/${target.number}`;
-          return (
-          <a
-            href={githubHref}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '4px 10px',
-              border: '1px solid var(--border-default)',
-              borderRadius: 6,
-              background: 'var(--bg-canvas)',
-              color: 'var(--fg-default)',
-              fontSize: 12,
-              fontWeight: 500,
-              textDecoration: 'none',
-            }}
-          >
-            <LinkExternalIcon size={12} />
-            GitHub
-          </a>
-          );
-        })()}
-        {mode !== 'side' && closeButton}
       </Box>
     </Box>
   );

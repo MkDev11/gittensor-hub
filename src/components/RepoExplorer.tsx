@@ -40,6 +40,7 @@ import { formatRelativeTime, isRecent } from '@/lib/format';
 import { useMinerLogin } from '@/lib/use-miner';
 import Dropdown from '@/components/Dropdown';
 import ContentViewer from '@/components/ContentViewer';
+import { IssueLabels } from '@/components/IssueLabels';
 import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
 import { useSettings } from '@/lib/settings';
@@ -1050,7 +1051,7 @@ export default function RepoExplorer() {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           pr = (await r.json()) as PullDto;
         } catch (err) {
-          console.warn('[browse] could not open linked PR:', err);
+          console.warn('[explorer] could not open linked PR:', err);
           return;
         }
       }
@@ -1280,15 +1281,18 @@ export default function RepoExplorer() {
   const renderedNewPullsCount = hydrated ? newPullsCount : 0;
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - var(--header-height) - 36px)', minHeight: 600, position: 'relative', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', flexDirection: ['column', null, null, null, 'row'], height: ['auto', null, null, null, 'calc(100vh - var(--header-height) - 36px)'], minHeight: [0, null, null, null, 600], position: 'relative', overflow: ['visible', null, null, null, 'hidden'] }}>
       {/* LEFT: REPO LIST */}
       <Box
+        style={{ '--repo-explorer-left-width': `${leftWidth}px` } as React.CSSProperties}
         sx={{
-          width: leftWidth,
+          width: ['100%', null, null, null, 'var(--repo-explorer-left-width)'],
+          maxHeight: ['42vh', null, null, null, 'none'],
           flexShrink: 0,
           bg: 'var(--bg-canvas)',
           display: 'flex',
           flexDirection: 'column',
+          borderBottom: ['1px solid var(--border-default)', null, null, null, 'none'],
         }}
       >
         <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'var(--border-default)', flexShrink: 0 }}>
@@ -1594,7 +1598,7 @@ export default function RepoExplorer() {
       <ResizeHandle onMouseDown={startResize('left')} />
 
       {/* RIGHT: ISSUES + PRS TABS FOR SELECTED REPO */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 320, bg: 'var(--bg-canvas)' }}>
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: [0, null, null, null, 320], bg: 'var(--bg-canvas)' }}>
         <Box sx={{ p: 3, pb: 0, borderBottom: '1px solid', borderColor: 'var(--border-default)', flexShrink: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 3 }}>
             <RepoIcon size={20} />
@@ -1682,7 +1686,19 @@ export default function RepoExplorer() {
                     },
                   ]}
                 />
-                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 3, color: 'var(--fg-muted)', fontSize: 0 }}>
+                <Box
+                  sx={{
+                    ml: ['0', null, 'auto'],
+                    width: ['100%', null, 'auto'],
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: ['space-between', null, 'flex-end'],
+                    gap: [2, null, 3],
+                    flexWrap: 'wrap',
+                    color: 'var(--fg-muted)',
+                    fontSize: 0,
+                  }}
+                >
                   {issuesLoading && <Spinner size="sm" tone="muted" />}
                   {issueTotalCount > 0 && !issuesAllMode && (
                     <InlinePagination
@@ -1707,7 +1723,7 @@ export default function RepoExplorer() {
                     </>
                   )}
                   {issuesData && (
-                    <Text>
+                    <Text sx={{ width: ['100%', null, 'auto'], textAlign: ['right', null, 'left'], whiteSpace: 'nowrap' }}>
                       synced {formatRelativeTime(issuesData.last_fetch)}
                     </Text>
                   )}
@@ -1740,7 +1756,7 @@ export default function RepoExplorer() {
                   </Box>
                 )
               ) : (
-                <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
+                <Box as="table" sx={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
                     <Box as="tr" sx={{ borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
                       <Box as="th" sx={{ ...tableHeaderSx, width: 28 }}></Box>
@@ -1920,7 +1936,19 @@ export default function RepoExplorer() {
                     </Box>
                   )}
                 </Box>
-                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 3, color: 'var(--fg-muted)', fontSize: 0 }}>
+                <Box
+                  sx={{
+                    ml: ['0', null, 'auto'],
+                    width: ['100%', null, 'auto'],
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: ['space-between', null, 'flex-end'],
+                    gap: [2, null, 3],
+                    flexWrap: 'wrap',
+                    color: 'var(--fg-muted)',
+                    fontSize: 0,
+                  }}
+                >
                   {pullsLoading && <Spinner size="sm" tone="muted" />}
                   {pullTotalCount > 0 && !pullsAllMode && (
                     <InlinePagination
@@ -1945,7 +1973,7 @@ export default function RepoExplorer() {
                     </>
                   )}
                   {pullsData && (
-                    <Text>
+                    <Text sx={{ width: ['100%', null, 'auto'], textAlign: ['right', null, 'left'], whiteSpace: 'nowrap' }}>
                       synced {formatRelativeTime(pullsData.last_fetch)}
                     </Text>
                   )}
@@ -1975,7 +2003,7 @@ export default function RepoExplorer() {
                   </Box>
                 )
               ) : (
-                <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
+                <Box as="table" sx={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
                     <Box as="tr" sx={{ borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
                       <Box as="th" sx={{ ...tableHeaderSx, width: 28 }}></Box>
@@ -2118,12 +2146,13 @@ export default function RepoExplorer() {
           left edge as an inner absolute element. */}
       {settings.contentDisplay === 'side' && (issueModal || pullModal) && (
         <Box
+          style={{ '--repo-explorer-side-width': `${sideWidth}px` } as React.CSSProperties}
           sx={{
             position: 'absolute',
             top: 0,
             right: 0,
             bottom: 0,
-            width: sideWidth,
+            width: 'var(--repo-explorer-side-width)',
             minWidth: 320,
             maxWidth: '50vw',
             borderLeft: '1px solid',
@@ -2928,6 +2957,7 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
       aria-orientation="vertical"
       onMouseDown={onMouseDown}
       sx={{
+        display: ['none', null, null, null, 'block'],
         width: 4,
         flexShrink: 0,
         cursor: 'col-resize',
@@ -3055,81 +3085,6 @@ const AuthorStatCell = React.memo(function AuthorStatCell({ value, fg, bg }: { v
         <Text sx={{ color: 'var(--fg-muted)', fontFamily: 'mono', fontSize: 0 }}>—</Text>
       ) : (
         <CountBadge n={value} fg={fg} bg={bg} />
-      )}
-    </Box>
-  );
-});
-
-// GitHub uses 6-digit hex without `#` for label colors. Pick a readable
-// foreground (white on dark hues, black on light) using YIQ-style luminance.
-function readableFgFor(hex: string): string {
-  const h = hex.replace(/^#/, '');
-  if (h.length !== 6) return '#000000';
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 160 ? '#1f2328' : '#ffffff';
-}
-
-const IssueLabels = React.memo(function IssueLabels({
-  labels,
-}: {
-  labels: Array<{ name: string; color?: string }>;
-}) {
-  if (!labels || labels.length === 0) return null;
-  // Cap to 4 visible to keep the title cell tidy; rest are tooltipped.
-  const visible = labels.slice(0, 4);
-  const hidden = labels.length - visible.length;
-  return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        flexShrink: 0,
-        flexWrap: 'nowrap',
-        overflow: 'hidden',
-      }}
-    >
-      {visible.map((l) => {
-        const bg = `#${(l.color || '6e7781').replace(/^#/, '')}`;
-        const fg = readableFgFor(bg);
-        return (
-          <span
-            key={l.name}
-            title={l.name}
-            style={{
-              display: 'inline-block',
-              padding: '0 7px',
-              borderRadius: 999,
-              background: bg,
-              color: fg,
-              fontSize: 11,
-              fontWeight: 500,
-              lineHeight: '18px',
-              whiteSpace: 'nowrap',
-              maxWidth: 120,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {l.name}
-          </span>
-        );
-      })}
-      {hidden > 0 && (
-        <span
-          title={labels.slice(4).map((l) => l.name).join(', ')}
-          style={{
-            color: 'var(--fg-muted)',
-            fontSize: 11,
-            fontWeight: 500,
-            flexShrink: 0,
-          }}
-        >
-          +{hidden}
-        </span>
       )}
     </Box>
   );
@@ -3627,33 +3582,19 @@ function RelatedPRsCell({
               status === 'draft' ? 'var(--fg-muted)' :
               'var(--danger-fg)';
             return (
-              <Box
-                as="button"
+              <button
                 key={pr.number}
                 onClick={(e: React.MouseEvent) => {
                   e.stopPropagation();
                   setOpen(false);
                   void onPRClick?.(pr.number);
                 }}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  px: 2,
-                  py: '6px',
-                  width: '100%',
-                  border: 'none',
-                  bg: 'transparent',
-                  color: 'inherit',
-                  fontFamily: 'inherit',
-                  fontSize: 'inherit',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  '&:hover': { bg: 'var(--bg-emphasis)' },
-                }}
+                onMouseEnter={highlightRelatedRow}
+                onMouseLeave={unhighlightRelatedRow}
+                style={relatedPopoverRowStyle}
               >
                 {pr.author_login ? (
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, flexShrink: 0, minWidth: 0, maxWidth: 110 }}>
+                  <span style={relatedPopoverAuthorStyle}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`https://github.com/${pr.author_login}.png?size=32`}
@@ -3661,29 +3602,20 @@ function RelatedPRsCell({
                       loading="lazy"
                       style={{ width: 16, height: 16, borderRadius: '50%', border: '1px solid var(--border-muted)', display: 'block', flexShrink: 0 }}
                     />
-                    <Text sx={{ fontSize: 0, color: 'var(--fg-default)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={relatedPopoverAuthorTextStyle}>
                       {pr.author_login}
-                    </Text>
-                  </Box>
+                    </span>
+                  </span>
                 ) : (
                   <GitPullRequestIcon size={12} />
                 )}
-                <Text sx={{ color: statusColor, fontSize: 0, fontWeight: 700, textTransform: 'capitalize', flexShrink: 0 }}>
+                <span style={{ ...relatedPopoverStatusTextStyle, color: statusColor }}>
                   {status}
-                </Text>
-                <Text
-                  sx={{
-                    fontSize: 0,
-                    color: 'var(--fg-default)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1,
-                  }}
-                >
+                </span>
+                <span style={relatedPopoverTitleStyle}>
                   #{pr.number} {pr.title}
-                </Text>
-              </Box>
+                </span>
+              </button>
             );
           })}
         </Box>
@@ -3806,36 +3738,22 @@ function RelatedIssuesCell({
               status === 'not_planned' ? SkipIcon :
               IssueClosedIcon;
             return (
-              <Box
-                as="button"
+              <button
                 key={iss.number}
                 onClick={(e: React.MouseEvent) => {
                   e.stopPropagation();
                   setOpen(false);
                   onIssueClick?.(iss.number);
                 }}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  px: 2,
-                  py: '6px',
-                  width: '100%',
-                  border: 'none',
-                  bg: 'transparent',
-                  color: 'inherit',
-                  fontFamily: 'inherit',
-                  fontSize: 'inherit',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  '&:hover': { bg: 'var(--bg-emphasis)' },
-                }}
+                onMouseEnter={highlightRelatedRow}
+                onMouseLeave={unhighlightRelatedRow}
+                style={relatedPopoverRowStyle}
               >
-                <Box sx={{ color: statusColor, display: 'inline-flex', flexShrink: 0 }}>
+                <span style={{ color: statusColor, display: 'inline-flex', flexShrink: 0 }}>
                   <StatusIcon size={12} />
-                </Box>
+                </span>
                 {iss.author_login && (
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, flexShrink: 0, minWidth: 0, maxWidth: 110 }}>
+                  <span style={relatedPopoverAuthorStyle}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`https://github.com/${iss.author_login}.png?size=32`}
@@ -3843,28 +3761,76 @@ function RelatedIssuesCell({
                       loading="lazy"
                       style={{ width: 16, height: 16, borderRadius: '50%', border: '1px solid var(--border-muted)', display: 'block', flexShrink: 0 }}
                     />
-                    <Text sx={{ fontSize: 0, color: 'var(--fg-default)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={relatedPopoverAuthorTextStyle}>
                       {iss.author_login}
-                    </Text>
-                  </Box>
+                    </span>
+                  </span>
                 )}
-                <Text
-                  sx={{
-                    fontSize: 0,
-                    color: 'var(--fg-default)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1,
-                  }}
-                >
+                <span style={relatedPopoverTitleStyle}>
                   #{iss.number} {iss.title}
-                </Text>
-              </Box>
+                </span>
+              </button>
             );
           })}
         </Box>
       )}
     </Box>
   );
+}
+
+const relatedPopoverRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  padding: '6px 8px',
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  textAlign: 'left',
+  cursor: 'pointer',
+};
+
+const relatedPopoverAuthorStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  flexShrink: 0,
+  minWidth: 0,
+  maxWidth: 110,
+};
+
+const relatedPopoverAuthorTextStyle: React.CSSProperties = {
+  color: 'var(--fg-default)',
+  fontSize: 12,
+  fontWeight: 500,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const relatedPopoverStatusTextStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  textTransform: 'capitalize',
+  flexShrink: 0,
+};
+
+const relatedPopoverTitleStyle: React.CSSProperties = {
+  color: 'var(--fg-default)',
+  fontSize: 12,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  flex: 1,
+};
+
+function highlightRelatedRow(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = 'var(--bg-emphasis)';
+}
+
+function unhighlightRelatedRow(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = 'transparent';
 }

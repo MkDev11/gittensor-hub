@@ -226,8 +226,8 @@ export default function IssuesTable() {
         </Box>
       </Box>
 
-      <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, overflow: 'hidden', bg: 'canvas.default' }}>
-        <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
+      <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, overflowX: 'auto', overflowY: 'hidden', bg: 'canvas.default' }}>
+        <Box as="table" sx={{ width: '100%', minWidth: 1040, borderCollapse: 'collapse', fontSize: 1 }}>
           <Box
             as="thead"
             sx={{ bg: 'canvas.subtle', borderBottom: '1px solid', borderColor: 'border.default' }}
