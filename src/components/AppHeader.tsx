@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation';
 import { Box, Text } from '@primer/react';
 import {
   StackIcon,
+  RepoIcon,
+  ChecklistIcon,
   IssueOpenedIcon,
   GitPullRequestIcon,
   TelescopeIcon,
@@ -26,16 +28,20 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: '/', label: 'Explorer', icon: TelescopeIcon },
-  { href: '/miners', label: 'Miners', icon: PeopleIcon },
+  { href: '/dashboard', label: 'Dashboard', icon: ChecklistIcon },
+  { href: '/opportunities', label: 'Opportunities', icon: TelescopeIcon },
+  { href: '/', label: 'Explorer', icon: RepoIcon },
   { href: '/repositories', label: 'Repositories', icon: StackIcon },
+  { href: '/miners', label: 'Miners', icon: PeopleIcon },
+  { href: '/my-work', label: 'My Work', icon: PersonIcon },
+  { href: '/bounties', label: 'Bounties', icon: IssueOpenedIcon },
   { href: '/issues', label: 'Issues', icon: IssueOpenedIcon },
   { href: '/pulls', label: 'Pull Requests', icon: GitPullRequestIcon },
   { href: '/my-prs', label: 'My PRs', icon: PersonIcon },
   { href: '/docs', label: 'Docs', icon: BookIcon },
 ];
 
-const mobilePrimaryHrefs = new Set(['/', '/miners', '/repositories', '/issues']);
+const mobilePrimaryHrefs = new Set(['/dashboard', '/opportunities', '/', '/my-work']);
 const mobilePrimaryItems = navItems.filter((item) => mobilePrimaryHrefs.has(item.href));
 const mobileOverflowItems = navItems.filter((item) => !mobilePrimaryHrefs.has(item.href));
 
@@ -77,7 +83,7 @@ export default function AppHeader() {
   if (HIDE_HEADER_ROUTES.has(pathname)) return null;
 
   // Wrap in a plain div so the `data-app-header` attribute reliably lands
-  // on a DOM node — Primer's <Header> doesn't forward arbitrary data
+  // on a DOM node - Primer's <Header> doesn't forward arbitrary data
   // attributes, which is why CSS-driven show/hide couldn't target it before.
   // `userSelect: none` prevents nav-item text from getting highlighted on
   // accidental double-clicks (the sidebar applies the same to its <aside>).

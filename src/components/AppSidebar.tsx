@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   StackIcon,
+  RepoIcon,
+  ChecklistIcon,
   IssueOpenedIcon,
   GitPullRequestIcon,
   TelescopeIcon,
@@ -23,19 +25,23 @@ interface NavItem {
   icon: Icon;
 }
 
-// Primary route switching lives in the sidebar — replaces the prior
+// Primary route switching lives in the sidebar - replaces the prior
 // horizontal top-nav with a Linear-style left rail. Docs is grouped at the
 // bottom as a "reference" link rather than mixed in with the working pages.
 const PRIMARY: NavItem[] = [
-  { href: '/', label: 'Explorer', icon: TelescopeIcon },
-  { href: '/miners', label: 'Miners', icon: PeopleIcon },
+  { href: '/dashboard', label: 'Dashboard', icon: ChecklistIcon },
+  { href: '/opportunities', label: 'Opportunities', icon: TelescopeIcon },
+  { href: '/', label: 'Explorer', icon: RepoIcon },
   { href: '/repositories', label: 'Repositories', icon: StackIcon },
-  { href: '/issues', label: 'Issues', icon: IssueOpenedIcon },
-  { href: '/pulls', label: 'Pull Requests', icon: GitPullRequestIcon },
-  { href: '/my-prs', label: 'My PRs', icon: PersonIcon },
+  { href: '/miners', label: 'Miners', icon: PeopleIcon },
+  { href: '/my-work', label: 'My Work', icon: PersonIcon },
+  { href: '/bounties', label: 'Bounties', icon: IssueOpenedIcon },
 ];
 
 const SECONDARY: NavItem[] = [
+  { href: '/issues', label: 'Issues', icon: IssueOpenedIcon },
+  { href: '/pulls', label: 'Pull Requests', icon: GitPullRequestIcon },
+  { href: '/my-prs', label: 'My PRs', icon: PersonIcon },
   { href: '/docs', label: 'Docs', icon: BookIcon },
 ];
 
@@ -63,7 +69,7 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
         borderRadius: 6,
         textDecoration: 'none',
         // Linear's active treatment is a subtle bg tint, not a font-weight
-        // bump — the affordance reads as "this row is selected" rather than
+        // bump - the affordance reads as "this row is selected" rather than
         // "this text is heavier".
         background: active ? 'var(--menu-item-hover-bg)' : 'transparent',
         color: active ? 'var(--fg-default)' : 'var(--fg-muted)',
