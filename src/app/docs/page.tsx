@@ -249,22 +249,25 @@ export default function DocsPage() {
 
             <Article id="issues" title="Issues page">
               <P>
-                <Code>/issues</Code> — global aggregated view of every cached issue across every tracked repo. Sortable
-                on Repository, Weight, Comments, Opened, Closed.
+                <Code>/issues</Code> — global server-backed issue feed across current SN74 and custom repositories.
+                Results are fetched a page at a time, with compact pagination and configurable rows per page.
               </P>
               <Ul>
+                <Li><strong>Search</strong>: filter by title, repository, issue number, or author</Li>
                 <Li><strong>State filter</strong>: All / Open / Completed / Not planned / Closed (other)</Li>
                 <Li><strong>Author filter</strong>: searchable combobox with avatars + per-author counts</Li>
-                <Li><strong>Closed filter</strong>: All / Closed only / Still open</Li>
-                <Li><strong>Tracked-only</strong> toggle: limits to repos you've starred</Li>
-                <Li><strong>Lazy rendering</strong>: 50 rows initial, more load as you scroll (smoother on huge lists)</Li>
+                <Li><strong>Tracked only</strong>: limits results to repos you've starred; row stars update that watchlist</Li>
+                <Li><strong>Linked PRs</strong>: PR count chips open the related pull requests for each issue</Li>
+                <Li><strong>Author activity</strong>: click an author to open their repo-scoped activity sidebar</Li>
+                <Li><strong>Sorting</strong>: server-backed sorting on Repository, Weight, Comments, Opened, and Closed</Li>
               </Ul>
             </Article>
 
             <Article id="pulls" title="Pull Requests page">
               <P>
-                <Code>/pulls</Code> — global server-backed PR feed across tracked repositories. Results are fetched a
-                page at a time, with the same compact pagination and row-count controls used by the Issues view.
+                <Code>/pulls</Code> — global server-backed PR feed across current SN74 and custom repositories. Results
+                are fetched a page at a time, with the same compact pagination and row-count controls used by the Issues
+                view.
               </P>
               <P>
                 Use search, state, author, <strong>Tracked only</strong>, and <strong>My PRs only</strong> filters to
