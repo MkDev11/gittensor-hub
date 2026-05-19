@@ -51,7 +51,7 @@ import { SortHeader } from '@/components/repo-explorer/SortHeader';
 import { TabButton } from '@/components/repo-explorer/TabButton';
 import { ValidationPicker } from '@/components/repo-explorer/ValidationPicker';
 import { ResizeHandle } from '@/components/repo-explorer/ResizeHandle';
-import { Pagination, InlinePagination, PageSizeDropdown } from '@/components/repo-explorer/Pagination';
+import { InlinePagination } from '@/components/repo-explorer/Pagination';
 import { useIssueFilters, type IssueState } from '@/components/repo-explorer/useIssueFilters';
 import { usePullFilters, type PRState } from '@/components/repo-explorer/usePullFilters';
 
