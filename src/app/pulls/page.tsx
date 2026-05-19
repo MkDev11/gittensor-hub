@@ -22,6 +22,7 @@ import Dropdown from '@/components/Dropdown';
 import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
 import PullAuthorSidebar from '@/components/PullAuthorSidebar';
+import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
 import type { Issue, Pull } from '@/types/entities';
 import ContentViewer from '@/components/ContentViewer';
 import { useSettings } from '@/lib/settings';
@@ -824,6 +825,7 @@ function PullTableRow({
               font: 'inherit',
               cursor: 'pointer',
               maxWidth: '100%',
+              minWidth: 0,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -833,9 +835,20 @@ function PullTableRow({
               loading="lazy"
               style={{ width: 20, height: 20, borderRadius: '50%', border: '1px solid var(--border-muted)', flexShrink: 0, display: 'block' }}
             />
-            <Text sx={{ fontWeight: 500, color: mine ? 'var(--attention-emphasis)' : 'fg.default', '&:hover': { color: 'accent.fg' } }}>
+            <Text
+              sx={{
+                fontWeight: 500,
+                color: mine ? 'var(--attention-emphasis)' : 'fg.default',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                '&:hover': { color: 'accent.fg' },
+              }}
+            >
               {pr.author_login}
             </Text>
+            <AuthorCredibilityNote credibility={pr.author_credibility} variant="pulls" />
             {pr.author_association && pr.author_association !== 'NONE' && (
               <Label variant="secondary" sx={{ fontSize: '10px', flexShrink: 0 }}>
                 {pr.author_association.toLowerCase()}

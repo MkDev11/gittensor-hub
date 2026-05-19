@@ -36,6 +36,7 @@ import { formatRelativeTime, isRecent } from '@/lib/format';
 import { useMinerLogin } from '@/lib/use-miner';
 import Dropdown from '@/components/Dropdown';
 import ContentViewer from '@/components/ContentViewer';
+import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
 import { IssueLabels } from '@/components/IssueLabels';
 import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
@@ -43,7 +44,7 @@ import AuthorSidebar from '@/components/AuthorSidebar';
 import { useSettings } from '@/lib/settings';
 import { useToast } from '@/lib/toast';
 import { pullStatus } from '@/types/entities';
-import type { Issue, IssuesResponse, IssuesMetaResponse, Pull, PullsResponse, PullsMetaResponse } from '@/types/entities';
+import type { AuthorCredibility, Issue, IssuesResponse, IssuesMetaResponse, Pull, PullsResponse, PullsMetaResponse } from '@/types/entities';
 import { RepoListSkeleton, TableRowsSkeleton } from '@/components/Skeleton';
 import { tableHeaderSx, tableCellSx, tableTimeSx } from '@/components/repo-explorer/styles';
 import { weightColor, weightFontWeight } from '@/components/repo-explorer/weights';
@@ -2199,11 +2200,15 @@ const RecentTime = React.memo(function RecentTime({ iso }: { iso: string | null 
 const AuthorCell = React.memo(function AuthorCell({
   login,
   association,
+  credibility,
+  credibilityVariant,
   highlight,
   onClick,
 }: {
   login: string | null;
   association?: string | null;
+  credibility?: AuthorCredibility | null;
+  credibilityVariant?: 'issues' | 'pulls';
   highlight?: boolean;
   onClick?: (login: string, association?: string | null) => void;
 }) {
@@ -2231,6 +2236,7 @@ const AuthorCell = React.memo(function AuthorCell({
         sx={{
           color: highlight ? 'var(--attention-emphasis)' : 'var(--fg-default)',
           fontWeight: 500,
+          minWidth: 0,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -2239,6 +2245,9 @@ const AuthorCell = React.memo(function AuthorCell({
       >
         {login}
       </Text>
+      {credibilityVariant && (
+        <AuthorCredibilityNote credibility={credibility} variant={credibilityVariant} />
+      )}
       {showAssociation && (
         <Label variant="secondary" sx={{ fontSize: '10px', flexShrink: 0 }}>
           {(association ?? '').toLowerCase()}
@@ -2253,6 +2262,7 @@ const AuthorCell = React.memo(function AuthorCell({
     textDecoration: 'none',
     color: 'inherit',
     maxWidth: '100%',
+    minWidth: 0,
   };
 
   if (onClick) {
@@ -2405,7 +2415,13 @@ const ExplorerPullRow = React.memo(function ExplorerPullRow({
         </Box>
       </Box>
       <Box as="td" sx={{ ...tableCellSx, fontSize: 0 }}>
-        <AuthorCell login={pr.author_login} association={pr.author_association} highlight={mine} />
+        <AuthorCell
+          login={pr.author_login}
+          association={pr.author_association}
+          credibility={pr.author_credibility}
+          credibilityVariant="pulls"
+          highlight={mine}
+        />
       </Box>
       <Box as="td" sx={tableTimeSx} title={pr.created_at ?? undefined}>
         <RecentTime iso={pr.created_at} />
@@ -2523,6 +2539,8 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
         <AuthorCell
           login={issue.author_login}
           association={issue.author_association}
+          credibility={issue.author_credibility}
+          credibilityVariant="issues"
           onClick={onAuthorClick}
         />
       </Box>

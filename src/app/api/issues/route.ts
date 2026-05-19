@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb, IssueRow } from '@/lib/db';
 import { getLiveReposAsyncServer } from '@/lib/repos-server';
+import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
+import { authorCredibilityForLogin, getGittensorCredibilityMap } from '@/lib/gittensor-credibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -276,6 +278,10 @@ export async function GET(req: NextRequest) {
 
   const linkedPrsByIssue = new Map<string, Array<{ number: number; title: string; state: string; draft: number; merged: number; author_login: string | null }>>();
   if (rows.length > 0) {
+    for (const repoFullName of new Set(rows.map((r) => r.repo_full_name))) {
+      backfillPrIssueLinksIfNeeded(repoFullName);
+    }
+
     const pairWhere = rows.map(() => '(l.repo_full_name = ? AND l.issue_number = ?)').join(' OR ');
     const pairArgs = rows.flatMap((r) => [r.repo_full_name, r.number]);
     const linkRows = db
@@ -302,6 +308,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const credibilityMap = rows.length > 0 ? await getGittensorCredibilityMap() : null;
   const totalPages = Math.max(1, Math.ceil(totals.count / pageSize));
 
   return NextResponse.json({
@@ -319,6 +326,7 @@ export async function GET(req: NextRequest) {
         labels: parseLabels(r.labels),
         merged_pr_count: linkedPrs.filter((pr) => pr.merged === 1).length,
         linked_prs: linkedPrs,
+        author_credibility: authorCredibilityForLogin(credibilityMap, r.author_login),
       };
     }),
   });

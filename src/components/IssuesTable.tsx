@@ -15,6 +15,7 @@ import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import AuthorFilter from '@/components/AuthorFilter';
 import AuthorActivitySidebar from '@/components/PullAuthorSidebar';
+import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
 import {
   SearchIcon,
   CommentIcon,
@@ -817,6 +818,7 @@ function IssueTableRow({
               font: 'inherit',
               cursor: 'pointer',
               maxWidth: '100%',
+              minWidth: 0,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -826,11 +828,22 @@ function IssueTableRow({
               loading="lazy"
               style={{ width: 20, height: 20, borderRadius: '50%', border: '1px solid var(--border-muted)', flexShrink: 0, display: 'block' }}
             />
-            <Text sx={{ fontWeight: 500, color: 'fg.default', '&:hover': { color: 'accent.fg' } }}>
+            <Text
+              sx={{
+                fontWeight: 500,
+                color: 'fg.default',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                '&:hover': { color: 'accent.fg' },
+              }}
+            >
               {issue.author_login}
             </Text>
+            <AuthorCredibilityNote credibility={issue.author_credibility} variant="issues" />
             {issue.author_association && issue.author_association !== 'NONE' && (
-              <Label variant="secondary" sx={{ fontSize: '10px' }}>
+              <Label variant="secondary" sx={{ fontSize: '10px', flexShrink: 0 }}>
                 {issue.author_association.toLowerCase()}
               </Label>
             )}
