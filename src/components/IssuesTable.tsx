@@ -6,17 +6,16 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
   Box,
   Text,
-  TextInput,
   Label,
   Link as PrimerLink,
 } from '@primer/react';
 import Spinner from '@/components/Spinner';
+import SearchInput from '@/components/SearchInput';
 import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import AuthorFilter from '@/components/AuthorFilter';
 import AuthorSidebar from '@/components/AuthorSidebar';
 import {
-  SearchIcon,
   CommentIcon,
   RepoIcon,
   StarIcon,
