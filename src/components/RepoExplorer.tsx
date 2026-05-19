@@ -33,7 +33,7 @@ import {
   TriangleDownIcon,
   CheckIcon,
 } from '@primer/octicons-react';
-import { ALL_REPOS, type RepoEntry } from '@/lib/repos';
+import { ALL_REPOS, createRepoEntry, type RepoEntry } from '@/lib/repos';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import { IssueStatusBadge, PullStatusBadge } from '@/components/StatusBadge';
 import { formatRelativeTime, isRecent } from '@/lib/format';
@@ -130,13 +130,7 @@ function useRelatedPopoverLayout(
 // `null` selection without making every downstream read nullable, so we hold a
 // dummy entry that yields empty issues/PRs and gets swapped out the moment
 // `allRepos` populates (see the `selected`-hydration effect below).
-const EMPTY_REPO: RepoEntry = {
-  fullName: '',
-  owner: '',
-  name: '',
-  weight: 0,
-  inactiveAt: null,
-};
+const EMPTY_REPO: RepoEntry = createRepoEntry('');
 
 export default function RepoExplorer() {
   const { tracked, toggle: toggleTrack } = useTrackedRepos();
@@ -468,7 +462,7 @@ export default function RepoExplorer() {
       .filter((u) => !sn74Set.has(u.full_name))
       .map((u) => {
         const [owner, name] = u.full_name.split('/');
-        return { fullName: u.full_name, owner, name, weight: u.weight, inactiveAt: null };
+        return { ...createRepoEntry(u.full_name, u.weight), owner, name };
       });
     return [...sn74Repos, ...userExtras];
   }, [sn74Repos, userReposData]);

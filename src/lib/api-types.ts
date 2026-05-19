@@ -37,6 +37,10 @@ export interface PullDto {
   html_url: string | null;
   fetched_at: string;
   first_seen_at: string;
+  additions?: number | null;
+  deletions?: number | null;
+  score?: number | null;
+  scored?: boolean;
 }
 
 export interface IssueStateCounts {
