@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { cookies } from 'next/headers';
 import { publicOrigin } from '@/lib/origin';
+import { safeOAuthNextPath } from '@/lib/oauth-next';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,11 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'GITHUB_OAUTH_CLIENT_ID not set' }, { status: 500 });
   }
   const state = randomBytes(24).toString('base64url');
-  // Only accept same-origin relative paths. Reject absolute URLs ("https://evil.com")
-  // and protocol-relative URLs ("//evil.com") so a crafted `next=` can't turn this
-  // login flow into an open redirect to an attacker-controlled domain.
-  const rawNext = req.nextUrl.searchParams.get('next') || '/';
-  const next = /^\/(?!\/)/.test(rawNext) ? rawNext : '/';
+  const next = safeOAuthNextPath(req.nextUrl.searchParams.get('next'));
 
   // GitHub authorization callback URL must match the one registered on the
   // OAuth App. We derive it from the public-facing host header (not from
