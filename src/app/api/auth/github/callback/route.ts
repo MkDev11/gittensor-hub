@@ -36,7 +36,12 @@ export async function GET(req: NextRequest) {
 
   const jar = await cookies();
   const expectedState = jar.get(STATE_COOKIE)?.value;
-  const next = jar.get(NEXT_COOKIE)?.value || '/';
+  // Defense-in-depth: even though the login route already validated `next`
+  // before planting the cookie, re-check here. An old cookie from a previous
+  // build, a hand-set cookie, or any future code path that writes NEXT_COOKIE
+  // must not be able to redirect off-origin via new URL(next, origin).
+  const rawNext = jar.get(NEXT_COOKIE)?.value || '/';
+  const next = /^\/(?!\/)/.test(rawNext) ? rawNext : '/';
   // Clear the one-shot cookies regardless of outcome.
   jar.set({ name: STATE_COOKIE, value: '', maxAge: 0, path: '/' });
   jar.set({ name: NEXT_COOKIE, value: '', maxAge: 0, path: '/' });
