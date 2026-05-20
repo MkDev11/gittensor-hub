@@ -2144,7 +2144,7 @@ export default function RepoExplorer() {
             sx={{
               position: 'absolute',
               inset: 0,
-              zIndex: 29,
+              zIndex: 219,
               bg: 'transparent',
               pointerEvents: 'auto',
             }}
@@ -2159,9 +2159,9 @@ export default function RepoExplorer() {
               top: 0,
               right: 0,
               bottom: 0,
-              width: '50vw',
-              minWidth: 'min(760px, calc(100vw - 24px))',
-              maxWidth: 'calc(100vw - 24px)',
+              width: ['100%', null, '50vw'],
+              minWidth: ['100%', null, 'min(760px, calc(100vw - 24px))'],
+              maxWidth: ['100%', null, 'calc(100vw - 24px)'],
               borderLeft: '1px solid',
               borderColor: 'var(--border-default)',
               bg: 'var(--bg-canvas)',
@@ -2171,7 +2171,7 @@ export default function RepoExplorer() {
               boxShadow: 'var(--shadow-panel-overlay)',
               transform: authorPanelActive ? 'translateX(0)' : 'translateX(100%)',
               transition: 'transform 220ms cubic-bezier(0.2, 0, 0, 1)',
-              zIndex: 30,
+              zIndex: 220,
               willChange: 'transform',
             }}
           >

@@ -345,9 +345,9 @@ export default function AllPullsPage() {
             </Box>
           </Box>
 
-          <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, overflowX: 'auto', overflowY: 'hidden', bg: 'canvas.default' }}>
+          <Box sx={{ border: '1px solid', borderColor: 'var(--border-default)', borderRadius: 2, overflowX: 'auto', overflowY: 'hidden', bg: 'var(--bg-canvas)' }}>
             <Box as="table" sx={{ width: '100%', minWidth: 1200, borderCollapse: 'collapse', fontSize: 1 }}>
-              <Box as="thead" sx={{ bg: 'canvas.subtle', borderBottom: '1px solid', borderColor: 'border.default' }}>
+              <Box as="thead" sx={{ bg: 'var(--bg-subtle)', borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
                 <Box as="tr">
                   <Box as="th" sx={{ ...headerCellSx, width: 44, textAlign: 'center' }} aria-label="Tracked repository" />
                   <HeaderCell label="State" />
@@ -356,7 +356,7 @@ export default function AllPullsPage() {
                   <HeaderCell label="Weight" onClick={() => toggleSort('weight')} active={sortKey === 'weight'} dir={sortDir} align="right" />
                   <Box as="th" sx={{ ...headerCellSx, py: '4px' }}>
                     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-                      <Box sx={{ color: authorFilter !== 'all' && !mineOnly ? 'accent.fg' : 'inherit' }}>Author</Box>
+                      <Box sx={{ color: authorFilter !== 'all' && !mineOnly ? 'var(--accent-fg)' : 'inherit' }}>Author</Box>
                       <AuthorFilter
                         value={mineOnly ? me || 'all' : authorFilter}
                         onChange={(next) => {
@@ -402,7 +402,7 @@ export default function AllPullsPage() {
                 )}
                 {!isLoading && rows.length === 0 && (
                   <Box as="tr">
-                    <Box as="td" colSpan={11} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+                    <Box as="td" colSpan={11} sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
                       {data && data.count === 0
                         ? hasActiveFilters
                           ? 'No PRs match these filters.'
@@ -485,7 +485,7 @@ export default function AllPullsPage() {
             sx={{
               position: 'fixed',
               inset: 0,
-              zIndex: 109,
+              zIndex: 219,
               bg: 'rgba(1, 4, 9, 0.28)',
             }}
           />
@@ -495,8 +495,8 @@ export default function AllPullsPage() {
               top: 'var(--header-height)',
               right: 0,
               bottom: 0,
-              width: ['calc(100vw - 24px)', null, 'min(760px, 52vw)'],
-              maxWidth: 'calc(100vw - 24px)',
+              width: ['100vw', null, 'min(760px, 52vw)'],
+              maxWidth: ['100vw', null, 'calc(100vw - 24px)'],
               borderLeft: '1px solid',
               borderColor: 'var(--border-default)',
               bg: 'var(--bg-canvas)',
@@ -504,7 +504,7 @@ export default function AllPullsPage() {
               flexDirection: 'column',
               overflow: 'hidden',
               boxShadow: '-18px 0 36px rgba(1, 4, 9, 0.36)',
-              zIndex: 110,
+              zIndex: 220,
             }}
           >
             <AuthorActivitySidebar
@@ -643,7 +643,7 @@ const headerCellSx = {
   textAlign: 'left' as const,
   fontWeight: 600,
   fontSize: 0,
-  color: 'fg.muted',
+  color: 'var(--fg-muted)',
   textTransform: 'uppercase' as const,
   letterSpacing: '0.5px',
   whiteSpace: 'nowrap' as const,
@@ -671,7 +671,7 @@ function HeaderCell({
         textAlign: align,
         cursor: onClick ? 'pointer' : 'default',
         userSelect: 'none',
-        '&:hover': onClick ? { color: 'fg.default' } : undefined,
+        '&:hover': onClick ? { color: 'var(--fg-default)' } : undefined,
       }}
     >
       <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
@@ -715,12 +715,12 @@ function PullTableRow({
       sx={{
         height: 40,
         borderBottom: '1px solid',
-        borderColor: 'border.muted',
-        bg: expanded ? 'accent.muted' : tracked ? 'accent.subtle' : 'canvas.default',
+        borderColor: 'var(--border-muted)',
+        bg: expanded ? 'var(--accent-subtle)' : tracked ? 'var(--accent-subtle)' : 'var(--bg-canvas)',
         borderLeft: '3px solid',
-        borderLeftColor: tracked ? 'accent.emphasis' : 'transparent',
+        borderLeftColor: tracked ? 'var(--accent-emphasis)' : 'transparent',
         cursor: 'pointer',
-        '&:hover': { bg: tracked ? 'accent.muted' : 'canvas.subtle' },
+        '&:hover': { bg: tracked ? 'var(--accent-subtle)' : 'var(--bg-subtle)' },
         '&:last-child': { borderBottom: 'none' },
       }}
     >
@@ -744,11 +744,11 @@ function PullTableRow({
             border: 'none',
             borderRadius: 1,
             bg: 'transparent',
-            color: tracked ? 'attention.fg' : 'fg.muted',
+            color: tracked ? 'var(--attention-fg)' : 'var(--fg-muted)',
             cursor: 'pointer',
             '&:hover': {
-              bg: 'canvas.inset',
-              color: 'attention.fg',
+              bg: 'var(--bg-inset)',
+              color: 'var(--attention-fg)',
             },
           }}
         >
@@ -776,20 +776,20 @@ function PullTableRow({
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
             sx={{
-              color: 'fg.default',
+              color: 'var(--fg-default)',
               fontWeight: 500,
               display: 'block',
               minWidth: 0,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              '&:hover': { color: 'accent.fg' },
+              '&:hover': { color: 'var(--accent-fg)' },
             }}
             title={pr.title}
           >
             {pr.title}
           </PrimerLink>
-          <Text sx={{ color: 'fg.muted', fontSize: 0, flexShrink: 0 }}>#{pr.number}</Text>
+          <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, flexShrink: 0 }}>#{pr.number}</Text>
         </Box>
       </Box>
       <Box as="td" sx={pullRowCellSx}>
@@ -799,7 +799,7 @@ function PullTableRow({
           style={{ textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'accent.fg', maxWidth: '100%', '&:hover': { textDecoration: 'underline' } }}>
+          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'var(--accent-fg)', maxWidth: '100%', '&:hover': { textDecoration: 'underline' } }}>
             <RepoIcon size={12} />
             <Text sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {pr.repo_full_name}
@@ -818,14 +818,14 @@ function PullTableRow({
           fontWeight: weight >= 0.3 ? 700 : weight >= 0.15 ? 600 : weight >= 0.05 ? 500 : 400,
           color:
             weight >= 0.5
-              ? 'success.fg'
+              ? 'var(--success-fg)'
               : weight >= 0.3
-              ? 'accent.fg'
+              ? 'var(--accent-fg)'
               : weight >= 0.15
-              ? 'attention.fg'
+              ? 'var(--attention-fg)'
               : weight >= 0.05
-              ? 'fg.default'
-              : 'fg.muted',
+              ? 'var(--fg-default)'
+              : 'var(--fg-muted)',
         }}
       >
         {weight.toFixed(4)}
@@ -864,12 +864,12 @@ function PullTableRow({
             <Text
               sx={{
                 fontWeight: 500,
-                color: mine ? 'var(--attention-emphasis)' : 'fg.default',
+                color: mine ? 'var(--attention-emphasis)' : 'var(--fg-default)',
                 minWidth: 0,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
-                '&:hover': { color: 'accent.fg' },
+                '&:hover': { color: 'var(--accent-fg)' },
               }}
             >
               {pr.author_login}
@@ -882,7 +882,7 @@ function PullTableRow({
             )}
           </button>
         ) : (
-          <Text sx={{ fontWeight: 500, color: 'fg.muted' }}>-</Text>
+          <Text sx={{ fontWeight: 500, color: 'var(--fg-muted)' }}>-</Text>
         )}
       </Box>
       <Box as="td" sx={{ ...pullRowCellSx, fontSize: 0, whiteSpace: 'nowrap' }}>
