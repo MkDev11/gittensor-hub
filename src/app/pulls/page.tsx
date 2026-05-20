@@ -23,17 +23,13 @@ import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
 import AuthorActivitySidebar from '@/components/AuthorActivitySidebar';
 import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
-import type { Issue, Pull } from '@/types/entities';
+import PullScoreCell from '@/components/PullScoreCell';
+import type { Issue, Pull, PullScore } from '@/types/entities';
 import ContentViewer from '@/components/ContentViewer';
 import { useSettings } from '@/lib/settings';
 import { useSn74Repos, lookupWeight } from '@/lib/use-sn74-repos';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import { InlinePagination as TablePagination } from '@/components/repo-explorer/Pagination';
-
-interface PullScore {
-  score: number | null;
-  collateral_score: number | null;
-}
 
 interface AggPull extends Pull {
   score: PullScore | null;
@@ -875,90 +871,6 @@ function PullTableRow({
   );
 }
 
-function PullScoreCell({ pr }: { pr: AggPull }) {
-  const score = pr.score;
-  if (!score || (score.score === null && score.collateral_score === null)) {
-    return <Text sx={{ color: 'fg.muted' }}>-</Text>;
-  }
-
-  if (pr.merged) {
-    return (
-      <ScoreValue
-        value={score.score}
-        title="Merged score"
-        valueColor="var(--done-fg)"
-      />
-    );
-  }
-
-  if (pr.state === 'open') {
-    return (
-      <Box
-        title={`Potential ${formatScore(score.score)} / Collateral ${formatScore(score.collateral_score)}`}
-        aria-label={`Potential score ${formatScore(score.score)}, collateral score ${formatScore(score.collateral_score)}`}
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 1,
-          maxWidth: '100%',
-          overflow: 'hidden',
-        }}
-      >
-        <ScoreValue value={score.score} title="Potential score" valueColor="var(--fg-default)" />
-        <Text sx={{ color: 'fg.muted', fontSize: '11px' }}>/</Text>
-        <ScoreValue value={score.collateral_score} title="Collateral score" valueColor="var(--danger-fg)" />
-      </Box>
-    );
-  }
-
-  return <Text sx={{ color: 'fg.muted' }}>-</Text>;
-}
-
-function ScoreValue({
-  label,
-  value,
-  title,
-  valueColor,
-}: {
-  label?: string;
-  value: number | null;
-  title: string;
-  valueColor: string;
-}) {
-  return (
-    <Box
-      title={title}
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'baseline',
-        gap: 1,
-        minWidth: 0,
-        fontFamily: 'mono',
-        fontVariantNumeric: 'tabular-nums',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {label && (
-        <Text sx={{ color: 'fg.muted', fontSize: '11px', fontWeight: 700 }}>
-          {label}
-        </Text>
-      )}
-      <Text
-        sx={{
-          color: value === null ? 'fg.muted' : valueColor,
-          fontWeight: value && value > 0 ? 700 : 500,
-        }}
-      >
-        {formatScore(value)}
-      </Text>
-    </Box>
-  );
-}
-
-function formatScore(value: number | null): string {
-  if (value === null) return '-';
-  return value.toFixed(2);
-}
 
 const RecentTime = React.memo(function RecentTime({ iso }: { iso: string | null | undefined }) {
   if (!iso) return <Text sx={{ color: 'var(--fg-muted)' }}>-</Text>;

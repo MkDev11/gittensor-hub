@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb, type IssueRow } from '@/lib/db';
+import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
+import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +110,14 @@ export async function GET(
     .all(full, login, limit, offset) as Array<IssueRow & { merged_pr_count: number }>;
 
   const total = stats?.total ?? 0;
+  const [credibilityIndex, issueDiscoveryDisabledRepos] = await Promise.all([
+    getGittensorCredibilityIndex([full]),
+    getIssueDiscoveryDisabledReposAsyncServer([full]),
+  ]);
+  const issueDiscoveryDisabled = issueDiscoveryDisabledRepos.has(full.toLowerCase());
+  const authorCredibility = authorCredibilityForRepo(credibilityIndex, login, full, {
+    issueDiscoveryDisabled,
+  });
 
   return NextResponse.json({
     repo: full,
@@ -119,6 +129,7 @@ export async function GET(
       association,
       avatar_url: `https://github.com/${encodeURIComponent(login)}.png?size=96`,
       html_url: `https://github.com/${encodeURIComponent(login)}`,
+      credibility: authorCredibility,
     },
     stats: {
       total,
@@ -132,6 +143,9 @@ export async function GET(
       ...r,
       labels: parseLabels(r.labels),
       merged_pr_count: r.merged_pr_count,
+      author_credibility: authorCredibilityForRepo(credibilityIndex, r.author_login, r.repo_full_name, {
+        issueDiscoveryDisabled,
+      }),
     })),
   });
 }

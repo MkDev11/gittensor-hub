@@ -1,45 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb, PullRow } from '@/lib/db';
-import { getLiveReposAsyncServer } from '@/lib/repos-server';
-import { authorCredibilityForLogin, getGittensorCredibilityMap } from '@/lib/gittensor-credibility';
-import type { AuthorCredibility } from '@/types/entities';
+import { getIssueDiscoveryDisabledReposAsyncServer, getLiveReposAsyncServer } from '@/lib/repos-server';
+import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
+import { getGittensorPrScoreMap, pullScoreKey } from '@/lib/gittensor-pr-scores';
+import type { AuthorCredibility, PullScore } from '@/types/entities';
 
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_MAX = 100;
-const GITTENSOR_PRS_URL = 'https://api.gittensor.io/prs';
-const GITTENSOR_SCORE_TTL_MS = 30_000;
 
 type SortKey = 'updated' | 'opened' | 'closed' | 'repo' | 'weight' | 'number';
 type SortDir = 'asc' | 'desc';
-
-interface PullScore {
-  score: number | null;
-  collateral_score: number | null;
-}
 
 interface AggPullRow extends Omit<PullRow, 'body'> {
   score: PullScore | null;
   author_credibility: AuthorCredibility | null;
 }
-
-interface UpstreamGittensorPr {
-  repository: string;
-  pullRequestNumber: number;
-  score?: string | number | null;
-  potentialScore?: string | number | null;
-  collateralScore?: string | number | null;
-  collateral_score?: string | number | null;
-}
-
-interface CachedGittensorScores {
-  fetched_at: number;
-  byPull: Map<string, PullScore>;
-}
-
-let scoreCache: CachedGittensorScores | null = null;
-let scoreInFlight: Promise<CachedGittensorScores> | null = null;
 
 function positiveInt(value: string | null, fallback: number): number {
   const n = Number.parseInt(value ?? '', 10);
@@ -160,50 +137,6 @@ function orderBy(sort: SortKey, dir: SortDir): string {
   return `ORDER BY ${col} ${direction}, LOWER(p.repo_full_name) ASC, p.number DESC`;
 }
 
-function scoreKey(repoFullName: string, prNumber: number): string {
-  return `${repoFullName.toLowerCase()}#${prNumber}`;
-}
-
-function nullableNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  const n = typeof value === 'string' ? Number.parseFloat(value) : typeof value === 'number' ? value : NaN;
-  return Number.isFinite(n) ? n : null;
-}
-
-async function refreshGittensorScores(): Promise<CachedGittensorScores> {
-  const r = await fetch(GITTENSOR_PRS_URL, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
-  if (!r.ok) throw new Error(`upstream ${r.status}`);
-  const raw = (await r.json()) as UpstreamGittensorPr[];
-  const byPull = new Map<string, PullScore>();
-  for (const pr of raw) {
-    const number = Number(pr.pullRequestNumber);
-    if (!pr.repository || !Number.isFinite(number)) continue;
-    byPull.set(scoreKey(pr.repository, number), {
-      score: nullableNumber(pr.potentialScore ?? pr.score),
-      collateral_score: nullableNumber(pr.collateralScore ?? pr.collateral_score),
-    });
-  }
-  const next = { fetched_at: Date.now(), byPull };
-  scoreCache = next;
-  return next;
-}
-
-async function getGittensorScoreMap(): Promise<Map<string, PullScore> | null> {
-  const now = Date.now();
-  if (scoreCache && now - scoreCache.fetched_at < GITTENSOR_SCORE_TTL_MS) return scoreCache.byPull;
-  if (!scoreInFlight) {
-    scoreInFlight = refreshGittensorScores().finally(() => {
-      scoreInFlight = null;
-    });
-  }
-  try {
-    const scores = await scoreInFlight;
-    return scores.byPull;
-  } catch {
-    return scoreCache?.byPull ?? null;
-  }
-}
-
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const reqRepos = normalizeRepoList(url.searchParams.get('repos'));
@@ -288,15 +221,22 @@ export async function GET(req: NextRequest) {
     )
     .all(...filteredWhere.args, pageSize, offset) as PullRow[];
 
-  const [scoreMap, credibilityMap] = rows.length > 0
-    ? await Promise.all([getGittensorScoreMap(), getGittensorCredibilityMap()])
-    : [null, null];
+  const rowRepoNames = rows.map((r) => r.repo_full_name);
+  const [scoreMap, credibilityIndex, issueDiscoveryDisabledRepos] = rows.length > 0
+    ? await Promise.all([
+        getGittensorPrScoreMap(),
+        getGittensorCredibilityIndex(rowRepoNames),
+        getIssueDiscoveryDisabledReposAsyncServer(rowRepoNames),
+      ])
+    : [null, null, new Set<string>()];
 
   const totalPages = Math.max(1, Math.ceil(totals.count / pageSize));
   const pulls: AggPullRow[] = rows.map((r) => ({
     ...r,
-    score: scoreMap?.get(scoreKey(r.repo_full_name, r.number)) ?? null,
-    author_credibility: authorCredibilityForLogin(credibilityMap, r.author_login),
+    score: scoreMap?.get(pullScoreKey(r.repo_full_name, r.number)) ?? null,
+    author_credibility: authorCredibilityForRepo(credibilityIndex, r.author_login, r.repo_full_name, {
+      issueDiscoveryDisabled: issueDiscoveryDisabledRepos.has(r.repo_full_name.toLowerCase()),
+    }),
   }));
 
   return NextResponse.json({

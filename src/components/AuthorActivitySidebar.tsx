@@ -7,8 +7,9 @@ import { MarkGithubIcon, XIcon } from '@primer/octicons-react';
 import Spinner from '@/components/Spinner';
 import { TableRowsSkeleton } from '@/components/Skeleton';
 import { IssueStatusBadge, PullStatusBadge } from '@/components/StatusBadge';
+import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
 import { formatRelativeTime, isRecent } from '@/lib/format';
-import type { Issue, Pull } from '@/types/entities';
+import type { AuthorCredibility, Issue, Pull } from '@/types/entities';
 import { InlinePagination as TablePagination } from '@/components/repo-explorer/Pagination';
 
 const AUTHOR_PAGE_SIZE = 15;
@@ -23,6 +24,7 @@ interface AuthorPullsResponse {
     association: string | null;
     avatar_url: string;
     html_url: string;
+    credibility: AuthorCredibility | null;
   };
   stats: {
     total: number;
@@ -45,6 +47,7 @@ interface AuthorIssuesResponse {
     association: string | null;
     avatar_url: string;
     html_url: string;
+    credibility: AuthorCredibility | null;
   };
   stats: {
     total: number;
@@ -117,6 +120,9 @@ export default function AuthorActivitySidebar({
   const pulls = data?.pulls ?? [];
   const issueStats = issuesData?.stats;
   const issues = issuesData?.issues ?? [];
+  const headerCredibility = activeTab === 'issues'
+    ? issuesData?.author.credibility ?? data?.author.credibility
+    : data?.author.credibility ?? issuesData?.author.credibility;
   const pullTotalPages = data?.total_pages ?? pullsPage;
   const issueTotalPages = issuesData?.total_pages ?? issuesPage;
   const safePullsPage = Math.min(pullsPage, pullTotalPages);
@@ -179,6 +185,10 @@ export default function AuthorActivitySidebar({
                 {association.toLowerCase()}
               </Label>
             )}
+            <AuthorCredibilityNote
+              credibility={headerCredibility}
+              variant={activeTab === 'issues' ? 'issues' : 'pulls'}
+            />
           </Box>
           <Text sx={{ color: 'var(--fg-muted)', fontSize: 0, display: 'block', mt: 1 }}>
             {repoFullName}
