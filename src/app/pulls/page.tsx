@@ -24,7 +24,8 @@ import AuthorFilter from '@/components/AuthorFilter';
 import AuthorActivitySidebar from '@/components/AuthorActivitySidebar';
 import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
 import PullScoreCell from '@/components/PullScoreCell';
-import type { Issue, Pull, PullScore } from '@/types/entities';
+import RelatedIssuesCell from '@/components/RelatedIssuesCell';
+import type { Issue, LinkedIssueReference, Pull, PullScore } from '@/types/entities';
 import ContentViewer from '@/components/ContentViewer';
 import { useSettings } from '@/lib/settings';
 import { useSn74Repos, lookupWeight } from '@/lib/use-sn74-repos';
@@ -44,6 +45,7 @@ interface PullsResp {
   authors: Array<{ login: string; count: number }>;
   author_count: number;
   pulls: AggPull[];
+  linked_issues_by_pull?: Record<string, LinkedIssueReference[]>;
 }
 
 interface UserReposResp {
@@ -57,6 +59,7 @@ type SortKey = 'updated' | 'opened' | 'closed' | 'repo' | 'weight' | 'number';
 type SortDir = 'asc' | 'desc';
 
 const PULLS_CONTENT_MAX_WIDTH = 1480;
+const EMPTY_ISSUES: LinkedIssueReference[] = [];
 const pullRowCellSx = {
   px: 2,
   py: 0,
@@ -65,6 +68,10 @@ const pullRowCellSx = {
   verticalAlign: 'middle' as const,
   lineHeight: '20px',
 };
+
+function pullIssueMapKey(pr: Pick<Pull, 'repo_full_name' | 'number'>): string {
+  return `${pr.repo_full_name}#${pr.number}`;
+}
 
 export default function AllPullsPage() {
   const { repos: sn74Repos, weights: repoWeights, isSuccess: sn74ReposReady } = useSn74Repos();
@@ -211,6 +218,20 @@ export default function AllPullsPage() {
     setOpenIssue(issue);
   };
 
+  const openLinkedIssue = async (pr: AggPull, issueNumber: number) => {
+    const [owner, name] = pr.repo_full_name.split('/');
+    setAuthorTarget(null);
+    setOpenPull(null);
+    setExpandedKey(null);
+    try {
+      const r = await fetch(`/api/issue/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${issueNumber}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setOpenIssue((await r.json()) as Issue);
+    } catch (err) {
+      console.warn('[pulls] could not open linked issue:', err);
+    }
+  };
+
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -325,7 +346,7 @@ export default function AllPullsPage() {
           </Box>
 
           <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, overflowX: 'auto', overflowY: 'hidden', bg: 'canvas.default' }}>
-            <Box as="table" sx={{ width: '100%', minWidth: 1120, borderCollapse: 'collapse', fontSize: 1 }}>
+            <Box as="table" sx={{ width: '100%', minWidth: 1200, borderCollapse: 'collapse', fontSize: 1 }}>
               <Box as="thead" sx={{ bg: 'canvas.subtle', borderBottom: '1px solid', borderColor: 'border.default' }}>
                 <Box as="tr">
                   <Box as="th" sx={{ ...headerCellSx, width: 44, textAlign: 'center' }} aria-label="Tracked repository" />
@@ -353,12 +374,13 @@ export default function AllPullsPage() {
                   <HeaderCell label="Opened" onClick={() => toggleSort('opened')} active={sortKey === 'opened'} dir={sortDir} />
                   <HeaderCell label="Updated" onClick={() => toggleSort('updated')} active={sortKey === 'updated'} dir={sortDir} />
                   <HeaderCell label="Closed" onClick={() => toggleSort('closed')} active={sortKey === 'closed'} dir={sortDir} />
+                  <Box as="th" sx={{ ...headerCellSx, textAlign: 'center' }}>Issues</Box>
                 </Box>
               </Box>
               <Box as="tbody">
                 {isLoading && rows.length === 0 && (
                   <Box as="tr">
-                    <Box as="td" colSpan={10} sx={{ p: 0 }}>
+                    <Box as="td" colSpan={11} sx={{ p: 0 }}>
                       <TableRowsSkeleton
                         rows={12}
                         cols={[
@@ -372,6 +394,7 @@ export default function AllPullsPage() {
                           { width: 60 },
                           { width: 60 },
                           { width: 60 },
+                          { width: 54 },
                         ]}
                       />
                     </Box>
@@ -379,7 +402,7 @@ export default function AllPullsPage() {
                 )}
                 {!isLoading && rows.length === 0 && (
                   <Box as="tr">
-                    <Box as="td" colSpan={10} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+                    <Box as="td" colSpan={11} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
                       {data && data.count === 0
                         ? hasActiveFilters
                           ? 'No PRs match these filters.'
@@ -392,6 +415,7 @@ export default function AllPullsPage() {
                   const k = `${pr.repo_full_name}#${pr.number}`;
                   const expanded = expandedKey === k;
                   const [o, n] = pr.repo_full_name.split('/');
+                  const linkedIssues = data?.linked_issues_by_pull?.[pullIssueMapKey(pr)] ?? EMPTY_ISSUES;
                   return (
                     <React.Fragment key={k}>
                       <PullTableRow
@@ -403,10 +427,12 @@ export default function AllPullsPage() {
                         onAuthorClick={() => openAuthorDetails(pr)}
                         expanded={expanded}
                         weight={lookupWeight(displayWeights, pr.repo_full_name) ?? 0}
+                        linkedIssues={linkedIssues}
+                        onIssueClick={(issueNumber) => openLinkedIssue(pr, issueNumber)}
                       />
                       {expanded && settings.contentDisplay === 'accordion' && (
                         <Box as="tr">
-                          <Box as="td" colSpan={10} sx={{ p: 0 }}>
+                          <Box as="td" colSpan={11} sx={{ p: 0 }}>
                             <ContentViewer
                               target={{ kind: 'pull', owner: o, name: n, number: pr.number, preloaded: pr }}
                               mode="inline"
@@ -663,8 +689,10 @@ function PullTableRow({
   onToggleTrack,
   onRowClick,
   onAuthorClick,
+  onIssueClick,
   expanded,
   weight,
+  linkedIssues,
 }: {
   pr: AggPull;
   mine: boolean;
@@ -672,8 +700,10 @@ function PullTableRow({
   onToggleTrack?: () => void;
   onRowClick?: () => void;
   onAuthorClick?: () => void;
+  onIssueClick?: (issueNumber: number) => void | Promise<void>;
   expanded?: boolean;
   weight: number;
+  linkedIssues: LinkedIssueReference[];
 }) {
   const [owner, name] = pr.repo_full_name.split('/');
 
@@ -866,6 +896,9 @@ function PullTableRow({
       </Box>
       <Box as="td" sx={{ ...pullRowCellSx, fontSize: 0, whiteSpace: 'nowrap' }} title={pr.merged_at ?? pr.closed_at ?? undefined}>
         <RecentTime iso={pr.merged_at ?? pr.closed_at} />
+      </Box>
+      <Box as="td" sx={{ ...pullRowCellSx, textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <RelatedIssuesCell issues={linkedIssues} onIssueClick={onIssueClick} />
       </Box>
     </Box>
   );
