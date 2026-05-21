@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
   TextInput,
@@ -172,6 +172,16 @@ const EMPTY_REPO: Sn74Repo = {
   labelMultipliers: null,
   inactiveAt: null,
 };
+
+function keepPreviousDataForRepo<T>(owner: string, name: string) {
+  return (
+    previousData: T | undefined,
+    previousQuery?: { queryKey: readonly unknown[] },
+  ): T | undefined => {
+    const key = previousQuery?.queryKey;
+    return key?.[1] === owner && key?.[2] === name ? previousData : undefined;
+  };
+}
 
 function RepoPolicyPanel({ repo }: { repo: Sn74Repo }) {
   if (!repo.fullName) return null;
@@ -785,7 +795,7 @@ export default function RepoExplorer() {
     },
     refetchInterval: 15000,
     staleTime: 10000,
-    placeholderData: keepPreviousData,
+    placeholderData: keepPreviousDataForRepo<IssuesResponse>(selected.owner, selected.name),
     refetchOnWindowFocus: false,
     enabled: queriesReady && shouldLoadIssues,
   });
@@ -1081,7 +1091,7 @@ export default function RepoExplorer() {
     },
     refetchInterval: 15000,
     staleTime: 10000,
-    placeholderData: keepPreviousData,
+    placeholderData: keepPreviousDataForRepo<PullsResponse>(selected.owner, selected.name),
     refetchOnWindowFocus: false,
     enabled: queriesReady && shouldLoadPulls,
   });
