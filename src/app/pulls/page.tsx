@@ -862,8 +862,11 @@ function PullTableRow({
               padding: 0,
               font: 'inherit',
               cursor: 'pointer',
+              width: '100%',
               maxWidth: '100%',
               minWidth: 0,
+              overflow: 'hidden',
+              justifyContent: 'flex-start',
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -878,6 +881,7 @@ function PullTableRow({
                 fontWeight: 500,
                 color: mine ? 'var(--attention-emphasis)' : 'var(--fg-default)',
                 minWidth: 0,
+                flex: '0 1 auto',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
