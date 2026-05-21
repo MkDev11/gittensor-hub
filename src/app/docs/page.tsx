@@ -77,7 +77,6 @@ export default function DocsPage() {
       window.removeEventListener('scroll', computeActive);
       window.removeEventListener('resize', computeActive);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
