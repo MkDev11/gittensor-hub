@@ -125,9 +125,9 @@ export interface GtReposResponse {
   uniqueContributors7d: number;
   /** Distinct authors of PRs merged 7–14d ago (for WoW delta). */
   uniqueContributorsPriorWeek: number;
-  /** Sum of score across PRs merged in the last 7d. */
+  /** Sum of raw Gittensor PR score across PRs merged in the last 7d. */
   scoreEarnedThisWeek: number;
-  /** Sum of score across PRs merged 7–14d ago (for WoW delta). */
+  /** Sum of raw Gittensor PR score across PRs merged 7–14d ago (for WoW delta). */
   scoreEarnedPriorWeek: number;
   /** Active repos that have any collateral staked. */
   stakedRepoCount: number;
@@ -135,7 +135,7 @@ export interface GtReposResponse {
   top5WeightConcentration: number;
   /** Network-wide daily merged-PR counts, oldest-first, length 14. */
   prsMergedSeries14d: number[];
-  /** Network-wide daily sum of score across merged PRs, oldest-first, length 14. */
+  /** Network-wide daily sum of raw Gittensor PR score across merged PRs, oldest-first, length 14. */
   scoreEarnedSeries14d: number[];
   /** Authors whose earliest-ever merged PR is in the last 7d. */
   newContributors7d: number;

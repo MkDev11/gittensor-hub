@@ -106,7 +106,7 @@ function localPullsForRepo(fullName: string): GtRepoPr[] {
     const rows = getReadDb()
       .prepare(
         `SELECT number, title, state, draft, merged, author_login, created_at, merged_at
-         FROM pulls WHERE repo_full_name = ? COLLATE NOCASE`,
+         FROM pulls WHERE repo_full_name = ? COLLATE NOCASE AND draft = 0`,
       )
       .all(fullName) as LocalPullRow[];
     return rows

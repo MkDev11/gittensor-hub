@@ -292,44 +292,47 @@ async function refresh(): Promise<Cached> {
     a.totalScore += num(p.score);
     a.collateralStaked += num(p.collateralScore);
     a.totalPrCount += 1;
-    const author = p.author || p.githubId;
+    const authorRaw = p.author || p.githubId || '';
+    const canonicalAuthor = authorRaw.trim().toLowerCase();
     if (p.mergedAt) {
       a.mergedPrCount += 1;
-      if (author) a.contributors.add(author);
       const mt = Date.parse(p.mergedAt);
       const prScore = num(p.score);
-      if (author) {
-        const earliest = firstMergeByAuthor.get(author);
-        if (earliest === undefined || mt < earliest) firstMergeByAuthor.set(author, mt);
-      }
-      if (mt >= weekAgo) {
-        prsMergedThisWeek += 1;
-        scoreEarnedThisWeek += prScore;
-        if (author) contributors7d.add(author);
-      } else if (mt >= twoWeeksAgo) {
-        prsMergedLastWeek += 1;
-        scoreEarnedPriorWeek += prScore;
-        if (author) contributorsPriorWeek.add(author);
-      }
-      if (mt >= seriesStart && mt < todayStart + DAY_MS) {
-        const idx = Math.floor((mt - seriesStart) / DAY_MS);
-        if (idx >= 0 && idx < SERIES_DAYS) {
-          ensureSeries(p.repository.toLowerCase())[idx] += 1;
-          prsMergedSeries14d[idx] += 1;
-          scoreEarnedSeries14d[idx] += prScore;
+      if (canonicalAuthor) a.contributors.add(canonicalAuthor);
+      if (Number.isFinite(mt)) {
+        if (mt > a.lastPrAt) a.lastPrAt = mt;
+        if (canonicalAuthor) {
+          const earliest = firstMergeByAuthor.get(canonicalAuthor);
+          if (earliest === undefined || mt < earliest) firstMergeByAuthor.set(canonicalAuthor, mt);
         }
-      }
-      // Merge latency in hours, recorded against the same window as the
-      // PRs-merged buckets so deltas line up.
-      const ct = p.prCreatedAt ? Date.parse(p.prCreatedAt) : NaN;
-      if (Number.isFinite(ct) && ct <= mt) {
-        const hours = (mt - ct) / (60 * 60 * 1000);
-        if (mt >= weekAgo) latency7d.push(hours);
-        else if (mt >= twoWeeksAgo) latencyPriorWeek.push(hours);
+        if (mt >= weekAgo) {
+          prsMergedThisWeek += 1;
+          scoreEarnedThisWeek += prScore;
+          if (canonicalAuthor) contributors7d.add(canonicalAuthor);
+        } else if (mt >= twoWeeksAgo) {
+          prsMergedLastWeek += 1;
+          scoreEarnedPriorWeek += prScore;
+          if (canonicalAuthor) contributorsPriorWeek.add(canonicalAuthor);
+        }
+        if (mt >= seriesStart && mt < todayStart + DAY_MS) {
+          const idx = Math.floor((mt - seriesStart) / DAY_MS);
+          if (idx >= 0 && idx < SERIES_DAYS) {
+            ensureSeries(p.repository.toLowerCase())[idx] += 1;
+            prsMergedSeries14d[idx] += 1;
+            scoreEarnedSeries14d[idx] += prScore;
+          }
+        }
+        // Merge latency in hours, recorded against the same window as the
+        // PRs-merged buckets so deltas line up.
+        const ct = p.prCreatedAt ? Date.parse(p.prCreatedAt) : NaN;
+        if (Number.isFinite(ct) && ct <= mt) {
+          const hours = (mt - ct) / (60 * 60 * 1000);
+          if (mt >= weekAgo) latency7d.push(hours);
+          else if (mt >= twoWeeksAgo) latencyPriorWeek.push(hours);
+        }
       }
     }
     const t = p.prCreatedAt ? Date.parse(p.prCreatedAt) : 0;
-    if (t > a.lastPrAt) a.lastPrAt = t;
     if (t >= weekAgo) a.prsThisWeek += 1;
     else if (t >= twoWeeksAgo) a.prsLastWeek += 1;
   }

@@ -675,7 +675,6 @@ function NetworkKpiStrip({
   const score7d = data?.scoreEarnedThisWeek ?? 0;
   const scorePrev = data?.scoreEarnedPriorWeek ?? 0;
   const scoreDelta = Math.round(score7d - scorePrev);
-  const scoreUsd = taoUsd > 0 ? score7d * taoUsd : null;
 
   const lat7d = data?.medianMergeLatencyHours7d ?? 0;
   const latPrev = data?.medianMergeLatencyHoursPriorWeek ?? 0;
@@ -790,15 +789,15 @@ function NetworkKpiStrip({
           }
         />
         <SupportCell
-          label="Score 7d"
-          hint="Sum of PR scores for PRs merged in the last 7 days, with USD equivalent at current TAO price."
+          label="PR Score 7d"
+          hint="Sum of official Gittensor PR scores for PRs merged in the last 7 days. This is a raw scoring metric, not TAO paid out."
           value={
             <Box sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1 }}>
-              {`${formatCount(Math.round(score7d), { fallback: '0' })}τ`}
+              {formatCount(Math.round(score7d), { fallback: '0' })}
               {scoreDelta !== 0 && <DeltaIndicator value={scoreDelta} direction="up-is-good" />}
             </Box>
           }
-          sub={scoreUsd != null ? `≈ ${formatUsd(scoreUsd)}` : '—'}
+          sub="raw score"
         />
         <SupportCell
           label="Merge Latency"
@@ -2314,4 +2313,3 @@ function DetailListSkeleton({ rows }: { rows: number }) {
     </Box>
   );
 }
-
