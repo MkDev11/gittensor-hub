@@ -119,8 +119,11 @@ export default function RepositoriesPage() {
     if (!data?.repos) return [] as GtRepo[];
     const q = query.trim().toLowerCase();
     let list = data.repos.filter((r) => {
-      if (status === 'active' && !r.isActive) return false;
-      if (status === 'inactive' && r.isActive) return false;
+      // "Active" matches the KPI: isActive AND weight > 0. Zero-weight repos
+      // fall under "Inactive" even when SN74 hasn't deprioritized them yet.
+      const isEarning = r.isActive && r.weight > 0;
+      if (status === 'active' && !isEarning) return false;
+      if (status === 'inactive' && isEarning) return false;
       if (q && !r.fullName.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -743,7 +746,7 @@ function NetworkKpiStrip({
         />
         <SupportCell
           label="Active Repos"
-          hint="Repos still active in SN74 (not marked inactive by the validator team); ‘staked’ = repos with collateral committed."
+          hint="Repos with non-zero SN74 emission weight (vs. total tracked); ‘staked’ = repos with collateral committed."
           value={
             <>
               {activeCount}

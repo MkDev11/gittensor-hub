@@ -473,7 +473,10 @@ async function refresh(): Promise<Cached> {
 }
 
 function payload(c: Cached, source: 'live' | 'cache' | 'stale'): GtReposResponse {
-  const active = c.repos.filter((r) => r.isActive).length;
+  // "Active" = not deprioritized AND currently earning. Zero-weight non-inactive
+  // repos are accepted by SN74 but don't produce rewards, so they fall outside
+  // the earning subset users expect from this count.
+  const active = c.repos.filter((r) => r.isActive && r.weight > 0).length;
   return {
     fetched_at: c.fetched_at,
     source,
