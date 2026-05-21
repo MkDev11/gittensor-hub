@@ -10,6 +10,8 @@ const MINERS_URL = 'https://api.gittensor.io/miners';
 const REPOS_URL = 'https://api.gittensor.io/dash/repos';
 const TTL_MS = 30_000;
 const TOP_MINERS_LIMIT = 5;
+const OSS_WINDOW_DAYS = 35;
+const OSS_WINDOW_MS = OSS_WINDOW_DAYS * 86_400_000;
 
 interface UpstreamPr {
   repository: string;
@@ -142,11 +144,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
       minersByLogin.set(m.githubUsername.toLowerCase(), m);
     }
 
-    // OSS Contributions: sum of merged PR scores per author for this repo.
+    // OSS Contributions: sum of merged PR scores per author for this repo,
+    // restricted to the last OSS_WINDOW_DAYS so the panel matches its label.
     interface OssAgg { githubId: string; githubUsername: string; prCount: number; score: number }
     const ossMap = new Map<string, OssAgg>();
+    const cutoffMs = Date.now() - OSS_WINDOW_MS;
     for (const p of shared.prs) {
       if (p.repository.toLowerCase() !== fullNameKey) continue;
+      if (!p.mergedAt) continue;
+      const mergedMs = Date.parse(p.mergedAt);
+      if (!Number.isFinite(mergedMs) || mergedMs < cutoffMs) continue;
       const id = p.githubId || p.author;
       if (!id) continue;
       let row = ossMap.get(id);
@@ -154,11 +161,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
         row = { githubId: p.githubId || '', githubUsername: p.author || id, prCount: 0, score: 0 };
         ossMap.set(id, row);
       }
-      // Count only merged PRs and their official PR scores.
-      if (p.mergedAt) {
-        row.prCount += 1;
-        row.score += num(p.score);
-      }
+      row.prCount += 1;
+      row.score += num(p.score);
     }
     const ossAll = [...ossMap.values()].filter((r) => r.prCount > 0 || r.score > 0);
     // Captured pre-slice so the UI's share denominator covers the long tail.

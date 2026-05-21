@@ -458,16 +458,24 @@ export default function RepositoriesPage() {
               accent="success"
               rows={underutilized}
               empty="No repos with open capacity right now."
-              renderRight={(r) => (
-                <Box sx={{ textAlign: 'right' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                    {r.weight.toFixed(2)}
-                  </Text>
-                  <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted' }}>
-                    {r.openPrCount}/{r.excessivePrPenaltyThreshold ?? '∞'} PRs
-                  </Text>
-                </Box>
-              )}
+              renderRight={(r) => {
+                const thr = r.excessivePrPenaltyThreshold ?? 0;
+                const contributors = Math.max(r.contributorCount, 1);
+                const avg = r.openPrCount / contributors;
+                return (
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
+                      {r.weight.toFixed(2)}
+                    </Text>
+                    <Text
+                      sx={{ display: 'block', fontSize: 0, color: 'fg.muted' }}
+                      title={`${r.openPrCount} open PRs across ${r.contributorCount} contributors`}
+                    >
+                      {avg.toFixed(1)}/{thr > 0 ? thr : '∞'} per author
+                    </Text>
+                  </Box>
+                );
+              }}
             />
             <OpportunityCard
               title="Open work available"
@@ -735,7 +743,7 @@ function NetworkKpiStrip({
         />
         <SupportCell
           label="Active Repos"
-          hint="Repos with non-zero SN74 emission weight (vs. total tracked); ‘staked’ = repos with collateral committed."
+          hint="Repos still active in SN74 (not marked inactive by the validator team); ‘staked’ = repos with collateral committed."
           value={
             <>
               {activeCount}
@@ -2090,7 +2098,7 @@ function ExpandedRowDetail({ repo }: { repo: GtRepo }) {
       }}
     >
       {/* Column 1 — Top contributors */}
-      <DetailColumn title="TOP CONTRIBUTORS · LAST 90D">
+      <DetailColumn title="TOP CONTRIBUTORS · LAST 35D">
         {minersLoading ? (
           <DetailListSkeleton rows={5} />
         ) : minersError ? (
