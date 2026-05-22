@@ -23,18 +23,25 @@ import {
 import Dropdown from '@/components/Dropdown';
 import { SkeletonBar } from '@/components/Skeleton';
 import { isTracked as repoIsTracked, useTrackedRepos } from '@/lib/tracked-repos';
-import { formatRelativeTime, formatCount, formatPercent, formatUsd, formatTao, formatWeightPct } from '@/lib/format';
+import { formatRelativeTime, formatCount, formatPercent, formatUsd, formatTao, formatWeight } from '@/lib/format';
 import type { GtRepo, GtReposResponse, RepoMinersResponse, GtRepoPrsResponse } from '@/types/entities';
 
 const STALE_PR_MS = 14 * 24 * 60 * 60 * 1000;
 const STALE_MIN_WEIGHT = 0.01;
 const OPPORTUNITY_LIMIT = 5;
 
+// prices.tao_per_day is realized OSS-miner TAO only (excludes treasury+recycle
+// UIDs), and registry shares don't sum to 1. Per-repo TAO must normalize by
+// totalShare; `share × tao_per_day` directly is wrong.
 function emissionForWeight(
-  weight: number,
+  share: number,
+  totalShare: number,
   prices: PricesResponse | undefined,
 ): { tao: number | null; usd: number | null } {
-  const tao = weight > 0 && prices && prices.tao_per_day > 0 ? weight * prices.tao_per_day : null;
+  const tao =
+    share > 0 && totalShare > 0 && prices && prices.tao_per_day > 0
+      ? (share / totalShare) * prices.tao_per_day
+      : null;
   const usd = tao != null && prices && prices.tao_usd > 0 ? tao * prices.tao_usd : null;
   return { tao, usd };
 }
@@ -184,6 +191,15 @@ export default function RepositoriesPage() {
       .slice(0, OPPORTUNITY_LIMIT);
 
     return { underutilized, openWork, goingStale };
+  }, [data]);
+
+  // Global so the WeightBar scale doesn't shift per page.
+  const maxActiveWeight = useMemo(() => {
+    if (!data?.repos) return 0;
+    return data.repos.reduce(
+      (m, r) => (r.isActive && Number.isFinite(r.weight) && r.weight > m ? r.weight : m),
+      0,
+    );
   }, [data]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -378,6 +394,8 @@ export default function RepositoriesPage() {
                 tracked={tracked}
                 onToggleTrack={toggle}
                 prices={prices}
+                totalEmissionWeight={data?.totalEmissionWeight ?? 0}
+                maxActiveWeight={maxActiveWeight}
                 expandedRepo={expandedRepo}
                 onToggleExpand={(fullName) =>
                   setExpandedRepo((cur) => (cur === fullName ? null : fullName))
@@ -402,6 +420,8 @@ export default function RepositoriesPage() {
                 tracked={tracked}
                 onToggleTrack={toggle}
                 prices={prices}
+                totalEmissionWeight={data?.totalEmissionWeight ?? 0}
+                maxActiveWeight={maxActiveWeight}
                 expandedRepo={expandedRepo}
                 onToggleExpand={(fullName) =>
                   setExpandedRepo((cur) => (cur === fullName ? null : fullName))
@@ -465,7 +485,7 @@ export default function RepositoriesPage() {
                 return (
                   <Box sx={{ textAlign: 'right' }}>
                     <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                      {formatWeightPct(r.weight)}
+                      {formatWeight(r.weight)}
                     </Text>
                     <Text
                       sx={{ display: 'block', fontSize: 0, color: 'fg.muted' }}
@@ -501,7 +521,7 @@ export default function RepositoriesPage() {
               renderRight={(r) => (
                 <Box sx={{ textAlign: 'right' }}>
                   <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                    {formatWeightPct(r.weight)}
+                    {formatWeight(r.weight)}
                   </Text>
                   <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted' }}>
                     {r.lastPrAt ? formatRelativeTime(r.lastPrAt) : 'never'}
@@ -667,7 +687,8 @@ function NetworkKpiStrip({
   const top5Share = data?.top5WeightConcentration ?? 0;
   const taoUsd = prices?.tao_usd ?? 0;
   const change24h = prices?.tao_usd_change_24h ?? null;
-  const { tao: taoPerDay, usd: usdPerDay } = emissionForWeight(weight, prices);
+  // share=totalShare collapses (share/totalShare) to 1, yielding tao_per_day.
+  const { tao: taoPerDay, usd: usdPerDay } = emissionForWeight(weight, weight, prices);
 
   const merged7d = data?.prsMergedThisWeek ?? 0;
   const mergedPrev = data?.prsMergedLastWeek ?? 0;
@@ -715,7 +736,7 @@ function NetworkKpiStrip({
         <SupportCell
           label="Emission · Daily"
           hint="Daily TAO going to miners on tracked repos (excludes the ~10% issue treasury), with USD equivalent."
-          value={taoPerDay != null ? formatTao(taoPerDay) : formatPercent(weight, { scale: 100 })}
+          value={taoPerDay != null ? formatTao(taoPerDay) : formatWeight(weight)}
           sub={
             usdPerDay != null
               ? `${formatUsd(usdPerDay)}/d · ${formatYearlyUsd(usdPerDay)}`
@@ -759,7 +780,7 @@ function NetworkKpiStrip({
         <SupportCell
           label="Weight Allocated"
           hint="Sum of active-repo weights — the share of SN74 emission flowing to tracked repos."
-          value={formatPercent(weight, { scale: 100 })}
+          value={formatWeight(weight)}
           sub={top5Share > 0 ? `Top 5 hold ${Math.round(top5Share * 100)}%` : 'No active weight'}
         />
         <SupportCell
@@ -1047,6 +1068,8 @@ function RepoCardList({
   tracked,
   onToggleTrack,
   prices,
+  totalEmissionWeight,
+  maxActiveWeight,
   expandedRepo,
   onToggleExpand,
 }: {
@@ -1055,6 +1078,8 @@ function RepoCardList({
   tracked: Set<string>;
   onToggleTrack: (fullName: string) => void;
   prices: PricesResponse | undefined;
+  totalEmissionWeight: number;
+  maxActiveWeight: number;
   expandedRepo: string | null;
   onToggleExpand: (fullName: string) => void;
 }) {
@@ -1085,6 +1110,8 @@ function RepoCardList({
           isTracked={repoIsTracked(tracked, r.fullName)}
           isExpanded={expandedRepo === r.fullName}
           prices={prices}
+          totalEmissionWeight={totalEmissionWeight}
+          maxActiveWeight={maxActiveWeight}
           onToggleTrack={onToggleTrack}
           onToggleExpand={onToggleExpand}
         />
@@ -1099,6 +1126,8 @@ function RepoCard({
   isTracked,
   isExpanded,
   prices,
+  totalEmissionWeight,
+  maxActiveWeight,
   onToggleTrack,
   onToggleExpand,
 }: {
@@ -1107,10 +1136,13 @@ function RepoCard({
   isTracked: boolean;
   isExpanded: boolean;
   prices: PricesResponse | undefined;
+  totalEmissionWeight: number;
+  maxActiveWeight: number;
   onToggleTrack: (fullName: string) => void;
   onToggleExpand: (fullName: string) => void;
 }) {
-  const { tao: taoPerDay, usd: usdPerDay } = emissionForWeight(r.weight, prices);
+  const earningShare = r.isActive ? r.weight : 0;
+  const { tao: taoPerDay, usd: usdPerDay } = emissionForWeight(earningShare, totalEmissionWeight, prices);
   const lastMergeMs = r.lastPrAt ? Date.parse(r.lastPrAt) : 0;
   const lastMergeStale = lastMergeMs > 0 && Date.now() - lastMergeMs > STALE_PR_MS;
   const detailId = `repo-detail-${r.owner}-${r.name}`;
@@ -1272,11 +1304,13 @@ function RepoCard({
         >
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, fontSize: 2, color: 'fg.default', lineHeight: 1.1 }}>
-              {formatWeightPct(r.weight)}
+              {formatWeight(r.weight)}
             </Text>
-            <Box sx={{ width: '100%', height: 3, bg: 'canvas.inset', borderRadius: 999, overflow: 'hidden' }}>
-              <Box sx={{ height: '100%', bg: 'accent.emphasis' }} style={{ width: `${Math.min(100, Math.max(0, r.weight * 100))}%` }} />
-            </Box>
+            <WeightBar
+              weight={r.weight}
+              maxActiveWeight={maxActiveWeight}
+              isActive={r.isActive}
+            />
           </Box>
         </RepoCell>
         <RepoCell
@@ -1436,6 +1470,8 @@ function RepoTable({
   tracked,
   onToggleTrack,
   prices,
+  totalEmissionWeight,
+  maxActiveWeight,
   expandedRepo,
   onToggleExpand,
 }: {
@@ -1447,6 +1483,8 @@ function RepoTable({
   tracked: Set<string>;
   onToggleTrack: (fullName: string) => void;
   prices: PricesResponse | undefined;
+  totalEmissionWeight: number;
+  maxActiveWeight: number;
   expandedRepo: string | null;
   onToggleExpand: (fullName: string) => void;
 }) {
@@ -1542,7 +1580,8 @@ function RepoTable({
           {rows.map((r, i) => {
             const rank = startRank + i;
             const isTracked = repoIsTracked(tracked, r.fullName);
-            const { tao: taoPerDay, usd: usdPerDay } = emissionForWeight(r.weight, prices);
+            const earningShare = r.isActive ? r.weight : 0;
+            const { tao: taoPerDay, usd: usdPerDay } = emissionForWeight(earningShare, totalEmissionWeight, prices);
             const lastMergeMs = r.lastPrAt ? Date.parse(r.lastPrAt) : 0;
             const lastMergeStale = lastMergeMs > 0 && Date.now() - lastMergeMs > STALE_PR_MS;
             const isExpanded = expandedRepo === r.fullName;
@@ -1650,11 +1689,13 @@ function RepoTable({
                   <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle', minWidth: 90 }}>
                     <Box sx={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'stretch', minWidth: 70, gap: '4px' }}>
                       <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                        {formatWeightPct(r.weight)}
+                        {formatWeight(r.weight)}
                       </Text>
-                      <Box sx={{ width: '100%', height: 3, bg: 'canvas.inset', borderRadius: 999, overflow: 'hidden' }}>
-                        <Box sx={{ height: '100%', bg: 'accent.emphasis' }} style={{ width: `${Math.min(100, Math.max(0, r.weight * 100))}%` }} />
-                      </Box>
+                      <WeightBar
+                        weight={r.weight}
+                        maxActiveWeight={maxActiveWeight}
+                        isActive={r.isActive}
+                      />
                     </Box>
                   </Box>
                   <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
@@ -1894,6 +1935,38 @@ function Sparkline({
           );
         })}
       </svg>
+    </Box>
+  );
+}
+
+// Max-normalized: leader fills 100%. Uses a global max so the scale doesn't
+// shift across pagination/sort/filter.
+function WeightBar({
+  weight,
+  maxActiveWeight,
+  isActive,
+}: {
+  weight: number;
+  maxActiveWeight: number;
+  isActive: boolean;
+}) {
+  const fillPct =
+    isActive && maxActiveWeight > 0 && weight > 0
+      ? Math.min(100, Math.max(0, (weight / maxActiveWeight) * 100))
+      : 0;
+  return (
+    <Box
+      sx={{ width: '100%', height: 6, bg: 'canvas.inset', borderRadius: 999, overflow: 'hidden' }}
+      title={
+        isActive && maxActiveWeight > 0 && weight > 0
+          ? `${fillPct.toFixed(1)}% of leader weight`
+          : 'Inactive — not earning'
+      }
+    >
+      <Box
+        sx={{ height: '100%', bg: 'accent.emphasis', borderRadius: 999 }}
+        style={{ width: `${fillPct}%` }}
+      />
     </Box>
   );
 }

@@ -118,11 +118,9 @@ export function formatPercent(
   return `${sign}${n.toFixed(digits)}%`;
 }
 
-/** SN74 weight (0..1) as a percentage with adaptive precision so sub-1%
- *  weights stay visible (0.0025 → "0.25%") without inflating large ones. */
-export function formatWeightPct(weight: number | null | undefined): string {
-  if (weight == null || !Number.isFinite(weight) || weight <= 0) return '0%';
-  const pct = weight * 100;
-  const digits = pct < 10 ? 2 : pct < 100 ? 1 : 0;
-  return `${pct.toFixed(digits)}%`;
+/** Raw weight decimal at original precision. Clamped to 10 sig figs so
+ *  summed values (e.g. totalEmissionWeight) don't render IEEE-754 noise. */
+export function formatWeight(weight: number | null | undefined): string {
+  if (weight == null || !Number.isFinite(weight) || weight <= 0) return '0';
+  return String(parseFloat(weight.toPrecision(10)));
 }
