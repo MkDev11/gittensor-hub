@@ -132,6 +132,10 @@ export async function GET(
   if (state === 'mine' && mineLogin) {
     where.push('LOWER(i.author_login) = ?');
     args.push(mineLogin.toLowerCase());
+  } else if (state === 'mine') {
+    // state=mine without a mine_login (e.g. signed-out user toggled the
+    // filter) would otherwise fall through to "all issues" — force empty.
+    where.push('1 = 0');
   }
   // State buckets mirror the client-side effectiveIssueState rule (which
   // mirrors Gittensor's solved-issue definition). The EXISTS subquery checks
@@ -262,6 +266,8 @@ export async function GET(
   if (state === 'mine' && mineLogin) {
     stateOnlyWhere.push('LOWER(i.author_login) = ?');
     stateOnlyArgs.push(mineLogin.toLowerCase());
+  } else if (state === 'mine') {
+    stateOnlyWhere.push('1 = 0');
   }
   const stateCountsRow = db
     .prepare(
