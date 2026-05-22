@@ -817,13 +817,24 @@ export default function RepoExplorer() {
   // visits the repo (the sidebar row gets a yellow accent border).
   const [stickyBadges, setStickyBadges] = useState<Record<string, StickyBadge>>({});
 
+  const viewedAtRef = useRef(viewedAt);
+  useEffect(() => {
+    viewedAtRef.current = viewedAt;
+  }, [viewedAt]);
+
   const { data: activityData } = useQuery<{
     since: string;
+    baselines?: Record<string, string>;
     activity: Record<string, { repo: string; issues: number; pulls: number }>;
   }>({
     queryKey: ['repo-activity', appBaseline],
     queryFn: async ({ signal }) => {
-      const r = await fetch(`/api/repo-activity?since=${encodeURIComponent(appBaseline)}`, { signal });
+      const r = await fetch('/api/repo-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ since: appBaseline, viewed_at: viewedAtRef.current }),
+        signal,
+      });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
@@ -877,18 +888,6 @@ export default function RepoExplorer() {
     localStorage.setItem('gittensor.stickyBadges', JSON.stringify(stickyBadges));
   }, [stickyBadges, hydrated]);
 
-  // Keep a ref to the latest viewedAt so the activity-data effect can read
-  // it without making it a dependency. setViewedAt always allocates a new
-  // object (fresh timestamp on each repo selection), so depending on
-  // `viewedAt` directly made this effect re-fire on every click. The
-  // setStickyBadges updater below bails out via `return prev`, but React's
-  // per-call depth counter still incremented — eventually tripping
-  // "Maximum update depth exceeded".
-  const viewedAtRef = useRef(viewedAt);
-  useEffect(() => {
-    viewedAtRef.current = viewedAt;
-  }, [viewedAt]);
-
   useEffect(() => {
     if (!hydrated || !repoAllowlistReady) return;
     setStickyBadges((prev) => {
@@ -923,10 +922,12 @@ export default function RepoExplorer() {
     setStickyBadges((prev) => {
       let changed = false;
       const next = { ...prev };
-      const viewed = viewedAtRef.current;
       for (const [repo, info] of Object.entries(activityData.activity)) {
         const canonicalRepo = visibleRepoNamesByLc.get(repo.toLowerCase());
-        if (!canonicalRepo || viewed[canonicalRepo]) continue;
+        if (!canonicalRepo || canonicalRepo === selected.fullName) continue;
+        const responseBaseline = activityData.baselines?.[canonicalRepo] ?? activityData.since;
+        const viewed = viewedAtRef.current[canonicalRepo];
+        if (viewed && Date.parse(viewed) > Date.parse(responseBaseline)) continue;
         const cur = next[canonicalRepo] ?? { issues: 0, pulls: 0 };
         const mergedIssues = Math.max(cur.issues, info.issues);
         const mergedPulls = Math.max(cur.pulls, info.pulls);
@@ -939,17 +940,7 @@ export default function RepoExplorer() {
       // returning `prev` lets React bail out of the re-render.
       return changed ? next : prev;
     });
-  }, [activityData, repoAllowlistReady, visibleRepoNamesByLc]);
-
-  // When user views a repo, drop its sticky badge entry.
-  useEffect(() => {
-    setStickyBadges((prev) => {
-      if (!prev[selected.fullName]) return prev;
-      const next = { ...prev };
-      delete next[selected.fullName];
-      return next;
-    });
-  }, [selected]);
+  }, [activityData, repoAllowlistReady, selected.fullName, visibleRepoNamesByLc]);
 
   // Auto-scroll the left rail to bring the selected repo into view
   // (e.g. when navigating via notification or URL).
@@ -1001,6 +992,10 @@ export default function RepoExplorer() {
 
   const markAllAsRead = () => {
     const now = new Date().toISOString();
+    setAppBaseline(now);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gittensor.appBaseline', now);
+    }
     // Mark every repo with a sticky badge as viewed
     setViewedAt((prev) => {
       const next = { ...prev };
