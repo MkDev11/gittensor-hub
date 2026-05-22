@@ -69,7 +69,7 @@ export async function GET(
         .get(etagSession.uid, full) as { c: number }).c
     : 0;
   const etag = buildEtag([
-    'issues-v4',
+    'issues-v5',
     full,
     meta0?.last_issues_fetch,
     linkCount0,
@@ -79,6 +79,7 @@ export async function GET(
     url.searchParams.get('state'),
     url.searchParams.get('author'),
     url.searchParams.get('assoc'),
+    url.searchParams.get('mine_login'),
     url.searchParams.get('sort'),
     url.searchParams.get('dir'),
     url.searchParams.get('since'),
@@ -95,6 +96,7 @@ export async function GET(
   // options at the top of the author dropdown). Mutually exclusive with the
   // login-level `author` filter — if both are set, `author` wins.
   const assoc = (url.searchParams.get('assoc') ?? '').toLowerCase();
+  const mineLogin = (url.searchParams.get('mine_login') ?? '').trim();
   const sort = (url.searchParams.get('sort') ?? 'opened') as SortKey;
   const dir = (url.searchParams.get('dir') ?? 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   const since = url.searchParams.get('since');
@@ -126,6 +128,10 @@ export async function GET(
     where.push("UPPER(COALESCE(i.author_association,'')) = 'COLLABORATOR'");
   } else if (assoc === 'contributor') {
     where.push("UPPER(COALESCE(i.author_association,'')) IN ('CONTRIBUTOR','FIRST_TIME_CONTRIBUTOR','FIRST_TIMER')");
+  }
+  if (state === 'mine' && mineLogin) {
+    where.push('LOWER(i.author_login) = ?');
+    args.push(mineLogin.toLowerCase());
   }
   // State buckets mirror the client-side effectiveIssueState rule (which
   // mirrors Gittensor's solved-issue definition). The EXISTS subquery checks
@@ -252,6 +258,10 @@ export async function GET(
     stateOnlyWhere.push("UPPER(COALESCE(i.author_association,'')) = 'COLLABORATOR'");
   } else if (assoc === 'contributor') {
     stateOnlyWhere.push("UPPER(COALESCE(i.author_association,'')) IN ('CONTRIBUTOR','FIRST_TIME_CONTRIBUTOR','FIRST_TIMER')");
+  }
+  if (state === 'mine' && mineLogin) {
+    stateOnlyWhere.push('LOWER(i.author_login) = ?');
+    stateOnlyArgs.push(mineLogin.toLowerCase());
   }
   const stateCountsRow = db
     .prepare(

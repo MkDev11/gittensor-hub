@@ -18,6 +18,7 @@ export async function GET(
   const url = new URL(req.url);
   const q = (url.searchParams.get('q') ?? '').trim();
   const summaryOnly = url.searchParams.get('summary') === '1';
+  const mineLogin = (url.searchParams.get('mine_login') ?? '').trim();
 
   const lastFetch = (db
     .prepare('SELECT last_issues_fetch FROM repo_meta WHERE full_name = ?')
@@ -27,7 +28,7 @@ export async function GET(
   const linkCount = (db
     .prepare('SELECT COUNT(*) AS c FROM pr_issue_links WHERE repo_full_name = ?')
     .get(full) as { c: number }).c;
-  const etag = buildEtag(['issues-meta-v5', full, lastFetch, linkCount, q, summaryOnly ? 'summary' : 'full']);
+  const etag = buildEtag(['issues-meta-v6', full, lastFetch, linkCount, q, mineLogin, summaryOnly ? 'summary' : 'full']);
   const notModified = etagNotModified(req, etag);
   if (notModified) return notModified;
 
@@ -118,8 +119,25 @@ export async function GET(
   // reading author_stats.
   const author_stats: Record<string, { open: number; completed: number; not_planned: number; closed: number }> = {};
 
+  let mine_count: number | undefined;
+  if (mineLogin) {
+    mine_count = (db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM issues
+         WHERE repo_full_name = ? AND LOWER(author_login) = ?`
+      )
+      .get(full, mineLogin.toLowerCase()) as { c: number }).c;
+  }
+
   return NextResponse.json(
-    { repo: full, author_options: authorRows, author_stats, total_authors, assoc_counts },
+    {
+      repo: full,
+      author_options: authorRows,
+      author_stats,
+      total_authors,
+      assoc_counts,
+      ...(mine_count !== undefined ? { mine_count } : {}),
+    },
     { headers: withEtagHeaders(etag) },
   );
 }

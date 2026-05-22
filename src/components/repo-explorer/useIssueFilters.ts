@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SortDir } from './styles';
 
-export type IssueState = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed';
+export type IssueState = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed' | 'mine';
 export type IssueSortKey =
   | 'opened'
   | 'updated'
@@ -20,6 +20,8 @@ export interface IssueFilters {
   debouncedQuery: string;
   state: IssueState;
   setState: (v: IssueState) => void;
+  mineOnly: boolean;
+  setMineOnly: (v: boolean) => void;
   author: string;
   setAuthor: (v: string) => void;
   authorsRequested: boolean;
@@ -33,6 +35,7 @@ export interface IssueFilters {
 export function useIssueFilters(): IssueFilters {
   const [query, setQuery] = useState('');
   const [state, setState] = useState<IssueState>('all');
+  const [mineOnly, setMineOnly] = useState(false);
   const [author, setAuthor] = useState<string>('all');
   const [authorsRequested, setAuthorsRequested] = useState(false);
   const [sortKey, setSortKey] = useState<IssueSortKey>('opened');
@@ -60,6 +63,7 @@ export function useIssueFilters(): IssueFilters {
     setState('all');
     setAuthor('all');
     setAuthorsRequested(false);
+    setMineOnly(false);
   }, []);
 
   return {
@@ -68,6 +72,8 @@ export function useIssueFilters(): IssueFilters {
     debouncedQuery,
     state,
     setState,
+    mineOnly,
+    setMineOnly,
     author,
     setAuthor,
     authorsRequested,

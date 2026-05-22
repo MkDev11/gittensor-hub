@@ -269,6 +269,8 @@ export default function RepoExplorer() {
     debouncedQuery: debouncedIssueQuery,
     state: issueState,
     setState: setIssueState,
+    mineOnly: issueMineOnly,
+    setMineOnly: setIssueMineOnly,
     author: issueAuthor,
     setAuthor: setIssueAuthor,
     authorsRequested: issueAuthorsRequested,
@@ -520,7 +522,7 @@ export default function RepoExplorer() {
   // of the new view rather than e.g. page 5 of an empty filter result.
   useEffect(() => {
     setIssuesPage(1);
-  }, [issueQuery, issueState, issueAuthor, issueSortKey, issueSortDir]);
+  }, [issueQuery, issueState, issueMineOnly, issueAuthor, issueSortKey, issueSortDir]);
 
   useEffect(() => {
     setPullsPage(1);
@@ -718,12 +720,14 @@ export default function RepoExplorer() {
   const queriesReady = settingsReady && routeReady && selected.fullName !== '';
   const shouldLoadIssues = tab === 'issues';
 
+  const issuesState = issueMineOnly ? 'mine' : issueState;
+
   const buildIssuesUrl = (page: number, size: number) => {
     const sp = new URLSearchParams();
     sp.set('page', String(page));
     sp.set('pageSize', String(size));
     if (debouncedIssueQuery) sp.set('q', debouncedIssueQuery);
-    if (issueState !== 'all') sp.set('state', issueState);
+    if (issuesState !== 'all') sp.set('state', issuesState);
     // `__assoc:` prefix is the front-end sentinel for the "Collaborators" /
     // "Contributors" pseudo-options at the top of the author dropdown — they
     // map to GitHub's author_association field, not a specific login.
@@ -734,6 +738,7 @@ export default function RepoExplorer() {
     }
     sp.set('sort', issueSortKey);
     sp.set('dir', issueSortDir);
+    if (me) sp.set('mine_login', me);
     return `/api/repos/${selected.owner}/${selected.name}/issues?${sp.toString()}`;
   };
 
@@ -745,10 +750,11 @@ export default function RepoExplorer() {
       issuesPage,
       issuesPageSize,
       debouncedIssueQuery,
-      issueState,
+      issuesState,
       issueAuthor,
       issueSortKey,
       issueSortDir,
+      me,
     ],
     queryFn: async ({ signal }) => {
       const r = await fetch(buildIssuesUrl(issuesPage, issuesPageSize), { signal });
@@ -768,9 +774,10 @@ export default function RepoExplorer() {
   // Repo-wide author list + per-author counts. Refresh slowly because these
   // change much less often than the listing itself.
   const { data: issuesMeta, isFetching: issuesMetaFetching } = useQuery<IssuesMetaResponse>({
-    queryKey: ['issues-meta', selected.owner, selected.name, issueAuthorsRequested],
+    queryKey: ['issues-meta', selected.owner, selected.name, me, issueAuthorsRequested],
     queryFn: async ({ signal }) => {
       const sp = new URLSearchParams();
+      if (me) sp.set('mine_login', me);
       if (!issueAuthorsRequested) sp.set('summary', '1');
       const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/issues-meta?${sp.toString()}`, { signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -1250,6 +1257,7 @@ export default function RepoExplorer() {
   const filteredPulls = pullsData?.pulls ?? [];
 
   const myPullCount = pullsMeta?.mine_count ?? 0;
+  const myIssueCount = issuesMeta?.mine_count ?? 0;
 
   // Server returns `new_count` based on the per-tab baseline we sent.
   const newIssuesCount = issuesData?.new_count ?? 0;
@@ -1719,6 +1727,59 @@ export default function RepoExplorer() {
                     },
                   ]}
                 />
+                <Box
+                  as="label"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    px: '12px',
+                    py: '5px',
+                    height: 32,
+                    border: '1px solid',
+                    borderColor: issueMineOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+                    bg: issueMineOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
+                    color: issueMineOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    userSelect: 'none',
+                    transition: 'border-color 80ms, background 80ms, color 80ms',
+                    '&:hover': { borderColor: issueMineOnly ? 'var(--attention-emphasis)' : 'var(--border-strong)' },
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={issueMineOnly}
+                    onChange={(e) => setIssueMineOnly(e.target.checked)}
+                    style={{
+                      margin: 0,
+                      width: 14,
+                      height: 14,
+                      accentColor: 'var(--attention-emphasis)',
+                      cursor: 'pointer',
+                    }}
+                  />
+                  <PersonIcon size={14} />
+                  My Issues only
+                  {myIssueCount > 0 && (
+                    <Box
+                      sx={{
+                        px: '6px',
+                        py: 0,
+                        bg: issueMineOnly ? 'var(--attention-emphasis)' : 'var(--bg-emphasis)',
+                        color: issueMineOnly ? '#ffffff' : 'var(--fg-default)',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        borderRadius: 999,
+                        lineHeight: '18px',
+                      }}
+                    >
+                      {myIssueCount}
+                    </Box>
+                  )}
+                </Box>
                 <Box
                   sx={{
                     ml: ['0', null, 'auto'],

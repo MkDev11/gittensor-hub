@@ -345,6 +345,8 @@ export interface IssuesMetaResponse {
    * author dropdown.
    */
   assoc_counts?: { collaborator: number; contributor: number };
+  /** Count of issues authored by the signed-in user. Powers "My Issues only". */
+  mine_count?: number;
 }
 
 // ─── Pull ────────────────────────────────────────────────────────────────────
