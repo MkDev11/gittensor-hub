@@ -20,6 +20,7 @@ import {
   GitPullRequestIcon,
   GitMergeIcon,
 } from '@primer/octicons-react';
+import Dropdown from '@/components/Dropdown';
 import { SkeletonBar } from '@/components/Skeleton';
 import { isTracked as repoIsTracked, useTrackedRepos } from '@/lib/tracked-repos';
 import { formatRelativeTime, formatCount, formatPercent, formatUsd, formatTao, formatWeightPct } from '@/lib/format';
@@ -237,34 +238,17 @@ export default function RepositoriesPage() {
 
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'fg.muted', fontSize: 1 }}>
               <Text sx={{ color: 'fg.muted' }}>Sort:</Text>
-              <Box
-                as="select"
+              <Dropdown
                 value={sortKey}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => { setSortKey(e.target.value as SortKey); setPage(1); }}
-                sx={{
-                  bg: 'neutral.subtle',
-                  color: 'fg.default',
-                  border: '1px solid',
-                  borderColor: 'border.subtle',
-                  borderRadius: 1,
-                  px: 2,
-                  py: '3px',
-                  fontSize: 1,
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  minHeight: 28,
-                  outline: 'none',
-                  '&:hover': { bg: 'neutral.muted', borderColor: 'border.muted' },
-                  '&:focus-visible': {
-                    borderColor: 'accent.muted',
-                    boxShadow: '0 0 0 2px var(--accent-subtle)',
-                  },
+                onChange={(v) => {
+                  setSortKey(v as SortKey);
+                  setPage(1);
                 }}
-              >
-                {SORT_OPTIONS.map((o) => (
-                  <option key={o.key} value={o.key}>{o.label}</option>
-                ))}
-              </Box>
+                options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+                width={156}
+                size="small"
+                ariaLabel="Sort repositories"
+              />
               <Box
                 as="button"
                 onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
@@ -298,37 +282,17 @@ export default function RepositoriesPage() {
                 On narrow viewports they wrap below tabs/sort naturally. */}
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'fg.muted', fontSize: 1, ml: ['0', 'auto'] }}>
               <Text sx={{ color: 'fg.muted' }}>Rows:</Text>
-              <Box
-                as="select"
-                value={pageSize}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                  setPageSize(Number(e.target.value));
+              <Dropdown
+                value={String(pageSize)}
+                onChange={(v) => {
+                  setPageSize(Number(v));
                   setPage(1);
                 }}
-                sx={{
-                  bg: 'neutral.subtle',
-                  color: 'fg.default',
-                  border: '1px solid',
-                  borderColor: 'border.subtle',
-                  borderRadius: 1,
-                  px: 2,
-                  py: '3px',
-                  fontSize: 1,
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  minHeight: 28,
-                  outline: 'none',
-                  '&:hover': { bg: 'neutral.muted', borderColor: 'border.muted' },
-                  '&:focus-visible': {
-                    borderColor: 'accent.muted',
-                    boxShadow: '0 0 0 2px var(--accent-subtle)',
-                  },
-                }}
-              >
-                {PAGE_SIZES.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </Box>
+                options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+                width={72}
+                size="small"
+                ariaLabel="Rows per page"
+              />
             </Box>
 
             <Box sx={{ minWidth: 200, width: ['100%', 240] }}>
