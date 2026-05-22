@@ -23,7 +23,6 @@ import {
   RepoBreakdown,
   PrList,
   IssueList,
-  // types
   DetailResp,
   Mode,
   Period,
@@ -34,7 +33,6 @@ import {
   withinPeriod,
 } from './components';
 
-// Validator scoring window — hero tiles aggregate over this regardless of UI period filter.
 const HERO_DAYS = PR_LOOKBACK_DAYS;
 
 function BackLink() {
@@ -106,9 +104,6 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
   const discoveredInP  = useMemo(() => discovered.filter((i) => withinPeriod(i.createdAt, periodDays)), [discovered, periodDays]);
   const solvedInPeriod = useMemo(() => solved.filter((i) => withinPeriod(i.closedAt ?? i.createdAt, periodDays)), [solved, periodDays]);
 
-  // Hero aggregates over the validator's scoring window so summary tiles
-  // match what the miner is actually being paid for, regardless of the
-  // currently selected period filter.
   const heroAgg = useMemo(() => {
     let merged = 0, closedPr = 0, openPr = 0, additions = 0, deletions = 0;
     for (const p of prs) {
@@ -127,15 +122,19 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
       else if (i.bucket === 'open')      openIss         += 1;
       else                                closedIss       += 1;
     }
-    // SOLVED for display = "GitHub-completed" (solved + completed). Matches
-    // what the user sees in the P&L table's SOLVED column.
     const solvedDisplay = solvedBucket + completedBucket;
     const totalPrs    = merged + closedPr + openPr;
     const totalIssues = solvedDisplay + closedIss + openIss;
     const ossDenom    = merged + closedPr;
     const discDenom   = solvedDisplay + closedIss;
-    const ossCred  = ossDenom  > 0 ? merged        / ossDenom  : 0;
-    const discCred = discDenom > 0 ? solvedDisplay / discDenom : 0;
+    let ossCred = 0;
+    if (ossDenom > 0) {
+      ossCred = merged / ossDenom;
+    }
+    let discCred = 0;
+    if (discDenom > 0) {
+      discCred = solvedDisplay / discDenom;
+    }
     return {
       merged, closedPr, additions, deletions,
       solved: solvedDisplay, closedIss, openIss,
@@ -153,28 +152,33 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
     [discoveredInP, selectedRepo],
   );
 
-
-  // Canonicalise repo casing: prefer mixed-case over all-lowercase across sources.
   const repoBreakdown = useMemo(() => {
     const canonical = new Map<string, string>();
-    const reg = (name: string) => {
+    function reg(name: string) {
       const k = name.toLowerCase();
       const existing = canonical.get(k);
-      if (!existing || (name !== name.toLowerCase() && existing === existing.toLowerCase())) canonical.set(k, name);
-    };
+      if (!existing || (name !== name.toLowerCase() && existing === existing.toLowerCase())) {
+        canonical.set(k, name);
+      }
+    }
     for (const e of data?.repoEvals ?? []) reg(e.repo);
     for (const p of prsInPeriod) reg(p.repository);
     for (const i of discoveredInP) reg(i.repo);
     for (const i of solvedInPeriod) reg(i.repo);
-    const resolve = (r: string) => canonical.get(r.toLowerCase()) ?? r;
+    function resolve(r: string): string {
+      return canonical.get(r.toLowerCase()) ?? r;
+    }
 
     const map = new Map<string, RepoBucket>();
-    const get = (r: string): RepoBucket => {
+    function get(r: string): RepoBucket {
       const c = resolve(r);
       let row = map.get(c);
-      if (!row) { row = makeRepoBucket(c); map.set(c, row); }
+      if (!row) {
+        row = makeRepoBucket(c);
+        map.set(c, row);
+      }
       return row;
-    };
+    }
     for (const p of prsInPeriod) {
       const r = get(p.repository);
       r.prs.push(p);
@@ -195,11 +199,6 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
       else                                r.closedIssue    += 1;
     }
     for (const i of solvedInPeriod) get(i.repo).solvedByPr.push(i);
-    // Filter by mode so the table only shows repos relevant to the current
-    // track. Without this filter, a repo with PR activity but no issues
-    // appears in Discovery mode as "0 / 0 / 0 / 0" — confusing because the
-    // sparkline shows activity but no counts (the activity is PR activity
-    // that doesn't belong on the Discovery view).
     const all = Array.from(map.values());
     const filtered = mode === 'oss'
       ? all.filter((r) => r.prs.length > 0)
@@ -212,7 +211,6 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
     });
   }, [prsInPeriod, discoveredInP, solvedInPeriod, mode, data?.repoEvals]);
 
-  // Clear the filter if the selected repo drops out of the breakdown.
   useEffect(() => {
     if (!selectedRepo) return;
     const stillPresent = repoBreakdown.some((r) => r.repo.toLowerCase() === selectedRepo.toLowerCase());
@@ -243,8 +241,6 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
     issueEligible,
   );
 
-  // Per-issue earning scales — same math RepoBreakdown uses internally, but
-  // lifted here so IssueList can show $/d per row without duplicating the calc.
   const issueDiscoveryScore = num(miner?.issueDiscoveryScore);
   const totalSolvedEligible = useMemo(
     () => repoBreakdown.reduce(
@@ -253,8 +249,12 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
     ),
     [repoBreakdown, repoEvalMap],
   );
-  const discEarnScale  = totalSolvedEligible > 0 ? discEarningPerDay  / totalSolvedEligible : 0;
-  const discScoreScale = totalSolvedEligible > 0 ? issueDiscoveryScore / totalSolvedEligible : 0;
+  let discEarnScale = 0;
+  let discScoreScale = 0;
+  if (totalSolvedEligible > 0) {
+    discEarnScale = discEarningPerDay / totalSolvedEligible;
+    discScoreScale = issueDiscoveryScore / totalSolvedEligible;
+  }
 
   const prEarnScale = useMemo(() => {
     let sum = 0;
@@ -262,7 +262,8 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
       if (!withinPeriod(p.prCreatedAt, HERO_DAYS)) continue;
       if (repoEvalMap.get(p.repository.toLowerCase())?.isEligible) sum += p.predictedUsdPerDay;
     }
-    return sum > 0 ? ossEarningPerDay / sum : 0;
+    if (sum <= 0) return 0;
+    return ossEarningPerDay / sum;
   }, [prs, repoEvalMap, ossEarningPerDay]);
 
   const prsScaled = useMemo(
@@ -275,14 +276,16 @@ export default function MinerDetailPage(ctx: { params: Promise<{ uid: string }> 
     [prsFiltered, repoEvalMap, prEarnScale],
   );
 
-  const copyHotkey = async () => {
+  async function copyHotkey(): Promise<void> {
     if (!miner?.hotkey) return;
     try {
       await navigator.clipboard.writeText(miner.hotkey);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* ignore */ }
-  };
+    } catch {
+      return;
+    }
+  }
 
   if (isError) {
     return (

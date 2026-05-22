@@ -17,15 +17,10 @@ export interface SortControlProps<K extends string> {
   onChange: (k: K) => void;
   onToggleDir: () => void;
   options: SortOption<K>[];
-  /** Inline label rendered before the dropdown. Set `null` to omit. */
   label?: string | null;
-  /** Override the `<select>` min-width if the longest label needs more room. */
   minWidth?: number;
 }
 
-// "[Sort:] [select] [↓/↑]" — same shape used by the miners leaderboard
-// Toolbar and the per-repository P&L card so the sort UI reads the same
-// everywhere on the page.
 export function SortControl<K extends string>({
   value, dir, onChange, onToggleDir, options, label = 'Sort', minWidth = 110,
 }: SortControlProps<K>) {

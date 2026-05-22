@@ -21,7 +21,7 @@ import {
 } from '@primer/octicons-react';
 import { formatUsd, formatRelativeTime } from '@/lib/format';
 import { PR_LOOKBACK_DAYS } from '@/lib/gittensor-policy';
-import { Card, CardHeader, MONO, LABEL, EmptyState } from '../../../components';
+import { Card, CardHeader, MONO, LABEL, ELLIPSIS, NOWRAP, EmptyState } from '../../../components';
 import { DEFAULT_DECAY_PARAMS, decayAt } from '../../lib/decay';
 
 interface PrDetail {
@@ -61,8 +61,12 @@ const CHART_W = 480, CHART_H = 160;
 const SVG_W = PAD_L + CHART_W + PAD_R;
 const SVG_H = PAD_T + CHART_H + PAD_B;
 
-const xOf = (d: number) => PAD_L + (Math.min(d, LOOKBACK) / LOOKBACK) * CHART_W;
-const yOf = (v: number) => PAD_T + CHART_H * (1 - Math.max(0, Math.min(1, v)));
+function xOf(d: number): number {
+  return PAD_L + (Math.min(d, LOOKBACK) / LOOKBACK) * CHART_W;
+}
+function yOf(v: number): number {
+  return PAD_T + CHART_H * (1 - Math.max(0, Math.min(1, v)));
+}
 
 const STEPS = 140;
 const _pts = Array.from({ length: STEPS + 1 }, (_, i) => {
@@ -227,14 +231,14 @@ function PrStat({
           mt: '4px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
         }}
         style={{ color: fg }}
       >
         {value}
       </Text>
       {sub && (
-        <Text sx={{ display: 'block', fontSize: '10px', color: 'fg.subtle', mt: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Text sx={{ display: 'block', fontSize: '10px', color: 'fg.subtle', mt: '2px', ...ELLIPSIS, }}>
           {sub}
         </Text>
       )}
@@ -262,7 +266,7 @@ function BackToMiner({ uid, name }: { uid: string; name: string }) {
           maxWidth: 240,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
           '&:hover': { color: 'fg.default', borderColor: 'border.muted' },
         }}
       >

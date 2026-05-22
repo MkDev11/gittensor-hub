@@ -7,7 +7,7 @@ import {
   IssueClosedIcon,
 } from '@primer/octicons-react';
 import { formatUsd } from '@/lib/format';
-import { IntensityBar, MONO, LABEL, blendedCredibility, clampedPct } from '../../components';
+import { IntensityBar, MONO, LABEL, ELLIPSIS, NOWRAP, blendedCredibility, clampedPct } from '../../components';
 
 export interface PositionSummaryProps {
   loading: boolean;
@@ -18,7 +18,6 @@ export interface PositionSummaryProps {
   issueEligible: boolean;
   ossEligibleCount: number;
   discEligibleCount: number;
-  /** Dual-eligible repos counted once, not summed across tracks. */
   uniqueEligibleCount: number;
   totalScore: number;
   issueScore: number;
@@ -35,9 +34,6 @@ export interface PositionSummaryProps {
   totalSolvedIssues?: number;
   totalClosedIssues?: number;
   totalOpenIssues?: number;
-  // Number of days the cred + activity inputs cover. The Credibility and
-  // Activity tiles label this so users see they're a rolling window, not
-  // lifetime totals.
   heroWindowDays?: number;
 }
 
@@ -78,20 +74,20 @@ export function PositionSummary({
         borderTopColor: 'border.muted',
         display: 'grid',
         gridTemplateColumns: [
-          '1fr 1fr',              // xs: 2 cols (Earnings spans both, others share rows)
-          null,                   // sm: inherit
-          'repeat(4, 1fr)',       // md: 4 cols (Earnings full row banner, others in 4-col row)
-          'repeat(6, 1fr)',       // lg+: 6 cols (Earnings spans 2)
+          '1fr 1fr',
+          null,
+          'repeat(4, 1fr)',
+          'repeat(6, 1fr)',
         ],
       }}
     >
       <Tile
         sx={{
           gridColumn: [
-            '1 / -1',           // xs: full row
-            null,               // sm: inherit
-            '1 / -1',           // md: full row
-            'span 2',           // lg: 2 of 6
+            '1 / -1',
+            null,
+            '1 / -1',
+            'span 2',
           ],
         }}
       >
@@ -270,23 +266,14 @@ function Tile({
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
-        // Right border: separates side-by-side tiles. Off by default on xs
-        // (only left-column tiles get one — handled by `:nth-of-type(2n)`
-        // below). md/lg: every non-last tile gets a right border.
         borderRight: ['none', null, last ? 'none' : '1px solid', last ? 'none' : '1px solid'],
         borderRightColor: 'border.muted',
-        // Top border: separates the row of supporting tiles from the
-        // Earnings banner above. xs/md: yes; lg: all in one row, no top.
         borderTop: ['1px solid', null, '1px solid', 'none'],
         borderTopColor: 'border.muted',
-        // Tile 1 (Earnings) always has no top border. Right border kicks in
-        // only at lg when it sits to the left of the supporting tiles.
         '&:nth-of-type(1)': {
           borderTop: 'none',
           borderRight: ['none', null, 'none', '1px solid'],
         },
-        // xs 2-col grid: left-column tiles (positions 2, 4) need a right
-        // border to divide them from the right-column tiles (3, 5).
         '&:nth-of-type(2n)': {
           borderRight: ['1px solid', null, last ? 'none' : '1px solid', last ? 'none' : '1px solid'],
         },
@@ -302,7 +289,7 @@ function TileHeader({ icon, label, tone = 'muted' }: { icon: React.ReactNode; la
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
       <Box sx={{ color: tone === 'success' ? 'success.fg' : 'fg.muted', display: 'inline-flex' }}>{icon}</Box>
-      <Text sx={{ ...LABEL, color: 'fg.muted', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <Text sx={{ ...LABEL, color: 'fg.muted', ...ELLIPSIS, }}>
         {label}
       </Text>
     </Box>
@@ -322,7 +309,7 @@ function BigNumber({ value, color = 'fg.default' }: { value: string; color?: str
         mt: '6px',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
       }}
     >
       {value}
@@ -334,8 +321,6 @@ function Subs({ children }: { children: React.ReactNode }) {
   return <Box sx={{ mt: '4px', display: 'flex', flexDirection: 'column', gap: '2px' }}>{children}</Box>;
 }
 
-// `accent` colors the label dot so OSS = teal/accent and DISC = purple/done
-// match the leaderboard contributions column and the rest of the page.
 function SubStat({ label, value, accent }: { label: string; value: string; accent?: 'oss' | 'disc' }) {
   const dotColor = accent === 'oss' ? 'accent.fg' : accent === 'disc' ? 'done.fg' : null;
   return (
@@ -352,7 +337,7 @@ function SubStat({ label, value, accent }: { label: string; value: string; accen
           color: value === '—' ? 'fg.subtle' : 'fg.default',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
         }}
       >
         {value}
@@ -361,7 +346,6 @@ function SubStat({ label, value, accent }: { label: string; value: string; accen
   );
 }
 
-// 1234 → "1.2K", 1234567 → "1.2M".
 function formatCompact(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

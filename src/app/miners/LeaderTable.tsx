@@ -22,7 +22,7 @@ import {
   PageNav,
   SortControl,
   MONO,
-  LABEL,
+  LABEL, NOWRAP,
   ghKey,
   ghName,
   StatusBadge,
@@ -39,7 +39,6 @@ export type EligibilityFilter = 'all' | 'eligible' | 'ineligible';
 export type SortKey = 'score' | 'cred' | 'usd' | 'repos' | 'active' | 'movement' | 'volume';
 export type { SortDir };
 
-// Repos is the 1fr slack absorber — chips spread on wide screens.
 const COLS = '44px minmax(170px, 240px) 124px minmax(88px, 104px) 60px 72px 84px minmax(180px, 1fr) 92px 28px';
 
 function MinerIdentity({
@@ -62,7 +61,7 @@ function MinerIdentity({
             color: 'fg.default',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            ...NOWRAP,
             letterSpacing: '-0.005em',
           }}
         >
@@ -185,7 +184,7 @@ function MovementCell({
         fontSize: '11px',
         fontWeight: 700,
         lineHeight: 1,
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         color: up ? 'success.fg' : 'danger.fg',
       }}
     >
@@ -213,7 +212,7 @@ function ContribCell({
         justifyContent: 'center',
       }}
     >
-      {/* OSS / PRs row */}
+      {}
       <Box
         sx={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}
         title={`${merged} merged PR${merged === 1 ? '' : 's'} · OSS score ${ossScore.toFixed(1)}`}
@@ -232,7 +231,7 @@ function ContribCell({
           {ossScore > 0 ? ossScore.toFixed(1) : '—'}
         </Text>
       </Box>
-      {/* Discovery / Issues row */}
+      {}
       <Box
         sx={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}
         title={`${solved} solved issue${solved === 1 ? '' : 's'} · Discovery score ${discScore.toFixed(1)}`}
@@ -296,7 +295,7 @@ function RepoChip({
         fontSize: '10px',
         fontWeight: 600,
         lineHeight: 1,
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         minWidth: 0,
         cursor: onClick ? 'pointer' : 'default',
         transition: 'background-color 100ms, color 100ms, border-color 100ms',
@@ -317,11 +316,6 @@ function RepoChip({
     </Box>
   );
 }
-
-
-/* =========================================================================
- * Toolbar — filter pills + sort control + search + page-size selector
- * ========================================================================= */
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'score',    label: 'Score' },
@@ -402,7 +396,7 @@ export function Toolbar({
             fontSize: 0,
             fontWeight: 700,
             cursor: 'pointer',
-            whiteSpace: 'nowrap',
+            ...NOWRAP,
             '&:hover': { bg: 'accent.muted' },
           }}
         >
@@ -420,7 +414,7 @@ export function Toolbar({
 
   return (
     <Box sx={{ mt: 2, mb: 2 }}>
-      {/* Desktop: single dense row — pills · sort · count · rows · search */}
+      {}
       <Box
         sx={{
           display: ['none', null, 'flex'],
@@ -437,7 +431,7 @@ export function Toolbar({
           onToggleDir={onToggleSortDir}
           options={SORT_OPTIONS}
         />
-        <Text sx={{ ...MONO, fontSize: 0, color: 'fg.muted', whiteSpace: 'nowrap', ml: 'auto' }}>
+        <Text sx={{ ...MONO, fontSize: 0, color: 'fg.muted', ...NOWRAP, ml: 'auto' }}>
           {resultText}
         </Text>
         <RowSizeSelector value={pageSize} onChange={onPageSize} />
@@ -445,7 +439,7 @@ export function Toolbar({
           <SearchBox value={query} onChange={setQuery} placeholder="Search miner, UID, hotkey…" size="sm" />
         </Box>
       </Box>
-      {/* Mobile: pills wrap, then sort + rows; search below */}
+      {}
       <Box sx={{ display: ['flex', null, 'none'], flexDirection: 'column', gap: 2 }}>
         {pills}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
@@ -467,11 +461,6 @@ export function Toolbar({
     </Box>
   );
 }
-
-/* =========================================================================
- * Hover peek popover — last 3 PRs for a miner, portal-rendered so it
- * escapes the table's overflow:hidden.
- * ========================================================================= */
 
 interface PeekPr {
   pullRequestNumber: number;
@@ -518,7 +507,6 @@ function HoverPeek({ uid, anchor }: { uid: number | string; anchor: PeekAnchor }
 
   if (typeof document === 'undefined') return null;
 
-  // Flip above the row if it would clip the bottom of the viewport.
   const popWidth = 360;
   const popHeightEstimate = 140;
   const viewportH = typeof window !== 'undefined' ? window.innerHeight : 0;
@@ -559,7 +547,7 @@ function HoverPeek({ uid, anchor }: { uid: number | string; anchor: PeekAnchor }
                   color: 'fg.default',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  ...NOWRAP,
                   display: 'block',
                 }}
                 title={pr.title ?? `#${pr.pullRequestNumber}`}
@@ -773,7 +761,6 @@ function LeaderRow({
             </Box>
           </Box>
 
-
           <Box
             sx={{
               gridArea: 'cred',
@@ -935,7 +922,6 @@ export function LeaderTable({
         <ColumnHeader active={sortKey === 'active'} dir={sortDir} onClick={() => onSort('active')} title="Most recent OSS or Discovery activity">Last Active</ColumnHeader>
         <span />
       </Box>
-
 
       {loading ? (
         <Box sx={{ p: 2 }}>

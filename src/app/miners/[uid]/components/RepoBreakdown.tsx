@@ -12,7 +12,7 @@ import {
 import { formatUsd, formatRelativeTime } from '@/lib/format';
 import {
   Card, CardHeader, CountCell, RowSizeSelector, PageNav, SearchBox, SortControl,
-  EmptyState, MONO, LABEL,
+  EmptyState, MONO, LABEL, NOWRAP,
   computeSparklinePath, summarizeTrend,
   stopPropagation, ratePctOrNull,
   ColumnHeader,
@@ -24,10 +24,8 @@ import type { Mode, PrDetail, IssueDetail, RepoBucket, RepoEval } from './types'
 type SortCol = 'repo' | 'merged' | 'valid' | 'open' | 'closed' | 'changes' | 'cred' | 'score' | 'earning' | 'solved' | 'recent';
 
 const REPO_COLS = 'minmax(220px, 280px) minmax(100px, 1fr) 60px 56px 54px 54px 88px minmax(64px, 80px) 60px 80px 60px';
-// Activity sparkline window when period is "ALL" (no explicit upper bound).
 const SPARK_ALL_DAYS = 90;
 
-// Two separate option sets because OSS has Merged+Changes; Discovery has Solved.
 const SORT_OPTIONS_OSS: { key: SortCol; label: string }[] = [
   { key: 'earning', label: '$/Day' },
   { key: 'score',   label: 'Score' },
@@ -76,16 +74,13 @@ export function RepoBreakdown({
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [pageSize, setPageSize] = useState(15);
 
-  // Reset to a valid key when mode changes — `changes` only exists in OSS,
-  // `merged`/`solved` swap by track, etc. Without this, the dropdown shows
-  // the wrong active option after a mode switch.
   useEffect(() => {
     const validKeys = (mode === 'oss' ? SORT_OPTIONS_OSS : SORT_OPTIONS_DISC).map((o) => o.key);
     if (!validKeys.includes(sortCol)) setSortCol('earning');
   }, [mode, sortCol]);
 
   const sorted = useMemo(() => {
-    const recentOf = (r: RepoBucket): number => {
+    function recentOf(r: RepoBucket): number {
       let latest = 0;
       const sources: { iso: string | null | undefined }[] = mode === 'oss'
         ? r.prs.map((p) => ({ iso: p.mergedAt ?? p.prCreatedAt }))
@@ -99,10 +94,11 @@ export function RepoBreakdown({
         if (Number.isFinite(t) && t > latest) latest = t;
       }
       return latest;
-    };
-    // SOLVED = solved + completed so sort/cred match the column display.
-    const solvedDisplay = (r: RepoBucket) => r.solvedIssue + r.completedIssue;
-    const valueOf = (r: RepoBucket, col: SortCol): number => {
+    }
+    function solvedDisplay(r: RepoBucket): number {
+      return r.solvedIssue + r.completedIssue;
+    }
+    function valueOf(r: RepoBucket, col: SortCol): number {
       if (col === 'recent') return recentOf(r);
       if (mode === 'oss') {
         switch (col) {
@@ -133,7 +129,7 @@ export function RepoBreakdown({
         }
       }
       return 0;
-    };
+    }
     return [...repos].sort((a, b) => {
       if (sortCol === 'repo') {
         const cmp = a.repo.localeCompare(b.repo);
@@ -203,11 +199,15 @@ export function RepoBreakdown({
     return <EmptyState icon={<RepoIcon size={20} />} text="No repository activity in this window." />;
   }
 
-  const toggleSort = (col: SortCol) => {
-    if (col === sortCol) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortCol(col); setSortDir('desc'); }
+  function toggleSort(col: SortCol) {
+    if (col === sortCol) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
     setPage(0);
-  };
+  }
 
   const primaryLabel = mode === 'oss' ? 'Merged' : 'Solved';
 
@@ -333,8 +333,7 @@ export function RepoBreakdown({
               )}
             </Box>
             <span />
-            {/* Valid intentionally has no total — sum of per-repo Valid counts
-                differs from the miner-level Valid the validator applies. */}
+            {}
             <SumNum v={mode === 'oss' ? sums.merged : sums.solved} />
             <span />
             <SumNum v={sums.open} />
@@ -426,8 +425,6 @@ export function RepoBreakdown({
   );
 }
 
-// Per-repo table-header preset — picks the smaller icon and inline px the
-// row grid expects. Thin wrapper over the shared ColumnHeader primitive.
 function RepoHdr(props: ColumnHeaderProps) {
   return <ColumnHeader px="4px" iconSize={9} {...props} />;
 }
@@ -466,16 +463,12 @@ function RepoRow({
     ? ratePctOrNull(row.merged, row.merged + row.closedPr)
     : ratePctOrNull(row.solvedIssue, row.solvedIssue + row.closedIssue);
   const share = totalEarn > 0 ? earning / totalEarn : 0;
-  // Discovery: prefer upstream's authoritative count, fall back to local link data.
   const validCount = mode === 'oss'
     ? row.validPrs
     : (repoEval?.totalValidSolvedIssues ?? row.solvedByPr.length);
   const score = mode === 'oss'
     ? (isEligible && row.realScore > 0 ? row.realScore : 0)
     : (isEligible ? row.solvedIssue * discScoreScale : 0);
-  // Sparkline source matches the mode: OSS shows PR activity, Discovery
-  // shows issue activity (so a repo with PR activity but no issues doesn't
-  // misleadingly appear "busy" on the Discovery view).
   const { lastActivityIso, daily } = useMemo(
     () => mode === 'oss'
       ? deriveRepoActivity(row.prs, sparkDays)
@@ -484,10 +477,6 @@ function RepoRow({
   );
 
   const totalChanges = row.additions + row.deletions;
-  // SOLVED in Discovery mode = solved (PR-linked) + completed (no PR link
-  // recorded yet). Folding completed into the visible count means a repo
-  // with only "completed" issues doesn't appear as "0/0/0/0" — the count
-  // now matches what the sparkline is showing.
   const primaryCount = mode === 'oss' ? row.merged : row.solvedIssue + row.completedIssue;
   const primaryLabel = mode === 'oss' ? 'merged' : 'solved';
   const openCount = mode === 'oss' ? row.openPr : row.openIssue;
@@ -542,7 +531,7 @@ function RepoRow({
           <Text
             sx={{
               flex: 1, minWidth: 0, fontSize: 0, fontWeight: isSelected ? 700 : 600, color: 'fg.default',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2,
+              overflow: 'hidden', textOverflow: 'ellipsis', ...NOWRAP, lineHeight: 1.2,
             }}
             title={row.repo}
           >
@@ -644,7 +633,7 @@ function RepoRow({
           py: '8px',
         }}
       >
-      {/* stopPropagation: row click toggles repo selection; the link navigates. */}
+      {}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, pr: 1 }}>
         <Link
           href={`/repos/${owner}/${name}`}
@@ -693,7 +682,7 @@ function RepoRow({
               fontSize: 0,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              ...NOWRAP,
               display: 'block',
               fontWeight: isSelected ? 700 : 600,
               color: 'fg.default',
@@ -836,7 +825,6 @@ function NumCell({
   );
 }
 
-// 1234 → "1.2K", 1234567 → "1.2M"; absolute value available in tooltips.
 function formatCompactNum(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return '0';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -845,9 +833,6 @@ function formatCompactNum(n: number): string {
   return n.toLocaleString();
 }
 
-// Buckets ISO timestamps into N daily bins; source-agnostic (PR dates or issue dates).
-// Buckets by local calendar day so a PR from "yesterday" stays in yesterday's
-// bucket regardless of the hour-of-day delta.
 function deriveRepoActivityFromIsos(isos: (string | null | undefined)[], days: number): { lastActivityIso: string | null; daily: number[] } {
   const daily = new Array<number>(days).fill(0);
   if (!isos || isos.length === 0) return { lastActivityIso: null, daily };
@@ -898,9 +883,6 @@ function RepoActivitySpark({
     );
   }
 
-  // Bar chart for short windows (1–6 buckets): polylines collapse visually
-  // when there are too few points, so bars communicate the per-day count
-  // more honestly.
   if (cols < 7) {
     const max = Math.max(...values);
     const title = `${total} ${itemLabel}${total === 1 ? '' : 's'} in the ${windowLabel} window`;

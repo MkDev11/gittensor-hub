@@ -3,11 +3,8 @@
 import React from 'react';
 import { Box, Text } from '@primer/react';
 import type { Tone } from './types';
-import { MONO, LABEL, TONE_FG } from './tokens';
+import { MONO, LABEL, ELLIPSIS, NOWRAP, TONE_FG } from './tokens';
 
-// Generic label + value + sub block. Used wherever we need to render a
-// labeled numeric "stat" — the InsightCard and PulseStat primitives both
-// compose this for their headline content.
 export function Metric({
   label,
   value,
@@ -48,7 +45,7 @@ export function Metric({
           color: 'fg.default',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
           maxWidth: '100%',
         }}
         style={{ color: TONE_FG[tone] }}
@@ -56,7 +53,7 @@ export function Metric({
         {value}
       </Text>
       {sub && (
-        <Text sx={{ fontSize: '10px', color: 'fg.subtle', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+        <Text sx={{ fontSize: '10px', color: 'fg.subtle', ...ELLIPSIS, maxWidth: '100%' }}>
           {sub}
         </Text>
       )}

@@ -1,8 +1,3 @@
-// Logistic time-decay curve for merged PR scores.
-//
-// Mirrors `prTimeDecayModel.ts` in entrius/gittensor-ui — the canonical model
-// used by the validator. Previous copies in PrList.tsx and the PR detail page
-// drifted in subtle ways; this module is the single source of truth.
 
 export interface DecayParams {
   graceHours: number;

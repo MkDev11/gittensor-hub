@@ -1,10 +1,17 @@
 import type React from 'react';
 import type { Miner, MinerView, Mode } from './types';
 
-// Tolerant numeric coercion: scores come as decimal strings; garbage → 0, never NaN.
 export function num(v: unknown): number {
-  const n = typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : 0;
-  return Number.isFinite(n) ? n : 0;
+  let n: number;
+  if (typeof v === 'string') {
+    n = parseFloat(v);
+  } else if (typeof v === 'number') {
+    n = v;
+  } else {
+    n = 0;
+  }
+  if (!Number.isFinite(n)) return 0;
+  return n;
 }
 
 export function ghKey(name: string | null | undefined): string {
@@ -19,7 +26,6 @@ export function ghAvatar(m: Pick<Miner, 'githubUsername' | 'uid'>, size: number)
   return `https://github.com/${ghName(m)}.png?size=${size}`;
 }
 
-// Splits usdPerDay between OSS and Discovery proportional to score, eligible tracks only.
 export function splitEarnings(
   usdPerDay: number,
   ossScore: number,
@@ -41,13 +47,12 @@ export function splitEarnings(
   return { oss: usdPerDay * ossShare, disc: usdPerDay * discShare };
 }
 
-// Upstream `credibility` uses a weighted formula that can disagree with visible counts.
 function acceptanceRate(positive: number, closed: number): number {
   const denom = positive + closed;
-  return denom > 0 ? positive / denom : 0;
+  if (denom <= 0) return 0;
+  return positive / denom;
 }
 
-// All three modes share the same shape so callers can swap tracks without changing render code.
 export function viewOf(m: Miner, mode: Mode): MinerView {
   const ossScore = num(m.totalScore);
   const issueScore = num(m.issueDiscoveryScore);
@@ -112,19 +117,10 @@ export function viewOf(m: Miner, mode: Mode): MinerView {
   };
 }
 
-// API compat — no longer colors per tone.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function credColor(_v: number): string {
   return 'var(--fg-default)';
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Row-level summary helpers
-//
-// These collapse inline arithmetic that LeaderRow, the sort comparator in
-// page.tsx, and the Insights spotlights would otherwise repeat. Centralizing
-// here keeps eligibility/credibility math consistent across the surface.
-// ──────────────────────────────────────────────────────────────────────────
 
 export interface MinerCounts {
   merged: number;
@@ -158,42 +154,34 @@ export function countsFor(m: Miner): MinerCounts {
 
 export function credibilityFor(counts: MinerCounts): MinerCredibility {
   const denom = counts.merged + counts.solved + counts.closedTotal;
-  const rate = denom > 0 ? (counts.merged + counts.solved) / denom : 0;
+  let rate = 0;
+  if (denom > 0) {
+    rate = (counts.merged + counts.solved) / denom;
+  }
   return { rate, pct: clampedPct(rate), denom };
 }
 
-// Prefer the validator-reported "valid" merged count when present, falling
-// back to the raw total. Used wherever miner activity is summarized.
 export function validMergedCount(m: Pick<Miner, 'totalValidMergedPrs' | 'totalMergedPrs'>): number {
   return m.totalValidMergedPrs ?? m.totalMergedPrs ?? 0;
 }
 
-// Headline OSS + Discovery score sum. Cheaper than `summarizeRow(m).combinedScore`
-// when callers don't need the per-track breakdown — used by the sort comparator,
-// Insights derivers, and any "total score" cell.
 export function combinedScore(m: Pick<Miner, 'totalScore' | 'issueDiscoveryScore'>): number {
   return num(m.totalScore) + num(m.issueDiscoveryScore);
 }
 
-// Track eligibility shape — common to Miner (list) and MinerProfile (detail).
 export interface EligibilityFlags {
   isEligible?: boolean | null;
   isIssueEligible?: boolean | null;
 }
 
-// Dual-track eligibility predicate — used wherever a row, deriver, or filter
-// needs to know whether a miner counts in both OSS and Discovery.
 export function isDualEligible(m: EligibilityFlags): boolean {
   return !!m.isEligible && !!m.isIssueEligible;
 }
 
-// At-least-one-track eligibility predicate.
 export function isAnyEligible(m: EligibilityFlags): boolean {
   return !!m.isEligible || !!m.isIssueEligible;
 }
 
-// Most recent OSS/Discovery activity timestamp, lexically compared on ISO 8601.
-// Both timestamps are Z-terminated upstream, so lexical max == chronological max.
 export function latestActivity(m: Pick<Miner, 'lastOssActivityAt' | 'lastDiscoveryActivityAt'>): string | null {
   const a = m.lastOssActivityAt ?? null;
   const b = m.lastDiscoveryActivityAt ?? null;
@@ -201,9 +189,6 @@ export function latestActivity(m: Pick<Miner, 'lastOssActivityAt' | 'lastDiscove
   return a ?? b ?? null;
 }
 
-// Integer percentage for a numerator/denominator pair, guarded against
-// zero/negative denominators. Returns 0 when the denominator is unusable —
-// use `ratePctOrNull` when callers need to distinguish "no data" from "0%".
 export function ratePct(numerator: number, denominator: number): number {
   if (denominator <= 0) return 0;
   return Math.round((numerator / denominator) * 100);
@@ -214,15 +199,6 @@ export function ratePctOrNull(numerator: number, denominator: number): number | 
   return Math.round((numerator / denominator) * 100);
 }
 
-// Clamp a fraction to [0, 1] and round to an integer percent (0..100).
-// Used by credibility, decay, and any UI that displays a 0..1 ratio as %.
-export function clampedPct(fraction: number): number {
-  return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
-}
-
-// Score-weighted average of OSS and Discovery credibilities. Falls back to
-// the simple mean when neither track has any score yet — used by the
-// per-miner detail header to summarize a single credibility figure.
 export function blendedCredibility(
   ossScore: number,
   ossCred: number,
@@ -230,16 +206,20 @@ export function blendedCredibility(
   discCred: number,
 ): number {
   const total = ossScore + discScore;
-  if (total > 0) return (ossScore * ossCred + discScore * discCred) / total;
+  if (total > 0) {
+    return (ossScore * ossCred + discScore * discCred) / total;
+  }
   return (ossCred + discCred) / 2;
 }
 
-// Click handler for nested clickable children inside a row that itself has
-// onClick. Stops the outer row handler from firing without preventing the
-// default navigation/anchor behavior of the inner element.
-export const stopPropagation: React.MouseEventHandler<HTMLElement> = (e) => {
+export function clampedPct(fraction: number): number {
+  return Math.round(Math.max(0, Math.min(1, fraction)) * 100);
+}
+
+
+export function stopPropagation(e: React.MouseEvent<HTMLElement>): void {
   e.stopPropagation();
-};
+}
 
 export function summarizeRow(m: Miner): MinerRowSummary {
   const ossScore = viewOf(m, 'oss').score;

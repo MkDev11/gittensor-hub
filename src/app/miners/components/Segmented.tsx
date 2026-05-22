@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Box, Text } from '@primer/react';
-import { MONO } from './tokens';
+import { MONO, NOWRAP } from './tokens';
 
 export interface SegmentOption<K extends string> {
   key: K;
@@ -11,8 +11,6 @@ export interface SegmentOption<K extends string> {
   count?: number;
 }
 
-// Generic segmented control — multi-option toggle with optional per-segment
-// icon + count chip.
 export function Segmented<K extends string>({
   options,
   value,
@@ -67,7 +65,7 @@ export function Segmented<K extends string>({
               '&:focus': { outline: 'none' },
               '&:focus-visible': { outline: '1px solid var(--fg-default)', outlineOffset: '2px', borderRadius: '4px' },
               '&:hover': { color: 'fg.default' },
-              whiteSpace: 'nowrap',
+              ...NOWRAP,
             }}
           >
             {opt.icon}

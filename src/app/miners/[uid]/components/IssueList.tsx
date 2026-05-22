@@ -9,7 +9,7 @@ import {
 } from '@primer/octicons-react';
 import { formatUsd, formatRelativeTime } from '@/lib/format';
 import {
-  Card, CardHeader, Metric, SearchBox, RowSizeSelector, PageNav, MONO, LABEL,
+  Card, CardHeader, Metric, SearchBox, RowSizeSelector, PageNav, MONO, LABEL, ELLIPSIS, NOWRAP,
   stopPropagation,
 } from '../../components';
 import { useSearchPage } from './shared';
@@ -19,7 +19,6 @@ export interface IssueListProps {
   issues: IssueDetail[];
   title: string;
   sub?: string;
-  /** Disambiguates row keys when the same issue appears in both lists. */
   kind: 'discovered' | 'solved';
   icon: React.ReactNode;
   discScoreScale?: number;
@@ -155,13 +154,11 @@ export function IssueList({
   );
 }
 
-// `closedByPrs` is "#42, #57" (short) or full GitHub PR URLs; parser handles both.
 interface LinkedPr { href: string; label: string; full: string }
 function parseLinkedPrs(raw: string | null, fallbackRepo: string): LinkedPr[] {
   if (!raw) return [];
   const out: LinkedPr[] = [];
   for (const part of raw.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) {
-    // "#42" — most common server-side format. Resolve via the issue's own repo.
     const shortMatch = part.match(/^#(\d+)$/);
     if (shortMatch) {
       const num = shortMatch[1];
@@ -258,7 +255,7 @@ function IssueRow({
         p: 0,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         '&:hover': { textDecoration: 'underline' },
       }}
     >
@@ -338,7 +335,7 @@ function IssueRow({
         transition: 'background-color 100ms',
       }}
     >
-      {/* ── Mobile card (hidden on desktop) ──────────────────────── */}
+      {}
       <Box sx={{ display: ['flex', null, 'none'], flexDirection: 'column', gap: '6px', px: 2, py: '10px' }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', minWidth: 0 }}>
           <Box sx={{ color: stateColorSx, display: 'inline-flex', mt: '2px', flexShrink: 0 }}>
@@ -392,7 +389,7 @@ function IssueRow({
         )}
       </Box>
 
-      {/* ── Desktop grid row (hidden on mobile) ──────────────────── */}
+      {}
       <Box
         sx={{
           display: ['none', null, 'grid'],
@@ -417,9 +414,7 @@ function IssueRow({
               ...MONO,
               fontSize: '10px',
               color: 'fg.muted',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
+              ...ELLIPSIS,
             }}
             title={`${iss.repo}#${iss.number}`}
           >
@@ -536,7 +531,9 @@ function IssueModal({
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
     closeBtnRef.current?.focus();
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    function handler(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
     window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
     return () => {

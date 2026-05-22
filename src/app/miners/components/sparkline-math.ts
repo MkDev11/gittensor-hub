@@ -1,9 +1,3 @@
-// Pure geometry + summary helpers for the activity sparkline.
-//
-// The full sparkline UI lives at each call site (LeaderTable's `Sparkline`,
-// RepoBreakdown's `RepoActivitySpark`) — single-consumer per the rule in
-// `./index.ts`. The *math* is shared, so it lives here where both can read
-// from one source and stay in sync.
 
 export interface SparklinePoint {
   x: number;
@@ -34,7 +28,10 @@ export function computeSparklinePath(
 ): SparklinePath {
   const { width, height, padV = 2 } = layout;
   const cols = values.length;
-  const max = cols > 0 ? Math.max(...values) : 0;
+  let max = 0;
+  if (cols > 0) {
+    max = Math.max(...values);
+  }
 
   const points: SparklinePoint[] = values.map((v, i) => ({
     x: cols > 1 ? (i / (cols - 1)) * (width - 1) : (width - 1) / 2,

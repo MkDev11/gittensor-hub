@@ -4,8 +4,6 @@ import React from 'react';
 import { Box, Text } from '@primer/react';
 import { MONO, LABEL } from './tokens';
 
-/* ─────────────────────────── Pagination ─────────────────────────── */
-
 export function Pagination({
   page,
   pageCount,
@@ -25,7 +23,6 @@ export function Pagination({
 }) {
   if (total === 0) return null;
   const p1 = zeroIndexed ? page + 1 : page;
-  // pageSize === Infinity ("All") would yield (0 * Infinity) = NaN in the range math.
   const finitePageSize = pageSize !== undefined && Number.isFinite(pageSize);
   const showRange = pageSize !== undefined;
   const start = finitePageSize ? (p1 - 1) * (pageSize as number) + 1 : 1;
@@ -104,12 +101,9 @@ function NavBtn({
   );
 }
 
-/* ─────────────────────────── Row-size selector ─────────────────────────── */
-
 const CHEVRON_DOWN_URL =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 16 16' fill='%238b949e'><path d='M3.22 5.22a.75.75 0 0 1 1.06 0L8 8.94l3.72-3.72a.75.75 0 0 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L3.22 6.28a.75.75 0 0 1 0-1.06Z'/></svg>\")";
 
-// `All` is encoded as `Infinity` so callers can use the value with `Array.slice(0, n)`.
 export function RowSizeSelector({
   value,
   onChange,
@@ -190,10 +184,6 @@ export function RowSizeSelector({
   );
 }
 
-/* ─────────────────────────── Page navigation ─────────────────────────── */
-
-// Footer page-nav. `page` is 1-indexed; `pageSize === Infinity` is treated
-// as a single page.
 export function PageNav({
   page,
   pageSize,

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Box } from '@primer/react';
+import { NOWRAP } from './tokens';
 
 export function EligibilityDot({ eligible, title }: { eligible: boolean; title?: string }) {
   return (
@@ -48,7 +49,7 @@ export function EligibilityBadge({
         fontWeight: 700,
         letterSpacing: '0.5px',
         textTransform: 'uppercase',
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
       }}
     >
       <Box aria-hidden sx={{ width: 5, height: 5, borderRadius: 999, bg: eligible ? 'success.fg' : 'fg.subtle' }} />

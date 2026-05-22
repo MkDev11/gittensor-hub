@@ -8,7 +8,7 @@ import {
 } from '@primer/octicons-react';
 import { formatRelativeTime } from '@/lib/format';
 import {
-  EligibilityBadge, MONO, StatusBadge, MinerStatus,
+  EligibilityBadge, MONO, NOWRAP, StatusBadge, MinerStatus,
   STATUS_NONE, makeStatus, isDualEligible,
 } from '../../components';
 import type { MinerProfile, PrDetail } from './types';
@@ -42,7 +42,6 @@ function deriveHeroStatus(miner: MinerProfile, prs: PrDetail[]): MinerStatus {
   const uniqueRepos = miner.uniqueReposCount ?? 0;
 
   if (recent3 >= 3) return makeStatus('hot');
-  // climbing skipped — previousRank not available in detail profile
   if (recent14 === 0 && merged > 0) return makeStatus('dormant');
   if (uniqueRepos > 0 && uniqueRepos <= 2 && merged >= 5) return makeStatus('specialist');
   if (isDualEligible(miner)) return makeStatus('dual');
@@ -86,7 +85,7 @@ export function ProfileHero({
       </Box>
 
       <Box sx={{ flex: '1 1 240px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {/* Row 1: name + UID + you + eligibility + status */}
+        {}
         <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
           <Heading
             sx={{
@@ -95,7 +94,7 @@ export function ProfileHero({
               color: 'fg.default',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              ...NOWRAP,
               lineHeight: 1.1,
             }}
           >
@@ -108,7 +107,7 @@ export function ProfileHero({
           {status.kind !== 'none' && <StatusBadge status={status} />}
         </Box>
 
-        {/* Row 2: hotkey + github + evaluated time */}
+        {}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', minWidth: 0 }}>
           {miner?.hotkey && (
             <Box

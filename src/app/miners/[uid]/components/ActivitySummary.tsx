@@ -101,8 +101,6 @@ export function ActivitySummary({
     );
   }
 
-  // Discovery mode — ALL period uses lifetime totals on the miner record so
-  // counts stay stable when the windowed query has empty buckets.
   const useTotals = period === 'ALL';
   const totalIssues = useTotals
     ? (miner?.totalSolvedIssues ?? 0) + (miner?.totalOpenIssues ?? 0) + (miner?.totalClosedIssues ?? 0)

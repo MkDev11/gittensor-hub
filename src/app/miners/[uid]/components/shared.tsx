@@ -2,7 +2,7 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import { Box, Text } from '@primer/react';
-import { MONO, LABEL } from '../../components';
+import { MONO, LABEL, ELLIPSIS, NOWRAP } from '../../components';
 import { SUMMARY_TONE_FG, SummaryTone } from './types';
 
 export function ListLoading({ label }: { label: string }) {
@@ -59,14 +59,14 @@ export function HeroTile({
           lineHeight: 1.05,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
         }}
         style={{ color: SUMMARY_TONE_FG[tone] }}
       >
         {value}
       </Text>
       {sub && (
-        <Text sx={{ fontSize: '10px', color: 'fg.subtle', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <Text sx={{ fontSize: '10px', color: 'fg.subtle', ...ELLIPSIS, }}>
           {sub}
         </Text>
       )}
@@ -108,8 +108,7 @@ export function useSearchPage<T>(
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return q ? items.filter((i) => filter(i, q)) : items;
-  // filter is a stable render-time closure; items + search are the real deps
-  }, [items, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items, search]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
   const paged = useMemo(

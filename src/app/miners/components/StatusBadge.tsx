@@ -4,6 +4,7 @@ import React from 'react';
 import { Box, Text } from '@primer/react';
 import type { Miner } from './types';
 import { validMergedCount } from './helpers';
+import { NOWRAP } from './tokens';
 
 export type MinerStatusKind = 'hot' | 'climbing' | 'dormant' | 'specialist' | 'dual' | 'none';
 
@@ -28,9 +29,6 @@ export function makeStatus(kind: Exclude<MinerStatusKind, 'none'>): MinerStatus 
   return { kind, ...STATUS_REGISTRY[kind] };
 }
 
-// Priority order: momentum > inactivity > niche. Used by the leaderboard row;
-// the detail view derives status from the full PR list, not pre-aggregated
-// dailyLookback, and lives next to its consumer.
 export function deriveMinerStatus(miner: Miner, currentRank: number): MinerStatus {
   const daily = miner.dailyLookback ?? [];
   const recent3 = daily.slice(-3).reduce((a, b) => a + b, 0);
@@ -78,7 +76,7 @@ export function StatusBadge({ status }: { status: MinerStatus }) {
         fontWeight: 700,
         letterSpacing: '0.2px',
         lineHeight: 1,
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         flexShrink: 0,
       }}
       style={{ color: tone.fg, backgroundColor: tone.bg }}

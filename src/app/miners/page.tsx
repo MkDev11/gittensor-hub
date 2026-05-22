@@ -72,7 +72,6 @@ export default function MinersPage() {
     });
   }, [queryClient]);
 
-  // Full-dataset ranks so movement and #N labels stay stable while filtering/paging.
   const ranksByUid = useMemo(() => {
     const map = new Map<number, number>();
     if (!data?.miners) return map;
@@ -101,10 +100,11 @@ export default function MinersPage() {
     });
   }, [data, query, eligibility, tracksOnly, tracked, repoFilter]);
 
-  // Eligible miners always float to top regardless of sort key.
   const sorted = useMemo(() => {
-    const combinedCred = (m: Miner): number => credibilityFor(countsFor(m)).rate;
-    const valueOf = (m: Miner): number => {
+    function combinedCred(m: Miner): number {
+      return credibilityFor(countsFor(m)).rate;
+    }
+    function valueOf(m: Miner): number {
       switch (sortKey) {
         case 'score':    return combinedScore(m);
         case 'cred':     return combinedCred(m);
@@ -117,15 +117,16 @@ export default function MinersPage() {
         case 'movement': {
           const prev = m.previousRank ?? null;
           const now = ranksByUid.get(m.uid) ?? 0;
-          // Bigger climbs sort first when desc; null movement sinks.
           return prev != null && now > 0 ? prev - now : Number.NEGATIVE_INFINITY;
         }
         case 'volume': {
           return validMergedCount(m) + (m.totalSolvedIssues ?? 0);
         }
       }
-    };
-    const eligibleOf = (m: Miner): boolean => isAnyEligible(m);
+    }
+    function eligibleOf(m: Miner): boolean {
+      return isAnyEligible(m);
+    }
     return [...filtered].sort((a, b) => {
       const aE = eligibleOf(a), bE = eligibleOf(b);
       if (aE !== bE) return aE ? -1 : 1;
@@ -141,12 +142,21 @@ export default function MinersPage() {
   const pageEnd   = pageSize === Infinity ? sorted.length : pageStart + pageSize;
   const visible   = sorted.slice(pageStart, pageEnd);
 
-  const onSort = (k: SortKey) => {
-    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(k); setSortDir('desc'); }
-  };
-  const onSortKey = (k: SortKey) => { setSortKey(k); setSortDir('desc'); };
-  const onToggleSortDir = () => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+  function onSort(k: SortKey) {
+    if (k === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(k);
+      setSortDir('desc');
+    }
+  }
+  function onSortKey(k: SortKey) {
+    setSortKey(k);
+    setSortDir('desc');
+  }
+  function onToggleSortDir() {
+    setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+  }
 
   const loadingFirst = isLoading && !data;
 

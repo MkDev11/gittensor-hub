@@ -14,11 +14,12 @@ export interface CodeImpactCardProps {
   miner: MinerProfile | undefined;
 }
 
-// Diff/lines summary for the current period plus a lifetime tally underneath.
-// Shown in OSS mode only — the parent gates rendering by `mode`.
 export function CodeImpactCard({ prAgg, miner }: CodeImpactCardProps) {
   const totalChanged = prAgg.additions + prAgg.deletions;
-  const ratio = totalChanged > 0 ? (prAgg.additions / totalChanged) * 100 : 0;
+  let ratio = 0;
+  if (totalChanged > 0) {
+    ratio = (prAgg.additions / totalChanged) * 100;
+  }
   const addPct = Math.round(ratio);
   const delPct = 100 - addPct;
   const net = prAgg.additions - prAgg.deletions;
@@ -81,7 +82,6 @@ function DiffSplit({ addPct, delPct }: { addPct: number; delPct: number }) {
         alignItems: 'center',
         gap: '6px',
         width: '100%',
-        // Matches mono numeric height in adjacent tiles.
         height: '1.6em',
       }}
     >

@@ -2,9 +2,8 @@
 
 import React from 'react';
 import { Box } from '@primer/react';
+import { NOWRAP } from './tokens';
 
-// Filter/toggle pill. As a `<button>` when `onClick` is supplied; otherwise
-// renders as an inert `<span>` (handy for read-only chips).
 export function Pill({
   active,
   onClick,
@@ -37,7 +36,7 @@ export function Pill({
         fontWeight: active ? 700 : 500,
         cursor: onClick ? 'pointer' : 'default',
         fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         textTransform: 'capitalize',
         transition: 'background-color 100ms, color 100ms',
         '&:focus': { outline: 'none' },

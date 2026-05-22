@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Box, Text } from '@primer/react';
 import {
-  Miner, MinerAvatar, MONO, LABEL, ghName, num,
+  Miner, MinerAvatar, MONO, LABEL, ELLIPSIS, NOWRAP, ghName, num,
   validMergedCount, ratePct, isDualEligible, isAnyEligible, combinedScore,
 } from './components';
 
@@ -19,12 +19,14 @@ function TipTile({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const show = () => {
+  function show() {
     if (!ref.current || !tip) return;
     const r = ref.current.getBoundingClientRect();
     setPos({ x: r.left + r.width / 2, y: direction === 'n' ? r.top : r.bottom });
-  };
-  const hide = () => setPos(null);
+  }
+  function hide() {
+    setPos(null);
+  }
   return (
     <Box
       ref={ref}
@@ -50,7 +52,7 @@ function TipTile({
             px: '8px',
             py: '4px',
             fontSize: '11px',
-            whiteSpace: 'nowrap',
+            ...NOWRAP,
             pointerEvents: 'none',
             boxShadow: '0 8px 24px rgba(0, 0, 0, 0.30)',
           }}
@@ -62,11 +64,6 @@ function TipTile({
     </Box>
   );
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
- * Single-line tiles in a 4×2 grid. Each tile is one horizontal row so there is
- * no vertical dead space — the panel height equals 2 rows of content padding.
- * ────────────────────────────────────────────────────────────────────────── */
 
 export function Insights({ miners, loading }: { miners: Miner[]; loading: boolean }) {
   const tiles = useMemo(() => buildTiles(miners, loading), [miners, loading]);
@@ -93,8 +90,6 @@ export function Insights({ miners, loading }: { miners: Miner[]; loading: boolea
   );
 }
 
-/* ─── Tile types ─────────────────────────────────────────────────────────── */
-
 type Tone = 'default' | 'success' | 'muted';
 
 interface PulseTileData {
@@ -110,14 +105,12 @@ interface SpotlightTileData {
   label: string;
   hero: React.ReactNode | null;
   metric: string;
-  sub: string;       // becomes the tooltip — keeps the row to one line
+  sub: string;
   tone?: Tone;
   emptyMessage: string;
 }
 
 type Tile = PulseTileData | SpotlightTileData;
-
-/* ─── Tile primitives ────────────────────────────────────────────────────── */
 
 const TILE_SX = {
   bg: 'canvas.subtle',
@@ -133,7 +126,7 @@ const TILE_SX = {
 const LABEL_SX = {
   ...LABEL,
   fontSize: '9px',
-  whiteSpace: 'nowrap',
+  ...NOWRAP,
   flexShrink: 0,
 } as const;
 
@@ -155,7 +148,7 @@ function PulseTile({ tile }: { tile: PulseTileData }) {
           fontWeight: 700,
           lineHeight: 1,
           color: toneColor(tile.tone),
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
           letterSpacing: '-0.01em',
           flexShrink: 0,
         }}
@@ -166,9 +159,7 @@ function PulseTile({ tile }: { tile: PulseTileData }) {
         sx={{
           fontSize: '10px',
           color: 'fg.muted',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          ...ELLIPSIS,
           ml: 'auto',
           minWidth: 0,
           textAlign: 'right',
@@ -186,7 +177,7 @@ function SpotlightTile({ tile, loading }: { tile: SpotlightTileData; loading: bo
       <Text sx={LABEL_SX}>{tile.label}</Text>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
         {tile.hero ?? (
-          <Text sx={{ fontSize: 0, color: 'fg.subtle', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Text sx={{ fontSize: 0, color: 'fg.subtle', ...ELLIPSIS, }}>
             {loading ? 'Loading…' : tile.emptyMessage}
           </Text>
         )}
@@ -198,7 +189,7 @@ function SpotlightTile({ tile, loading }: { tile: SpotlightTileData; loading: bo
           fontWeight: 700,
           lineHeight: 1,
           color: toneColor(tile.tone),
-          whiteSpace: 'nowrap',
+          ...NOWRAP,
           letterSpacing: '-0.01em',
           flexShrink: 0,
         }}
@@ -208,8 +199,6 @@ function SpotlightTile({ tile, loading }: { tile: SpotlightTileData; loading: bo
     </TipTile>
   );
 }
-
-/* ─── Hero fragments — compact inline avatar + name ──────────────────────── */
 
 function MinerHero({ miner }: { miner: Pick<Miner, 'uid' | 'githubUsername'> }) {
   return (
@@ -221,9 +210,7 @@ function MinerHero({ miner }: { miner: Pick<Miner, 'uid' | 'githubUsername'> }) 
             fontSize: 1,
             fontWeight: 600,
             color: 'fg.default',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            ...ELLIPSIS,
             minWidth: 0,
             '&:hover': { color: 'accent.fg' },
           }}
@@ -243,9 +230,7 @@ function RepoHero({ name }: { name: string }) {
           fontSize: 1,
           fontWeight: 700,
           color: 'fg.default',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          ...ELLIPSIS,
           display: 'block',
           '&:hover': { color: 'accent.fg' },
         }}
@@ -255,8 +240,6 @@ function RepoHero({ name }: { name: string }) {
     </Link>
   );
 }
-
-/* ─── Data derivation ────────────────────────────────────────────────────── */
 
 interface PulseSummary {
   total: number;
@@ -309,8 +292,6 @@ function derivePulseSummary(miners: Miner[]): PulseSummary {
 function fmtUsd(n: number): string {
   return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`;
 }
-
-/* ─── Tile assembly ──────────────────────────────────────────────────────── */
 
 function buildTiles(miners: Miner[], loading: boolean): Tile[] {
   const s = derivePulseSummary(miners);
@@ -370,8 +351,6 @@ function buildTiles(miners: Miner[], loading: boolean): Tile[] {
   return [...pulses, ...spotlights];
 }
 
-// Shared shell for spotlight tiles: skeleton during loading, "no data yet"
-// fallback inside each deriver, and the base layout for the success case.
 function spotlightEmpty(label: string, emptyMessage: string): SpotlightTileData {
   return {
     kind: 'spotlight',
@@ -386,8 +365,6 @@ function spotlightEmpty(label: string, emptyMessage: string): SpotlightTileData 
 function spotlightPlaceholder(label: string): SpotlightTileData {
   return spotlightEmpty(label, 'Loading…');
 }
-
-/* ─── Top earner ─────────────────────────────────────────────────────────── */
 
 function deriveTopEarner(miners: Miner[]): SpotlightTileData {
   let best: Miner | null = null;
@@ -407,8 +384,6 @@ function deriveTopEarner(miners: Miner[]): SpotlightTileData {
     emptyMessage: empty.emptyMessage,
   };
 }
-
-/* ─── Biggest mover ──────────────────────────────────────────────────────── */
 
 function deriveBiggestMover(miners: Miner[]): SpotlightTileData {
   const empty = spotlightEmpty('Biggest mover', 'No surge this week');
@@ -457,8 +432,6 @@ function deriveBiggestMover(miners: Miner[]): SpotlightTileData {
   };
 }
 
-/* ─── Dual-track ─────────────────────────────────────────────────────────── */
-
 function deriveDualTrack(miners: Miner[]): SpotlightTileData {
   const empty = spotlightEmpty('Dual-track', 'None in both tracks');
   let best: Miner | null = null;
@@ -477,8 +450,6 @@ function deriveDualTrack(miners: Miner[]): SpotlightTileData {
     emptyMessage: empty.emptyMessage,
   };
 }
-
-/* ─── Hot repo ───────────────────────────────────────────────────────────── */
 
 function deriveHotRepo(miners: Miner[]): SpotlightTileData {
   const empty = spotlightEmpty('Hot repo', 'No activity yet');

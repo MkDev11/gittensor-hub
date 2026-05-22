@@ -1,6 +1,5 @@
 import type { Tone } from './types';
 
-// Primer sx fragments — spread into any Box/Text.
 export const MONO = {
   fontFamily: 'mono',
   fontVariantNumeric: 'tabular-nums',
@@ -14,7 +13,16 @@ export const LABEL = {
   color: 'fg.muted',
 } as const;
 
-// CSS vars per tone — used via inline style, not sx (Primer can't resolve CSS vars in sx).
+export const ELLIPSIS = {
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+} as const;
+
+export const NOWRAP = {
+  whiteSpace: 'nowrap',
+} as const;
+
 export const TONE_FG: Record<Tone, string> = {
   neutral: 'var(--fg-default)',
   success: 'var(--success-fg)',

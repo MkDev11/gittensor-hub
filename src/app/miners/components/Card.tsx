@@ -3,8 +3,6 @@
 import React from 'react';
 import { Box, Text } from '@primer/react';
 
-// Generic surface for grouping content. `inset` uses canvas.inset so the
-// card sits darker than the page; default uses canvas.subtle.
 export function Card({
   children,
   pad = false,

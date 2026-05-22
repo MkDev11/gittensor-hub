@@ -3,7 +3,7 @@
 import React from 'react';
 import { Box, Text } from '@primer/react';
 import { TriangleDownIcon, TriangleUpIcon } from '@primer/octicons-react';
-import { LABEL } from './tokens';
+import { LABEL, NOWRAP } from './tokens';
 import type { ColumnAlign, SortDir } from './types';
 
 export interface ColumnHeaderProps {
@@ -12,8 +12,6 @@ export interface ColumnHeaderProps {
   title?: string;
   pl?: number | string;
   px?: number | string;
-  // When `onClick` is provided the header renders as a sort button with an
-  // active-direction indicator; otherwise it's a passive label.
   onClick?: () => void;
   active?: boolean;
   dir?: SortDir;
@@ -26,9 +24,6 @@ const JUSTIFY: Record<ColumnAlign, 'flex-start' | 'center' | 'flex-end'> = {
   right: 'flex-end',
 };
 
-// Generic table column header used by the leaderboard and the per-repo
-// breakdown table. Both surfaces previously reimplemented this with subtle
-// drift in focus styles, icon sizes, and sx defaults.
 export function ColumnHeader({
   children,
   align = 'right',
@@ -44,7 +39,7 @@ export function ColumnHeader({
     ...LABEL,
     color: active ? 'fg.default' : 'fg.muted',
     textAlign: align,
-    whiteSpace: 'nowrap',
+    ...NOWRAP,
     pl,
     px,
   } as const;

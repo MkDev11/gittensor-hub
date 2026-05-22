@@ -35,7 +35,6 @@ export function EmptyState({
   );
 }
 
-// Small dot separator used between inline metadata bits.
 export function Sep() {
   return <Text aria-hidden sx={{ color: 'fg.subtle' }}>·</Text>;
 }

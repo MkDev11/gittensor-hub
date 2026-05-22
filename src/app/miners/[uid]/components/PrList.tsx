@@ -9,7 +9,7 @@ import {
 import { formatUsd, formatRelativeTime } from '@/lib/format';
 import {
   Card, CardHeader, Metric, SearchBox, RowSizeSelector, PageNav, EmptyState,
-  MONO, LABEL,
+  MONO, LABEL, ELLIPSIS, NOWRAP,
   stopPropagation,
 } from '../../components';
 import { ListLoading, useSearchPage } from './shared';
@@ -35,7 +35,6 @@ export function PrList({
       String(pr.pullRequestNumber).includes(q),
     pageSize,
   );
-  // Reset to page 0 when the repo filter changes (prs array reference changes).
   useEffect(() => { setPage(0); }, [prs, setPage]);
 
   if (loading) return <ListLoading label="Loading pull requests…" />;
@@ -169,7 +168,7 @@ function PrSizeChip({
         borderColor: 'border.muted',
         color,
         flexShrink: 0,
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         lineHeight: 1,
       }}
       title={`${total.toLocaleString()} line${total === 1 ? '' : 's'} changed · ${full}`}
@@ -233,7 +232,6 @@ function PrRow({ pr, onOpen }: { pr: PrDetail; onOpen: () => void }) {
     ? Date.parse(pr.mergedAt) - Date.parse(pr.prCreatedAt)
     : null;
   const lifetimeText = ttmMs != null && Number.isFinite(ttmMs) ? `in ${fmtDuration(ttmMs)}` : null;
-  // Base score (tokenScore) only shown when time-decay materially reduced it.
   const showBaseScore = pr.realScore > 0 && pr.tokenScore > pr.realScore * 1.05;
   const earnedUsdPerDay = pr.earnedScore != null && pr.realScore > 0 && pr.predictedUsdPerDay > 0
     ? (pr.earnedScore / pr.realScore) * pr.predictedUsdPerDay
@@ -248,14 +246,14 @@ function PrRow({ pr, onOpen }: { pr: PrDetail; onOpen: () => void }) {
     : openAgeMs > 7 * 86_400_000
     ? { label: 'aging', color: 'var(--attention-fg)' }
     : null;
-  const fmtAbsDate = (iso: string) => {
+  function fmtAbsDate(iso: string): string {
     const t = Date.parse(iso);
     if (!Number.isFinite(t)) return iso;
     return new Date(t).toLocaleString(undefined, {
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
-  };
+  }
   const absoluteDate = fmtAbsDate(pr.prState === 'MERGED' && pr.mergedAt ? pr.mergedAt : pr.prCreatedAt);
   const absoluteOpenedDate = fmtAbsDate(pr.prCreatedAt);
   const linkedIssues = parseLinkedIssues(pr.linkedIssues, pr.repository);
@@ -321,7 +319,7 @@ function PrRow({ pr, onOpen }: { pr: PrDetail; onOpen: () => void }) {
         p: 0,
         overflow: 'hidden',
         textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
+        ...NOWRAP,
         '&:hover': { textDecoration: 'underline' },
       }}
     >
@@ -360,7 +358,7 @@ function PrRow({ pr, onOpen }: { pr: PrDetail; onOpen: () => void }) {
         transition: 'background-color 100ms',
       }}
     >
-      {/* ── Mobile card (hidden on desktop) ──────────────────────────── */}
+      {}
       <Box sx={{ display: ['flex', null, 'none'], flexDirection: 'column', gap: '6px', px: 2, py: '10px' }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', minWidth: 0 }}>
           <Box sx={{ color: stateColor, display: 'inline-flex', mt: '2px', flexShrink: 0 }}>
@@ -433,7 +431,7 @@ function PrRow({ pr, onOpen }: { pr: PrDetail; onOpen: () => void }) {
         </Box>
       </Box>
 
-      {/* ── Desktop grid row (hidden on mobile) ──────────────────────── */}
+      {}
       <Box
         sx={{
           display: ['none', null, 'grid'],
@@ -460,7 +458,7 @@ function PrRow({ pr, onOpen }: { pr: PrDetail; onOpen: () => void }) {
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
           <Text
-            sx={{ ...MONO, fontSize: '10px', color: 'fg.muted', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
+            sx={{ ...MONO, fontSize: '10px', color: 'fg.muted', ...ELLIPSIS, minWidth: 0 }}
             title={`${pr.repository}#${pr.pullRequestNumber}`}
           >
             {pr.repository}#{pr.pullRequestNumber}
@@ -564,7 +562,9 @@ function PrModal({ pr, onClose }: { pr: PrDetail; onClose: () => void }) {
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
     closeBtnRef.current?.focus();
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    function handler(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
     window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
     return () => {
@@ -692,8 +692,12 @@ function MiniDecayChart({ daysSinceCreated, currentDecay }: { daysSinceCreated: 
   const innerH = VH - PT - PB;
   const DAYS = 30;
   const GRACE = DECAY_PARAMS.graceHours / 24;
-  const xScale = (d: number) => PL + Math.min(d / DAYS, 1) * innerW;
-  const yScale = (v: number) => PT + (1 - v) * innerH;
+  function xScale(d: number): number {
+    return PL + Math.min(d / DAYS, 1) * innerW;
+  }
+  function yScale(v: number): number {
+    return PT + (1 - v) * innerH;
+  }
   const N = 120;
   const pts: string[] = [];
   for (let i = 0; i <= N; i++) {

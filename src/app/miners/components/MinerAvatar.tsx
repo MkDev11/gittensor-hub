@@ -4,8 +4,6 @@ import React from 'react';
 import type { Miner } from './types';
 import { ghAvatar, ghName } from './helpers';
 
-// Small circular GitHub avatar. Reused by Spotlights and by LeaderTable's
-// internal MinerIdentity. Sized via the `size` prop (CSS pixels).
 export function MinerAvatar({
   miner,
   size,

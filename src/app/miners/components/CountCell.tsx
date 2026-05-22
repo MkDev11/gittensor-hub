@@ -5,8 +5,6 @@ import { Box, Text } from '@primer/react';
 import type { Tone } from './types';
 import { MONO, TONE_FG } from './tokens';
 
-// Icon + number cell. Icon takes the tone color; value stays neutral so a
-// column reads as one rhythm. Empty (0/—) dims both at reduced opacity.
 export function CountCell({
   icon,
   value,

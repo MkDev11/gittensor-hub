@@ -1,4 +1,3 @@
-// Single-consumer primitives stay in their parent file (e.g. Sparkline, MovementCell in LeaderTable.tsx).
 export * from './types';
 export * from './helpers';
 export * from './tokens';

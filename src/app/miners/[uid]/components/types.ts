@@ -1,4 +1,3 @@
-// Feature-local — promote to src/types/entities.ts if consumed beyond the detail page.
 
 export interface MinerProfile {
   uid: number;
@@ -59,7 +58,7 @@ export interface PrDetail {
   timeDecayMultiplier: number | null;
   earnedScore: number | null;
   tokenScore: number;
-  linkedIssues: string | null; // comma-joined "#N, #M" of linked issues; null when none
+  linkedIssues: string | null;
 }
 
 export type IssueBucket = 'solved' | 'completed' | 'open' | 'closed';

@@ -5,9 +5,6 @@ import { Box } from '@primer/react';
 import type { Tone } from './types';
 import { TONE_FG } from './tokens';
 
-/* ─────────────────────────── Intensity bar ─────────────────────────── */
-
-// Single-value 0..1 progress bar. Used for credibility, completion %, etc.
 export function IntensityBar({
   value,
   height = 4,
@@ -43,9 +40,6 @@ export function IntensityBar({
   );
 }
 
-/* ─────────────────────────── Split bar ─────────────────────────── */
-
-// Two-segment bar showing the relative weight of two values (accent | done).
 export function SplitBar({
   a,
   b,
@@ -58,8 +52,12 @@ export function SplitBar({
   ariaLabel?: string;
 }) {
   const total = a + b;
-  const aPct = total > 0 ? (a / total) * 100 : 0;
-  const bPct = total > 0 ? (b / total) * 100 : 0;
+  let aPct = 0;
+  let bPct = 0;
+  if (total > 0) {
+    aPct = (a / total) * 100;
+    bPct = (b / total) * 100;
+  }
   return (
     <Box
       aria-label={ariaLabel}
@@ -78,11 +76,6 @@ export function SplitBar({
   );
 }
 
-/* ─────────────────────────── Dual-track split bar ─────────────────────────── */
-
-// Score-weighted split with per-segment eligibility shading: OSS on the left,
-// Discovery on the right. Ineligible segments fade to convey "not earning
-// here". A miner with no score at all renders as an empty track.
 export function DualTrackBar({
   ossScore,
   ossEligible,
@@ -99,8 +92,12 @@ export function DualTrackBar({
   width?: number | string;
 }) {
   const total = Math.max(0, ossScore) + Math.max(0, discScore);
-  const ossPct = total > 0 ? (ossScore / total) * 100 : 0;
-  const discPct = total > 0 ? (discScore / total) * 100 : 0;
+  let ossPct = 0;
+  let discPct = 0;
+  if (total > 0) {
+    ossPct = (ossScore / total) * 100;
+    discPct = (discScore / total) * 100;
+  }
   const title = total > 0
     ? `OSS ${ossScore.toFixed(1)} · Discovery ${discScore.toFixed(1)}`
     : 'No score yet';
