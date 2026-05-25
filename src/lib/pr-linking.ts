@@ -8,7 +8,6 @@ import type { Pull } from '@/types/entities';
 // break adjacent matches under `matchAll`.
 const LINK_REGEX =
   /(?<=^|[^\w])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*(?:(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+))?#(\d+)/gi;
-  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*(?:(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+))?#(\d+)/gi;
 
 export interface LinkedIssueRef {
   repo: string | null;
