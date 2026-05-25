@@ -3,6 +3,7 @@ import { getDb, type IssueRow, type PullRow } from '@/lib/db';
 import { withRotation, fetchPrsClosingIssuesBatch } from '@/lib/github';
 import { extractLinkedIssues } from '@/lib/pr-linking';
 import { backfillPrIssueLinksIfNeeded, refreshIssueLinkedPrsIfStale } from '@/lib/refresh';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -192,6 +193,8 @@ export async function GET(
 ) {
   const params = await ctx.params;
   const { owner, name } = params;
+  const denied = await assertTrackedRepo(owner, name);
+  if (denied) return denied;
   const prNumber = parseInt(params.number, 10);
   if (!Number.isFinite(prNumber)) {
     return NextResponse.json({ error: 'Invalid pull request number' }, { status: 400, headers: NO_STORE_HEADERS });

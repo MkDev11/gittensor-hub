@@ -363,6 +363,24 @@ export async function getLiveReposAsyncServer(): Promise<{
   };
 }
 
+export async function isTrackedRepoServer(fullName: string): Promise<boolean> {
+  await refreshLiveIfStale();
+  const key = fullName.toLowerCase();
+  // Warm path: the live in-memory snapshot is authoritative, so an O(1) map
+  // lookup avoids the per-request `repo_weights` SELECT+sort that buildList()
+  // runs. This is the access-control hot path — every gated route hits it.
+  if (lastFetchedAt > 0) return liveByLc.has(key);
+  // Cold start (no successful live fetch yet): fall back to the DB floor,
+  // mirroring readAll()'s cold-path membership.
+  try {
+    return !!getDb()
+      .prepare('SELECT 1 FROM repo_weights WHERE LOWER(full_name) = ? LIMIT 1')
+      .get(key);
+  } catch {
+    return false;
+  }
+}
+
 export async function getIssueDiscoveryDisabledReposAsyncServer(repoFullNames: Iterable<string>): Promise<Set<string>> {
   await refreshLiveIfStale();
   const disabled = new Set<string>();

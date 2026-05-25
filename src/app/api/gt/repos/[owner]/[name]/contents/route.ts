@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withRotation } from '@/lib/github';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,8 @@ function isProbablyText(buf: Buffer): boolean {
 
 export async function GET(req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const { searchParams } = new URL(req.url);
   const path = searchParams.get('path') ?? '';
   try {

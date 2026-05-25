@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withRotation } from '@/lib/github';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,8 @@ const CANDIDATES = [
 
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   for (const path of CANDIDATES) {
     try {
       const r = await withRotation((octokit) =>
