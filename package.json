@@ -2,6 +2,9 @@
   "name": "gittensor-miner-dashboard",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24.0.0"
+  },
   "scripts": {
     "dev": "next dev -p 12074",
     "build": "next build",
