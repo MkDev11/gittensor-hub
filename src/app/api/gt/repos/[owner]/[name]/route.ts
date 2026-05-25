@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { withRotation } from '@/lib/github';
 import { getReadDb } from '@/lib/db';
 import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 
@@ -104,6 +105,8 @@ async function getAggregates(): Promise<CachedAggregates> {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const fullName = `${params.owner}/${params.name}`;
   try {
     const [agg, gh] = await Promise.all([

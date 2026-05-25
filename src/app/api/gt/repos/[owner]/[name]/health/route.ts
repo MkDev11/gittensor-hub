@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { withRotation } from '@/lib/github';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   try {
     const [profileR, repoR] = await Promise.all([
       withRotation((octokit) => octokit.rest.repos.getCommunityProfileMetrics({ owner: params.owner, repo: params.name })).catch(() => null),

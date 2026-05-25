@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, PullRow } from '@/lib/db';
 import { withRotation } from '@/lib/github';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -23,6 +24,8 @@ export async function GET(
 ) {
   const params = await ctx.params;
   const { owner, name } = params;
+  const denied = await assertTrackedRepo(owner, name);
+  if (denied) return denied;
   const num = parseInt(params.number, 10);
   const repoFullName = `${owner}/${name}`;
   if (!Number.isFinite(num)) {

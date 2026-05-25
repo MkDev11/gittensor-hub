@@ -3,6 +3,7 @@ import type { Octokit } from '@octokit/rest';
 import { withRotation } from '@/lib/github';
 import { getReadDb } from '@/lib/db';
 import { extractLinkedIssues } from '@/lib/pr-linking';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -808,6 +809,8 @@ export async function GET(
   ctx: { params: Promise<{ owner: string; name: string; number: string }> },
 ) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const issueNumber = parseInt(params.number, 10);
   if (!Number.isFinite(issueNumber)) {
     return NextResponse.json({ error: 'Invalid issue number' }, { status: 400, headers: NO_STORE_HEADERS });

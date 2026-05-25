@@ -10,6 +10,56 @@ const DB_PATH = path.join(DATA_DIR, 'cache.db');
 let _db: Database.Database | null = null;
 let _readDb: Database.Database | null = null;
 
+// --- One-shot data migration: purge false-positive pr_issue_links (issue #137) ---
+// The old link regex lacked a word boundary, so substrings like "bugfix #42"
+// or "discloses #42" were persisted as real PR->issue links. The extractor was
+// fixed to require `\b`, but `pr_issue_links` is append-only, so the bad rows
+// linger. This migration recomputes each cached PR's same-repo links under both
+// the old (boundaryless) and new (fixed) patterns and deletes only the
+// difference — links the old pattern produced that the fixed one does not.
+// Links from GraphQL/sidebar sources are left intact unless they happen to
+// coincide with a boundaryless-only regex match (rare; accepted per #137).
+const PR_ISSUE_LINKS_SCHEMA_VERSION = 1;
+const OLD_LINK_REGEX_NO_BOUNDARY =
+  /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*(?:(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+))?#(\d+)/gi;
+const NEW_LINK_REGEX_WITH_BOUNDARY =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*(?:(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+))?#(\d+)/gi;
+
+function sameRepoIssueNumbers(pattern: RegExp, repoFullName: string, title: string, body: string | null): Set<number> {
+  const text = `${title}\n${body ?? ''}`;
+  const out = new Set<number>();
+  for (const m of text.matchAll(pattern)) {
+    const repo = m[1] || repoFullName;
+    if (repo !== repoFullName) continue; // mirror the stored same-repo-only filter
+    const n = parseInt(m[2], 10);
+    if (Number.isFinite(n)) out.add(n);
+  }
+  return out;
+}
+
+function purgeBoundarylessPrIssueLinks(db: Database.Database): number {
+  const pulls = db
+    .prepare('SELECT repo_full_name, number, title, body FROM pulls')
+    .all() as Array<{ repo_full_name: string; number: number; title: string; body: string | null }>;
+  const del = db.prepare(
+    'DELETE FROM pr_issue_links WHERE repo_full_name = ? AND pr_number = ? AND issue_number = ?',
+  );
+  let removed = 0;
+  const tx = db.transaction(() => {
+    for (const pr of pulls) {
+      const oldIssues = sameRepoIssueNumbers(OLD_LINK_REGEX_NO_BOUNDARY, pr.repo_full_name, pr.title, pr.body);
+      if (oldIssues.size === 0) continue;
+      const newIssues = sameRepoIssueNumbers(NEW_LINK_REGEX_WITH_BOUNDARY, pr.repo_full_name, pr.title, pr.body);
+      for (const issueNum of oldIssues) {
+        if (newIssues.has(issueNum)) continue; // still valid under the fixed regex
+        removed += del.run(pr.repo_full_name, pr.number, issueNum).changes;
+      }
+    }
+  });
+  tx();
+  return removed;
+}
+
 /**
  * Separate read-only handle so foreground GET routes don't queue behind the
  * poller's big upsert transactions on the writer connection. Both handles
@@ -262,6 +312,17 @@ export function getDb(): Database.Database {
   const pullsCols = db.prepare("PRAGMA table_info(pulls)").all() as Array<{ name: string }>;
   if (!pullsCols.some((c) => c.name === 'author_association')) {
     db.exec('ALTER TABLE pulls ADD COLUMN author_association TEXT');
+  }
+
+  // One-shot purge of false-positive pr_issue_links (issue #137). Guarded by
+  // PRAGMA user_version so it runs exactly once per database file.
+  const schemaVersion = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+  if (schemaVersion < PR_ISSUE_LINKS_SCHEMA_VERSION) {
+    const removed = purgeBoundarylessPrIssueLinks(db);
+    db.exec(`PRAGMA user_version = ${PR_ISSUE_LINKS_SCHEMA_VERSION}`);
+    if (removed > 0) {
+      console.log(`[migration] purged ${removed} false-positive pr_issue_links (issue #137)`);
+    }
   }
 
   _db = db;

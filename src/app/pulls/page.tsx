@@ -2,8 +2,9 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, Label, Link as PrimerLink } from '@primer/react';
 import {
@@ -73,16 +74,28 @@ function pullIssueMapKey(pr: Pick<Pull, 'repo_full_name' | 'number'>): string {
   return `${pr.repo_full_name}#${pr.number}`;
 }
 
-export default function AllPullsPage() {
+export default function PullsPage() {
+  return (
+    <Suspense fallback={null}>
+      <AllPullsPage />
+    </Suspense>
+  );
+}
+
+function AllPullsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { repos: sn74Repos, weights: repoWeights, isSuccess: sn74ReposReady } = useSn74Repos();
   const { tracked, toggle: toggleTrackedRepo } = useTrackedRepos();
   const { settings, update } = useSettings();
   const me = useMinerLogin();
   const pageSize = settings.pageSize > 0 ? settings.pageSize : 25;
+  const mineOnlyFromUrl = searchParams.get('mine') === '1' || searchParams.get('mine') === 'true';
 
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
-  const [mineOnly, setMineOnly] = useState(false);
+  const [mineOnly, setMineOnly] = useState(mineOnlyFromUrl);
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('updated');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -92,6 +105,25 @@ export default function AllPullsPage() {
   const [openIssue, setOpenIssue] = useState<Issue | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [authorTarget, setAuthorTarget] = useState<AuthorTarget | null>(null);
+
+  useEffect(() => {
+    setMineOnly(mineOnlyFromUrl);
+  }, [mineOnlyFromUrl]);
+
+  const setMineOnlyWithUrl = useCallback(
+    (next: boolean) => {
+      setMineOnly(next);
+      const sp = new URLSearchParams(searchParams.toString());
+      if (next) {
+        sp.set('mine', '1');
+      } else {
+        sp.delete('mine');
+      }
+      const qs = sp.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const { data: userReposData, isSuccess: userReposReady } = useQuery<UserReposResp>({
     queryKey: ['user-repos'],
@@ -300,7 +332,7 @@ export default function AllPullsPage() {
               </ToggleButton>
               <ToggleButton
                 active={mineOnly}
-                onClick={() => setMineOnly((v) => !v)}
+                onClick={() => setMineOnlyWithUrl(!mineOnly)}
                 tone="attention"
               >
                 My PRs only{myCount > 0 ? ` (${myCount})` : ''}
@@ -372,7 +404,7 @@ export default function AllPullsPage() {
                       <AuthorFilter
                         value={mineOnly ? me || 'all' : authorFilter}
                         onChange={(next) => {
-                          setMineOnly(false);
+                          setMineOnlyWithUrl(false);
                           setAuthorFilter(next);
                         }}
                         authors={authorOptions}

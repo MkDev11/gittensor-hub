@@ -2,7 +2,7 @@
 
 A dashboard for miners on **Bittensor Subnet 74 (SN74)** — the subnet that rewards merged GitHub PRs in whitelisted open-source repos.
 
-It polls GitHub for issues and PRs across the 200+ SN74 repos (plus any you add), caches them in SQLite, and surfaces them in Dashboard, Explorer, Miners, Repositories, Issues, Pull Requests, and My PRs views.
+It polls GitHub for issues and PRs across the 200+ SN74 repos (plus any you add), caches them in SQLite, and surfaces them in Dashboard, Explorer, Miners, Repositories, Issues, and Pull Requests views.
 
 Built with Next.js 15 (App Router), TypeScript, Primer React, and `better-sqlite3`.
 
@@ -11,7 +11,7 @@ Built with Next.js 15 (App Router), TypeScript, Primer React, and `better-sqlite
 - `/` redirects to `/dashboard`, the daily SN74 overview.
 - `/dashboard` shows network activity, scored PRs, issue discovery, reward-ranked Top Contributions, and PR/issue pipelines.
 - `/explorer` is the repo drill-down view for issues and pull requests.
-- `/miners`, `/repositories`, `/issues`, `/pulls`, and `/my-prs` provide focused global tables.
+- `/miners`, `/repositories`, `/issues`, and `/pulls` provide focused global tables.
 
 Dashboard reward-share cards follow the Gittensor allocator at UI level:
 
@@ -31,6 +31,17 @@ pnpm dev                           # http://localhost:12074
 ```
 
 Requires Node 20+ and pnpm.
+
+## Development checks
+
+```bash
+pnpm run lint
+pnpm run lint:warnings
+pnpm exec tsc --noEmit --incremental false
+pnpm build
+```
+
+`pnpm run lint` is warning-free and matches the CI lint gate. Use `pnpm run lint:warnings` when you want the full ESLint report locally.
 
 ## GitHub setup
 

@@ -19,8 +19,9 @@ jobs:
       TARGET_REPO: ${{ github.repository }}
       ITEM_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
       AUTHOR: ${{ github.event.issue.user.login || github.event.pull_request.user.login }}
+      ITEM_KIND: ${{ github.event_name == 'pull_request_target' && 'pull_request' || 'issue' }}
     steps:
-      - name: Close contributor's excess open items
+      - name: Close contributor's excess open issues or PRs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -28,22 +29,35 @@ jobs:
 
           items="$(gh api "repos/$TARGET_REPO/issues?state=open&creator=$AUTHOR&sort=created&direction=asc&per_page=100")"
 
-          position="$(jq --argjson n "$ITEM_NUMBER" '[.[] | select(.user.login == env.AUTHOR)] | to_entries[] | select(.value.number == $n) | .key + 1' <<< "$items")"
-          total="$(jq '[.[] | select(.user.login == env.AUTHOR)] | length' <<< "$items")"
+          if [ "$ITEM_KIND" = "pull_request" ]; then
+            kind_filter='has("pull_request")'
+            kind_label="pull requests"
+            close_label="PR"
+          else
+            kind_filter='has("pull_request") | not'
+            kind_label="issues"
+            close_label="issue"
+          fi
+
+          same_kind_items="$(
+            jq --arg author "$AUTHOR" "[.[] | select(.user.login == \$author) | select($kind_filter)]" <<< "$items"
+          )"
+
+          position="$(jq --argjson n "$ITEM_NUMBER" 'to_entries[] | select(.value.number == $n) | .key + 1' <<< "$same_kind_items")"
+          total="$(jq 'length' <<< "$same_kind_items")"
 
           if [ -z "$position" ] || [ "$position" -le "$LIMIT" ]; then
-            echo "$AUTHOR has $total open items; current item position is ${position:-unknown}. Nothing to close."
+            echo "$AUTHOR has $total open $kind_label; current $close_label position is ${position:-unknown}. Nothing to close."
             exit 0
           fi
 
-          body="Thanks for contributing. Gittensor policy allows at most 2 open issues or pull requests per contributor at a time.
+          body="Thanks for contributing. Gittensor policy allows at most 2 open $kind_label per contributor at a time.
 
-          @$AUTHOR currently has $total open issues/PRs, and this is open item #$position. Please finish or close one of the older open items before opening another."
+          @$AUTHOR currently has $total open $kind_label, and this is open $close_label #$position. Please finish or close one of the older open $kind_label before opening another."
 
           gh issue comment "$ITEM_NUMBER" --repo "$TARGET_REPO" --body "$body"
 
-          is_pr="$(jq --argjson n "$ITEM_NUMBER" '.[] | select(.number == $n) | has("pull_request")' <<< "$items")"
-          if [ "$is_pr" = "true" ]; then
+          if [ "$ITEM_KIND" = "pull_request" ]; then
             gh pr close "$ITEM_NUMBER" --repo "$TARGET_REPO"
           else
             gh issue close "$ITEM_NUMBER" --repo "$TARGET_REPO" --reason "not planned"
