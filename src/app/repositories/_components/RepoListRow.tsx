@@ -140,8 +140,16 @@ export default function RepoListRow({
   return (
     <div
       className={cls}
+      role="button"
+      tabIndex={0}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest(`.${styles.compareBtn}`)) return;
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        if ((e.target as HTMLElement).closest(`.${styles.compareBtn}`)) return;
+        e.preventDefault();
         onOpen();
       }}
     >

@@ -432,7 +432,7 @@ export default function RepositoriesPage() {
               value={sortKey}
               options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
               onChange={setSortKey}
-              size="small"
+              size="xsmall"
               width={170}
               ariaLabel="Sort"
               closeOnScroll

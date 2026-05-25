@@ -24,7 +24,7 @@ interface DropdownProps<T extends string> {
   width?: number | string;
   placeholder?: string;
   align?: 'left' | 'right';
-  size?: 'small' | 'medium';
+  size?: 'xsmall' | 'small' | 'medium';
   ariaLabel?: string;
   leadingVisual?: React.ReactNode;
   /** When true, close the menu instead of repositioning when the user
@@ -129,12 +129,11 @@ export default function Dropdown<T extends string>({
   }, [open, closeOnScroll]);
 
   const current = options.find((o) => o.value === value);
-  const height = size === 'small' ? 28 : 32;
-  // Small variant uses a smaller font so the trigger + menu match the
-  // surrounding row of compact controls (chips, view-toggles). Medium
-  // keeps the legacy 14px so existing callers (settings/pulls/etc.)
-  // don't shift.
-  const fontSize = size === 'small' ? 12 : 14;
+  const height = size === 'medium' ? 32 : size === 'small' ? 28 : 24;
+  // xsmall is the compact 12px variant for rows of chips / view-toggles
+  // on the repositories page. small/medium keep the legacy 14px so
+  // existing callers (settings/pulls/pagination) don't shift.
+  const fontSize = size === 'xsmall' ? 12 : 14;
 
   return (
     <>

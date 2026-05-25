@@ -35,11 +35,14 @@ interface PaletteProps {
 
 export default function Palette({ open, rows, subnetTAO, onClose, onSelect }: PaletteProps) {
   const [q, setQ] = useState('');
+  const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     if (open) {
       setQ('');
+      setActive(0);
       // Defer focus until the input is mounted and visible
       const t = window.setTimeout(() => inputRef.current?.focus(), 30);
       return () => window.clearTimeout(t);
@@ -62,6 +65,16 @@ export default function Palette({ open, rows, subnetTAO, onClose, onSelect }: Pa
       .slice(0, 10);
   }, [q, rows]);
 
+  // Reset active when results change (typing), and keep it clamped to bounds.
+  useEffect(() => {
+    setActive((i) => (matched.length === 0 ? 0 : Math.min(i, matched.length - 1)));
+  }, [matched]);
+
+  // Scroll the active item into view when nav keys move it off-screen.
+  useEffect(() => {
+    itemRefs.current[active]?.scrollIntoView({ block: 'nearest' });
+  }, [active]);
+
   return (
     <div className={`${styles.paletteOuter} ${open ? styles.open : ''}`} role="dialog" aria-label="Search repositories">
       <div className={styles.paletteBg} onClick={onClose} />
@@ -78,6 +91,23 @@ export default function Palette({ open, rows, subnetTAO, onClose, onSelect }: Pa
             className={styles.paletteInput}
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (matched.length === 0) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setActive((i) => (i + 1) % matched.length);
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setActive((i) => (i - 1 + matched.length) % matched.length);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const r = matched[active];
+                if (r) {
+                  onSelect(r.fullName);
+                  onClose();
+                }
+              }
+            }}
           />
           <span className={styles.kbd}>ESC</span>
         </div>
@@ -87,16 +117,21 @@ export default function Palette({ open, rows, subnetTAO, onClose, onSelect }: Pa
               No matches.
             </div>
           ) : (
-            matched.map((r) => {
+            matched.map((r, idx) => {
               // When the API doesn't carry a description (current reality), we
               // derive a short "stream · share · activity" line so each result
               // matches the HTML's two-line visual rhythm.
               const subline = buildSubline(r);
+              const isActive = idx === active;
               return (
                 <button
                   key={r.fullName}
+                  ref={(el) => { itemRefs.current[idx] = el; }}
                   type="button"
                   className={styles.paletteItem}
+                  aria-selected={isActive}
+                  style={isActive ? { background: 'var(--bg-hover, rgba(255,255,255,0.06))' } : undefined}
+                  onMouseEnter={() => setActive(idx)}
                   onClick={() => {
                     onSelect(r.fullName);
                     onClose();
