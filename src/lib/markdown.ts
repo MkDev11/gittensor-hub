@@ -3,7 +3,11 @@
 // Output is styled by .md-content rules in globals.css to match github.com.
 
 import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+// isomorphic-dompurify runs DOMPurify against a jsdom window on the server and
+// the real window in the browser, so HTML is sanitized identically on both
+// paths. `marked` intentionally emits raw HTML, so DOMPurify is the sole XSS
+// defense and must never be skipped on the server render path.
+import DOMPurify from 'isomorphic-dompurify';
 
 marked.setOptions({
   gfm: true,
@@ -137,16 +141,17 @@ function memoizedRender(key: string, build: () => string): string {
 
 export function renderMarkdownToHtml(input: string, options: MarkdownRenderOptions = {}): string {
   if (!input) return '';
+  // Cache per-environment: `autolinkGitHubReferences` needs a browser
+  // `document` and is a no-op on the server, so the server and client produce
+  // different (both sanitized) output for the same input. Sanitization itself
+  // now runs on both paths, so neither branch can leak unsanitized HTML.
   const isClient = typeof window !== 'undefined';
-  // Cache per-environment so the unsanitized SSR output never leaks into a
-  // later client-side call.
   const cacheKey = `${isClient ? 'c' : 's'}:${options.repoFullName ?? ''}:${input}`;
   return memoizedRender(cacheKey, () => {
     const raw = autolinkGitHubReferences(
       openLinksInNewTab(marked.parse(input, { async: false }) as string),
       options.repoFullName
     );
-    if (!isClient) return raw;
     return DOMPurify.sanitize(raw, SANITIZE_OPTS);
   });
 }
