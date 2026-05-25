@@ -129,7 +129,6 @@ export default function Palette({ open, rows, subnetTAO, onClose, onSelect }: Pa
                   ref={(el) => { itemRefs.current[idx] = el; }}
                   type="button"
                   className={styles.paletteItem}
-                  aria-selected={isActive}
                   style={isActive ? { background: 'var(--bg-hover, rgba(255,255,255,0.06))' } : undefined}
                   onMouseEnter={() => setActive(idx)}
                   onClick={() => {

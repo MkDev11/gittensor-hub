@@ -17,6 +17,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { GtPrSummary, GtRepo, GtReposResponse } from '@/types/entities';
 import { useSn74Repos } from '@/lib/use-sn74-repos';
 import { useSession } from '@/lib/settings';
+import { isTracked as repoIsTracked, useTrackedRepos } from '@/lib/tracked-repos';
+import { CardGridSkeleton, TableRowsSkeleton } from '@/components/Skeleton';
 
 import styles from './page.module.css';
 import { buildRows, type RepoMeta } from './_lib/rows';
@@ -67,8 +69,9 @@ const MAX_COMPARE = 4;
 export default function RepositoriesPage() {
   const { repos: policyRepos } = useSn74Repos();
   const { username } = useSession();
+  const { tracked, toggle: toggleTrackedRepo } = useTrackedRepos();
 
-  const { data } = useQuery<GtReposResponse>({
+  const { data, isLoading, isError, error } = useQuery<GtReposResponse>({
     queryKey: ['gt-repositories'],
     queryFn: async ({ signal }) => {
       const response = await fetch('/api/gt/repositories', { signal });
@@ -330,6 +333,12 @@ export default function RepositoriesPage() {
   }
 
   const totalReal = rows.length;
+  const isRepoLoading = !hydrated || isLoading;
+  const repoError = isError
+    ? error instanceof Error
+      ? error.message
+      : 'Failed to load repositories.'
+    : null;
   const headingPrefix = view === 'card' ? (
     <>
       Add up to <span className={styles.textMine}>4 to compare</span> · click cards for full detail
@@ -531,12 +540,32 @@ export default function RepositoriesPage() {
                   isSelected={compare.has(r.fullName)}
                   isBest={r === bestRepo}
                   isWarn={r === warnRepo}
+                  isTracked={repoIsTracked(tracked, r.fullName)}
                   metadataLoaded={metadataLoaded}
                   onOpen={() => openDrawer(r.fullName)}
                   onToggleCompare={() => toggleCompare(r.fullName)}
+                  onToggleTrack={() => toggleTrackedRepo(r.fullName)}
                 />
               ))}
-              {sortedRows.length === 0 ? (
+              {isRepoLoading ? (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <CardGridSkeleton count={6} columns={3} cardHeight={220} />
+                </div>
+              ) : repoError ? (
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    padding: 32,
+                    textAlign: 'center',
+                    fontSize: 13,
+                    color: 'var(--danger-fg)',
+                    border: '1px dashed var(--danger-subtle)',
+                    borderRadius: 8,
+                  }}
+                >
+                  Failed to load repositories: {repoError}
+                </div>
+              ) : sortedRows.length === 0 ? (
                 <div
                   style={{
                     gridColumn: '1 / -1',
@@ -584,12 +613,34 @@ export default function RepositoriesPage() {
                       isSelected={compare.has(r.fullName)}
                       isBest={r === bestRepo}
                       isWarn={r === warnRepo}
+                      isTracked={repoIsTracked(tracked, r.fullName)}
                       metadataLoaded={metadataLoaded}
                       onOpen={() => openDrawer(r.fullName)}
                       onToggleCompare={() => toggleCompare(r.fullName)}
+                      onToggleTrack={() => toggleTrackedRepo(r.fullName)}
                     />
                   ))}
-                  {sortedRows.length === 0 ? (
+                  {isRepoLoading ? (
+                    <TableRowsSkeleton
+                      rows={8}
+                      rowHeight={58}
+                      px={14}
+                      cols={[
+                        { width: 48 },
+                        { flex: 1 },
+                        { width: 88 },
+                        { width: 64 },
+                        { width: 90 },
+                        { flex: 1 },
+                        { width: 52 },
+                        { width: 48 },
+                      ]}
+                    />
+                  ) : repoError ? (
+                    <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--danger-fg)' }}>
+                      Failed to load repositories: {repoError}
+                    </div>
+                  ) : sortedRows.length === 0 ? (
                     <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--fg-subtle)' }}>
                       No repositories match the current filter.
                     </div>

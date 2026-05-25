@@ -40,10 +40,8 @@ function buildSpark(stat: GtRepo): number[] {
  *  the repo — what "Contributions" intuitively means). Returns zeros
  *  when metadata hasn't loaded yet OR when the GitHub fetch failed for
  *  this repo; the partial-refresh helper on the server will backfill.
- *  We deliberately do NOT fall back to GtRepo's `dailyIssues30d`
- *  (gittensor bounty feed) — mixing data sources per-card across the
- *  same view would silently change what "issues" means depending on
- *  which fetch succeeded. */
+ *  We deliberately keep issue-volume data on the metadata route so every
+ *  card uses the same GitHub search source for "issues opened". */
 function buildIssueSpark(_stat: GtRepo, meta: RepoMeta | undefined): number[] {
   const fromMeta = meta?.dailyIssues30d;
   if (fromMeta && fromMeta.length === 30) return fromMeta.slice();

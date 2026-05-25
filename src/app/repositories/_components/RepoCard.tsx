@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { StarFillIcon, StarIcon } from '@primer/octicons-react';
 import styles from '../page.module.css';
 import Avatar from './Avatar';
 import { LABEL_COLORS, LABEL_KEYS, LANG_COLORS, LANG_NAME_ICONS, formatLangPct } from '../_lib/colors';
@@ -26,12 +27,14 @@ interface RepoCardProps {
   isSelected: boolean;
   isBest: boolean;
   isWarn: boolean;
+  isTracked: boolean;
   /** Whether /api/repos/metadata has resolved. When false the langs row
    *  renders a small skeleton so the card height stays stable and the
    *  user can tell "still loading" apart from "loaded; no data". */
   metadataLoaded?: boolean;
   onOpen: () => void;
   onToggleCompare: () => void;
+  onToggleTrack: () => void;
 }
 
 export default function RepoCard({
@@ -41,9 +44,11 @@ export default function RepoCard({
   isSelected,
   isBest,
   isWarn,
+  isTracked,
   metadataLoaded = false,
   onOpen,
   onToggleCompare,
+  onToggleTrack,
 }: RepoCardProps) {
   const r = row;
   const maintCut = r.maintCut || 0;
@@ -274,7 +279,21 @@ export default function RepoCard({
     >
       <button
         type="button"
+        className={`${styles.compareBtn} ${styles.trackBtn} ${isTracked ? styles.on : ''}`}
+        aria-label={isTracked ? `Untrack ${r.fullName}` : `Track ${r.fullName}`}
+        title={isTracked ? 'Remove from tracked repos' : 'Track this repo'}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleTrack();
+        }}
+      >
+        {isTracked ? <StarFillIcon size={12} /> : <StarIcon size={12} />}
+      </button>
+
+      <button
+        type="button"
         className={`${styles.compareBtn} ${isSelected ? styles.on : ''}`}
+        aria-label={isSelected ? `Remove ${r.fullName} from compare` : `Add ${r.fullName} to compare`}
         title={isSelected ? 'Remove from compare' : 'Add to compare'}
         onClick={(e) => {
           e.stopPropagation();

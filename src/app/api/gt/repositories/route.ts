@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 
 const REPOS_URL = 'https://api.gittensor.io/dash/repos';
 const PRS_URL = 'https://api.gittensor.io/prs';
-const ISSUES_URL = 'https://api.gittensor.io/issues';
 const TTL_MS = 30_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -47,14 +46,6 @@ interface UpstreamPr {
   additions?: number | null;
   deletions?: number | null;
   commitCount?: number | null;
-}
-
-/** Issue-discovery bounty record from gittensor.io/issues. Used to bin
- *  per-day issue activity for the repo-card Contributions chart. */
-interface UpstreamIssue {
-  repositoryFullName: string;
-  createdAt: string;
-  status?: string;
 }
 
 export interface GtRepo {
@@ -126,18 +117,10 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 async function refresh(): Promise<Cached> {
-  // Issues endpoint is optional — if it 5xxs or times out we still
-  // return repos+PRs; daily-issues binning just stays at zeros and the
-  // Contributions chart renders the PR portion only.
-  const [reposRaw, prsRaw, issuesResult] = await Promise.all([
+  const [reposRaw, prsRaw] = await Promise.all([
     fetchJson<UpstreamRepo[]>(REPOS_URL),
     fetchJson<UpstreamPr[]>(PRS_URL),
-    fetchJson<UpstreamIssue[]>(ISSUES_URL).catch((err): UpstreamIssue[] => {
-      console.warn(`[gt/repositories] issues feed failed: ${String(err)}`);
-      return [];
-    }),
   ]);
-  const issuesRaw = issuesResult;
 
   const now = Date.now();
   const weekAgo = now - WEEK_MS;
@@ -171,10 +154,6 @@ async function refresh(): Promise<Cached> {
     closedLast30d: number;
     contributors30d: Set<string>;
     dailyPrs30d: number[];
-    /** Issue-discovery bounties created per day over the last 30 days
-     *  (oldest first). Sibling of dailyPrs30d. Populated from
-     *  /api/gittensor.io/issues. */
-    dailyIssues30d: number[];
   }
   const aggMap = new Map<string, Agg>();
   const ensure = (k: string): Agg => {
@@ -196,7 +175,6 @@ async function refresh(): Promise<Cached> {
         closedLast30d: 0,
         contributors30d: new Set<string>(),
         dailyPrs30d: new Array(30).fill(0),
-        dailyIssues30d: new Array(30).fill(0),
       };
       aggMap.set(key, a);
     }
@@ -244,20 +222,6 @@ async function refresh(): Promise<Cached> {
     }
   }
 
-  // Bin issue-discovery bounties by day. Each issue counts once on its
-  // `createdAt` date — status (completed / cancelled / open) is ignored
-  // since the chart shows submission volume, not outcomes.
-  for (const iss of issuesRaw) {
-    if (!iss.repositoryFullName || !iss.createdAt) continue;
-    const t = Date.parse(iss.createdAt);
-    if (!Number.isFinite(t) || t <= 0) continue;
-    const dayStart = Math.floor(t / DAY_MS) * DAY_MS;
-    const daysAgo = Math.floor((todayStart - dayStart) / DAY_MS);
-    if (daysAgo < 0 || daysAgo >= 30) continue;
-    const a = ensure(iss.repositoryFullName);
-    a.dailyIssues30d[29 - daysAgo] += 1;
-  }
-
   const repos: GtRepo[] = reposRaw.map((r) => {
     const a = aggMap.get(r.fullName.toLowerCase());
     const prsThisWeek = a?.prsThisWeek ?? 0;
@@ -291,7 +255,6 @@ async function refresh(): Promise<Cached> {
       closedLast30d: a?.closedLast30d ?? 0,
       contributorsLast30d: a?.contributors30d.size ?? 0,
       dailyPrs30d: a?.dailyPrs30d ?? new Array(30).fill(0),
-      dailyIssues30d: a?.dailyIssues30d ?? new Array(30).fill(0),
     };
   });
 

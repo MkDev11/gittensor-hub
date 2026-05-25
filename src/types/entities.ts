@@ -84,9 +84,6 @@ export interface GtRepo {
   /** Per-day PR creation counts for the last 30 days, oldest first.
    *  Index 0 = 29 days ago, index 29 = today. */
   dailyPrs30d?: number[];
-  /** Per-day issue-discovery bounty creation counts for the last 30
-   *  days, oldest first. Sibling of dailyPrs30d. */
-  dailyIssues30d?: number[];
 }
 
 /** Recent-PR summary attached to the GtRepos response. */

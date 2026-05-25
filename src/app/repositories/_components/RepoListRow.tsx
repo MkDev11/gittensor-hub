@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { StarFillIcon, StarIcon } from '@primer/octicons-react';
 import styles from '../page.module.css';
 import Avatar from './Avatar';
 import { LABEL_COLORS, LANG_COLORS, LANG_NAME_ICONS, formatLangPct } from '../_lib/colors';
@@ -14,11 +15,13 @@ interface RepoListRowProps {
   isSelected: boolean;
   isBest: boolean;
   isWarn: boolean;
+  isTracked: boolean;
   /** Lets the langs cell show "loading…" instead of an empty pill row
    *  while /api/repos/metadata is in flight. */
   metadataLoaded?: boolean;
   onOpen: () => void;
   onToggleCompare: () => void;
+  onToggleTrack: () => void;
 }
 
 export default function RepoListRow({
@@ -28,9 +31,11 @@ export default function RepoListRow({
   isSelected,
   isBest,
   isWarn,
+  isTracked,
   metadataLoaded = false,
   onOpen,
   onToggleCompare,
+  onToggleTrack,
 }: RepoListRowProps) {
   const r = row;
   const dailyTAO = repoDailyTAO(r, subnetTAO);
@@ -153,26 +158,42 @@ export default function RepoListRow({
         onOpen();
       }}
     >
-      <button
-        type="button"
-        className={`${styles.compareBtn} ${isSelected ? styles.on : ''}`}
-        title={isSelected ? 'Remove from compare' : 'Add to compare'}
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleCompare();
-        }}
-        style={{ position: 'relative', top: 'auto', right: 'auto' }}
-      >
-        {isSelected ? (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        ) : (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-        )}
-      </button>
+      <div className={styles.rowActions}>
+        <button
+          type="button"
+          className={`${styles.compareBtn} ${isTracked ? styles.on : ''}`}
+          aria-label={isTracked ? `Untrack ${r.fullName}` : `Track ${r.fullName}`}
+          title={isTracked ? 'Remove from tracked repos' : 'Track this repo'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleTrack();
+          }}
+          style={{ position: 'relative', top: 'auto', right: 'auto' }}
+        >
+          {isTracked ? <StarFillIcon size={12} /> : <StarIcon size={12} />}
+        </button>
+        <button
+          type="button"
+          className={`${styles.compareBtn} ${isSelected ? styles.on : ''}`}
+          aria-label={isSelected ? `Remove ${r.fullName} from compare` : `Add ${r.fullName} to compare`}
+          title={isSelected ? 'Remove from compare' : 'Add to compare'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCompare();
+          }}
+          style={{ position: 'relative', top: 'auto', right: 'auto' }}
+        >
+          {isSelected ? (
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          )}
+        </button>
+      </div>
 
       <div className={styles.rowName} style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
         <Avatar fullName={r.fullName} size="sm" />

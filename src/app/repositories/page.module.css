@@ -789,6 +789,15 @@
    * tokens used by .priBtn / .inspectorOpenBtn. */
   color: #ffffff;
 }
+.trackBtn {
+  right: 40px;
+}
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 
 /* Bars */
 .shareBar {
@@ -908,13 +917,13 @@
   display: grid;
   align-items: center;
   gap: 10px;
-  /* Mobile: compare + name + TAO (3 cols) */
-  grid-template-columns: 24px minmax(0, 1fr) 80px;
+  /* Mobile: actions + name + TAO (3 cols) */
+  grid-template-columns: 52px minmax(0, 1fr) 80px;
 }
 @media (min-width: 640px) {
   .repoListHeader, .repoListRow {
     gap: 12px;
-    grid-template-columns: 26px minmax(0, 1fr) 90px 70px 100px;
+    grid-template-columns: 52px minmax(0, 1fr) 90px 70px 100px;
   }
 }
 @media (min-width: 1024px) {
@@ -922,7 +931,7 @@
    * fr-track keeps enough room for 2 pills to render side-by-side. */
   .repoListHeader, .repoListRow {
     gap: 12px;
-    grid-template-columns: 28px minmax(0, 1fr) 96px 66px 92px minmax(120px, 1fr) 60px 58px;
+    grid-template-columns: 52px minmax(0, 1fr) 96px 66px 92px minmax(120px, 1fr) 60px 58px;
   }
 }
 @media (min-width: 1280px) {
@@ -931,7 +940,7 @@
    * an empty slot in the header. */
   .repoListHeader, .repoListRow {
     gap: 14px;
-    grid-template-columns: 28px minmax(0, 1.5fr) 110px 74px 120px minmax(140px, 1fr) 64px 60px 70px;
+    grid-template-columns: 52px minmax(0, 1.5fr) 110px 74px 120px minmax(140px, 1fr) 64px 60px 70px;
   }
 }
 .listColLangs, .listColAct, .listColRate, .listColSpark, .listColArrow, .listColMult, .listColStream {
