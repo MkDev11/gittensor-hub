@@ -23,7 +23,10 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Pin to the minimum supported Node (see package.json "engines").
+          # jsdom (via isomorphic-dompurify) requires >=20.19, so testing on the
+          # floor ensures CI catches incompatibilities instead of masking them.
+          node-version: 20.19.0
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -44,7 +47,10 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Pin to the minimum supported Node (see package.json "engines").
+          # jsdom (via isomorphic-dompurify) requires >=20.19, so testing on the
+          # floor ensures CI catches incompatibilities instead of masking them.
+          node-version: 20.19.0
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
