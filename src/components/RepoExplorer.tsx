@@ -285,8 +285,6 @@ export default function RepoExplorer() {
     debouncedQuery: debouncedPrQuery,
     state: prState,
     setState: setPrState,
-    mineOnly: prMineOnly,
-    setMineOnly: setPrMineOnly,
     author: prAuthor,
     setAuthor: setPrAuthor,
     authorsRequested: prAuthorsRequested,
@@ -524,7 +522,7 @@ export default function RepoExplorer() {
 
   useEffect(() => {
     setPullsPage(1);
-  }, [prQuery, prState, prMineOnly, prAuthor, pullSortKey, pullSortDir]);
+  }, [prQuery, prState, prAuthor, pullSortKey, pullSortDir]);
 
   const { data: userReposData, isSuccess: userReposReady } = useQuery<{
     count: number;
@@ -1011,7 +1009,6 @@ export default function RepoExplorer() {
   };
 
   const pullsPageSize = settings.pageSize > 0 ? settings.pageSize : 50;
-  const pullsState = prMineOnly ? 'mine' : prState;
   const shouldLoadPulls = tab === 'pulls';
 
   const buildPullsUrl = (page: number, size: number) => {
@@ -1019,11 +1016,10 @@ export default function RepoExplorer() {
     sp.set('page', String(page));
     sp.set('pageSize', String(size));
     if (debouncedPrQuery) sp.set('q', debouncedPrQuery);
-    if (pullsState !== 'all') sp.set('state', pullsState);
+    if (prState !== 'all') sp.set('state', prState);
     if (prAuthor !== 'all') sp.set('author', prAuthor);
     sp.set('sort', pullSortKey);
     sp.set('dir', pullSortDir);
-    if (me) sp.set('mine_login', me);
     return `/api/repos/${selected.owner}/${selected.name}/pulls?${sp.toString()}`;
   };
 
@@ -1035,11 +1031,10 @@ export default function RepoExplorer() {
       pullsPage,
       pullsPageSize,
       debouncedPrQuery,
-      pullsState,
+      prState,
       prAuthor,
       pullSortKey,
       pullSortDir,
-      me,
     ],
     queryFn: async ({ signal }) => {
       const r = await fetch(buildPullsUrl(pullsPage, pullsPageSize), { signal });
@@ -1162,10 +1157,9 @@ export default function RepoExplorer() {
   );
 
   const { data: pullsMeta, isFetching: pullsMetaFetching } = useQuery<PullsMetaResponse>({
-    queryKey: ['pulls-meta', selected.owner, selected.name, me, prAuthorsRequested],
+    queryKey: ['pulls-meta', selected.owner, selected.name, prAuthorsRequested],
     queryFn: async ({ signal }) => {
       const sp = new URLSearchParams();
-      if (me) sp.set('mine_login', me);
       if (!prAuthorsRequested) sp.set('summary', '1');
       const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/pulls-meta?${sp.toString()}`, { signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -1248,8 +1242,6 @@ export default function RepoExplorer() {
 
   // Server already applied filter/sort/pagination — just hand the rows back.
   const filteredPulls = pullsData?.pulls ?? [];
-
-  const myPullCount = pullsMeta?.mine_count ?? 0;
 
   // Server returns `new_count` based on the per-tab baseline we sent.
   const newIssuesCount = issuesData?.new_count ?? 0;
@@ -1909,59 +1901,6 @@ export default function RepoExplorer() {
                   width={260}
                   ariaLabel="Filter PRs by author"
                 />
-                <Box
-                  as="label"
-                  sx={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    px: '12px',
-                    py: '5px',
-                    height: 32,
-                    border: '1px solid',
-                    borderColor: prMineOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
-                    bg: prMineOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.16))' : 'var(--bg-canvas)',
-                    color: prMineOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    userSelect: 'none',
-                    transition: 'border-color 80ms, background 80ms, color 80ms',
-                    '&:hover': { borderColor: prMineOnly ? 'var(--attention-emphasis)' : 'var(--border-strong)' },
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={prMineOnly}
-                    onChange={(e) => setPrMineOnly(e.target.checked)}
-                    style={{
-                      margin: 0,
-                      width: 14,
-                      height: 14,
-                      accentColor: 'var(--attention-emphasis)',
-                      cursor: 'pointer',
-                    }}
-                  />
-                  <PersonIcon size={14} />
-                  My PRs only
-                  {myPullCount > 0 && (
-                    <Box
-                      sx={{
-                        px: '6px',
-                        py: 0,
-                        bg: prMineOnly ? 'var(--attention-emphasis)' : 'var(--bg-emphasis)',
-                        color: prMineOnly ? '#ffffff' : 'var(--fg-default)',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        borderRadius: 999,
-                        lineHeight: '18px',
-                      }}
-                    >
-                      {myPullCount}
-                    </Box>
-                  )}
-                </Box>
                 <Box
                   sx={{
                     ml: ['0', null, 'auto'],

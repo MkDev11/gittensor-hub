@@ -2,9 +2,8 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { PageLayout, Heading, Text, Box, Label, Link as PrimerLink } from '@primer/react';
 import {
@@ -83,19 +82,14 @@ export default function PullsPage() {
 }
 
 function AllPullsPage() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const { repos: sn74Repos, weights: repoWeights, isSuccess: sn74ReposReady } = useSn74Repos();
   const { tracked, toggle: toggleTrackedRepo } = useTrackedRepos();
   const { settings, update } = useSettings();
   const me = useMinerLogin();
   const pageSize = settings.pageSize > 0 ? settings.pageSize : 25;
-  const mineOnlyFromUrl = searchParams.get('mine') === '1' || searchParams.get('mine') === 'true';
 
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
-  const [mineOnly, setMineOnly] = useState(mineOnlyFromUrl);
   const [trackedOnly, setTrackedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('updated');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -105,25 +99,6 @@ function AllPullsPage() {
   const [openIssue, setOpenIssue] = useState<Issue | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [authorTarget, setAuthorTarget] = useState<AuthorTarget | null>(null);
-
-  useEffect(() => {
-    setMineOnly(mineOnlyFromUrl);
-  }, [mineOnlyFromUrl]);
-
-  const setMineOnlyWithUrl = useCallback(
-    (next: boolean) => {
-      setMineOnly(next);
-      const sp = new URLSearchParams(searchParams.toString());
-      if (next) {
-        sp.set('mine', '1');
-      } else {
-        sp.delete('mine');
-      }
-      const qs = sp.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
 
   const { data: userReposData, isSuccess: userReposReady } = useQuery<UserReposResp>({
     queryKey: ['user-repos'],
@@ -171,7 +146,6 @@ function AllPullsPage() {
       .join(',');
   }, [currentRepoNames, scopedTracked, trackedOnly]);
 
-  const authorParam = mineOnly ? me || '__signed_out__' : authorFilter;
   const pullsParams = useMemo(() => {
     const sp = new URLSearchParams();
     sp.set('page', String(page));
@@ -180,10 +154,10 @@ function AllPullsPage() {
     sp.set('dir', sortDir);
     if (query.trim()) sp.set('q', query.trim());
     if (stateFilter !== 'all') sp.set('state', stateFilter);
-    if (authorParam !== 'all') sp.set('author', authorParam);
+    if (authorFilter !== 'all') sp.set('author', authorFilter);
     if (trackedRepoParam !== null) sp.set('repos', trackedRepoParam);
     return sp.toString();
-  }, [authorParam, page, pageSize, query, sortDir, sortKey, stateFilter, trackedRepoParam]);
+  }, [authorFilter, page, pageSize, query, sortDir, sortKey, stateFilter, trackedRepoParam]);
 
   const { data, isLoading, isFetching } = useQuery<PullsResp>({
     queryKey: ['all-pulls', pullsParams],
@@ -201,13 +175,12 @@ function AllPullsPage() {
   const totalPages = data?.total_pages ?? page;
   const safePage = Math.min(page, totalPages);
   const authorOptions = data?.authors ?? [];
-  const myCount = authorOptions.find((a) => a.login.toLowerCase() === me.toLowerCase())?.count ?? 0;
   const hasActiveFilters =
-    query.trim().length > 0 || stateFilter !== 'all' || mineOnly || trackedOnly || authorFilter !== 'all';
+    query.trim().length > 0 || stateFilter !== 'all' || trackedOnly || authorFilter !== 'all';
 
   useEffect(() => {
     setPage(1);
-  }, [query, stateFilter, trackedOnly, trackedRepoParam, authorParam, sortKey, sortDir, pageSize]);
+  }, [query, stateFilter, trackedOnly, trackedRepoParam, authorFilter, sortKey, sortDir, pageSize]);
 
   useEffect(() => {
     if (data && page > data.total_pages) setPage(data.total_pages);
@@ -330,13 +303,6 @@ function AllPullsPage() {
               >
                 Tracked only ({scopedTracked.length})
               </ToggleButton>
-              <ToggleButton
-                active={mineOnly}
-                onClick={() => setMineOnlyWithUrl(!mineOnly)}
-                tone="attention"
-              >
-                My PRs only{myCount > 0 ? ` (${myCount})` : ''}
-              </ToggleButton>
             </Box>
 
             <Box
@@ -400,13 +366,10 @@ function AllPullsPage() {
                   <HeaderCell label="Weight" onClick={() => toggleSort('weight')} active={sortKey === 'weight'} dir={sortDir} align="right" width={84} />
                   <Box as="th" sx={{ ...headerCellSx, py: '4px', width: 220, maxWidth: 220 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}>
-                      <Box sx={{ color: authorFilter !== 'all' && !mineOnly ? 'var(--accent-fg)' : 'inherit', flexShrink: 0 }}>Author</Box>
+                      <Box sx={{ color: authorFilter !== 'all' ? 'var(--accent-fg)' : 'inherit', flexShrink: 0 }}>Author</Box>
                       <AuthorFilter
-                        value={mineOnly ? me || 'all' : authorFilter}
-                        onChange={(next) => {
-                          setMineOnlyWithUrl(false);
-                          setAuthorFilter(next);
-                        }}
+                        value={authorFilter}
+                        onChange={setAuthorFilter}
                         authors={authorOptions}
                         totalAuthors={data?.author_count ?? authorOptions.length}
                         width={220}
@@ -642,16 +605,12 @@ function ToggleButton({
   onClick,
   children,
   icon,
-  tone = 'accent',
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
   icon?: React.ReactNode;
-  tone?: 'accent' | 'attention';
 }) {
-  const emphasis = tone === 'attention' ? 'var(--attention-emphasis)' : 'var(--accent-emphasis)';
-  const subtle = tone === 'attention' ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--accent-subtle)';
   return (
     <Box
       as="button"
@@ -665,9 +624,9 @@ function ToggleButton({
         py: '5px',
         borderRadius: '6px',
         border: '1px solid',
-        borderColor: active ? emphasis : 'var(--border-default)',
-        bg: active ? subtle : 'var(--bg-emphasis)',
-        color: active ? emphasis : 'var(--fg-default)',
+        borderColor: active ? 'var(--accent-emphasis)' : 'var(--border-default)',
+        bg: active ? 'var(--accent-subtle)' : 'var(--bg-emphasis)',
+        color: active ? 'var(--accent-emphasis)' : 'var(--fg-default)',
         cursor: 'pointer',
         fontSize: '14px',
         fontWeight: 500,

@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb, type IssueRow } from '@/lib/db';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
 import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
+import { positiveInt } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
 const LIMIT_DEFAULT = 80;
 const LIMIT_MAX = 200;
-
-function positiveInt(value: string | null, fallback: number): number {
-  const n = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
 
 function parseLabels(raw: string | null): Array<{ name: string; color?: string }> {
   if (!raw) return [];
