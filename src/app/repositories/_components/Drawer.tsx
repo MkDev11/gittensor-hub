@@ -532,7 +532,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
     refetchOnWindowFocus: false,
   });
 
-  const { allRows, totalRows, totalEligibleScore, top1Pct, conc, eligibleCount, ineligibleCount } = useMemo(() => {
+  const { allRows, totalEligibleScore, top1Pct, conc } = useMemo(() => {
     const list = (data?.ossContributions ?? [])
       .filter((m) => m.isEligible === true || repoWorkScore(m) > 0)
       .slice()
@@ -541,9 +541,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
         return (b.score ?? 0) - (a.score ?? 0) || repoWorkScore(b) - repoWorkScore(a);
       });
     const topRows = list.slice(0, TOP_ACTIVE_MINERS_LIMIT);
-    const totalRowsCount = list.length;
     const eligible = topRows.filter((m) => m.isEligible);
-    const ineligible = topRows.length - eligible.length;
     const totalEligible = eligible.reduce((s, m) => s + m.score, 0);
     const top1 = totalEligible > 0 ? ((eligible[0]?.score ?? 0) / totalEligible) * 100 : 0;
     const concentration =
@@ -553,12 +551,9 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
                    { label: 'distributed', color: '#7fb992' };
     return {
       allRows: topRows,
-      totalRows: totalRowsCount,
       totalEligibleScore: totalEligible,
       top1Pct: top1,
       conc: concentration,
-      eligibleCount: eligible.length,
-      ineligibleCount: ineligible,
     };
   }, [data]);
 
