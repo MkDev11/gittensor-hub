@@ -264,7 +264,7 @@ export default function Drawer({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
                   gap: 12,
                   marginTop: 12,
                   paddingTop: 12,
@@ -293,6 +293,28 @@ export default function Drawer({
                       : `${(r.issue * 100).toFixed(0)}% of slice`}
                   </div>
                 </div>
+                <div title="Merge rate over the last 30 days = merged ÷ (merged + closed). A forecast of how welcoming the repo is right now.">
+                  <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+                    Merge rate · 30d
+                  </div>
+                  <div className={`mono ${styles.numM} tnum`} style={{ color: credColor }}>
+                    {(cred * 100).toFixed(0)}%
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
+                    merged ÷ resolved
+                  </div>
+                </div>
+                <div title="PRs that received a final decision (merged or closed) in the last 30 days — the denominator behind the merge-rate %.">
+                  <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+                    Resolved
+                  </div>
+                  <div className={`mono ${styles.numM} tnum ${styles.textFgDim}`}>
+                    {r.activity.merged30d + r.activity.closed30d}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
+                    PRs · last 30d
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -308,39 +330,6 @@ export default function Drawer({
               <ActivityStat value={r.activity.openPRs} label="open PRs" tone="dim" />
               <ActivityStat value={r.activity.closed30d} label="closed PRs" tone="dim" />
               <ActivityStat value={r.activity.contribs} label="contributors" tone="strong" />
-            </div>
-            <div
-              style={{
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: '1px solid var(--softer-border, rgba(255,255,255,0.04))',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <div
-                  style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em' }}
-                  title="Merge rate over the last 30 days = merged ÷ (merged + closed). A forecast of how welcoming the repo is right now."
-                >
-                  Merge rate · 30d
-                </div>
-                <div className={`mono ${styles.numM} tnum`} style={{ color: credColor, marginTop: 2 }}>
-                  {(cred * 100).toFixed(0)}%
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div
-                  style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em' }}
-                  title="PRs that received a final decision (merged or closed) in the last 30 days — the denominator behind the merge-rate %."
-                >
-                  Resolved
-                </div>
-                <div className={`mono ${styles.textFgDim}`} style={{ fontSize: 12, marginTop: 2 }}>
-                  {r.activity.merged30d + r.activity.closed30d} PRs
-                </div>
-              </div>
             </div>
           </div>
 
@@ -647,7 +636,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
             <span className={styles.mtileLegendDot} style={{ background: '#5e6ad2' }} /> eligible
           </span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span className={styles.mtileLegendDot} style={{ background: 'rgba(120,125,135,0.5)' }} /> historical
+            <span className={styles.mtileLegendDot} style={{ background: 'rgba(120,125,135,0.5)' }} /> ineligible
           </span>
         </span>
         <span style={{ fontStyle: 'italic' }}>
