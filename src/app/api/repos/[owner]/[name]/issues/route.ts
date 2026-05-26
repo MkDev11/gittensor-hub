@@ -38,7 +38,10 @@ function emptyIssuesResponse(repo: string, errorMsg?: string) {
   return NextResponse.json({
     repo,
     count: 0,
-    state_counts: { open: 0, closed: 0, completed: 0, not_planned: 0 },
+    // Must match every key in IssueStateCounts (src/types/entities.ts) so
+    // future consumers that destructure `duplicate` / `closed_other` see
+    // 0 instead of undefined on the catch path.
+    state_counts: { open: 0, completed: 0, not_planned: 0, duplicate: 0, closed: 0, closed_other: 0 },
     last_fetch: null,
     last_error: errorMsg ?? null,
     issues: [],
