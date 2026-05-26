@@ -24,9 +24,15 @@ interface DropdownProps<T extends string> {
   width?: number | string;
   placeholder?: string;
   align?: 'left' | 'right';
-  size?: 'small' | 'medium';
+  size?: 'xsmall' | 'small' | 'medium';
   ariaLabel?: string;
   leadingVisual?: React.ReactNode;
+  /** When true, close the menu instead of repositioning when the user
+   *  scrolls. Matches the standard Mac / Linear / Slack pattern of
+   *  dismissing transient overlays on scroll. Default `false` to
+   *  preserve back-compat with existing callers that depend on the
+   *  reposition behavior (long-form pages with sticky headers). */
+  closeOnScroll?: boolean;
 }
 
 export default function Dropdown<T extends string>({
@@ -39,6 +45,7 @@ export default function Dropdown<T extends string>({
   size = 'medium',
   ariaLabel,
   leadingVisual,
+  closeOnScroll = false,
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number; width: number; maxHeight: number; flipped: boolean } | null>(null);
@@ -87,12 +94,14 @@ export default function Dropdown<T extends string>({
     };
     update();
     window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
+    // When `closeOnScroll`, the open-effect below binds a scroll
+    // listener that closes the menu — don't also reposition.
+    if (!closeOnScroll) window.addEventListener('scroll', update, true);
     return () => {
       window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
+      if (!closeOnScroll) window.removeEventListener('scroll', update, true);
     };
-  }, [open, width, align, options]);
+  }, [open, width, align, options, closeOnScroll]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,16 +114,33 @@ export default function Dropdown<T extends string>({
       if (triggerRef.current?.contains(t)) return;
       setOpen(false);
     };
+    // Scroll-to-close (opt-in). Captures scroll on any scrollable
+    // ancestor since the menu is portal-rendered to body — `true` for
+    // capture phase so we catch nested scrollers too.
+    const onScroll = (e: Event) => {
+      const target = e.target;
+      if (target instanceof Node) {
+        if (menuRef.current?.contains(target)) return;
+        if (triggerRef.current?.contains(target)) return;
+      }
+      setOpen(false);
+    };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onClick);
+    if (closeOnScroll) window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onClick);
+      if (closeOnScroll) window.removeEventListener('scroll', onScroll, true);
     };
-  }, [open]);
+  }, [open, closeOnScroll]);
 
   const current = options.find((o) => o.value === value);
-  const height = size === 'small' ? 28 : 32;
+  const height = size === 'medium' ? 32 : size === 'small' ? 28 : 24;
+  // xsmall is the compact 12px variant for rows of chips / view-toggles
+  // on the repositories page. small/medium keep the legacy 14px so
+  // existing callers (settings/pulls/pagination) don't shift.
+  const fontSize = size === 'xsmall' ? 12 : 14;
 
   return (
     <>
@@ -137,7 +163,7 @@ export default function Dropdown<T extends string>({
           borderRadius: 6,
           background: 'var(--bg-canvas)',
           color: 'var(--fg-default)',
-          fontSize: 14,
+          fontSize,
           fontWeight: 400,
           fontFamily: 'inherit',
           cursor: 'pointer',
@@ -204,7 +230,7 @@ export default function Dropdown<T extends string>({
               boxShadow: 'var(--shadow-overlay)',
               zIndex: 9500,
               padding: '6px 0',
-              fontSize: 14,
+              fontSize,
               color: 'var(--fg-default)',
               transformOrigin: coords.flipped ? 'bottom' : 'top',
             }}

@@ -283,22 +283,25 @@ reward share = PR share x effective repo PR reward pool`}</Pre>
 
             <Article id="repositories" title="Repositories">
               <P>
-                <Code>/repositories</Code> — the full catalog of every repo the dashboard knows about, with
-                per-repository statistics:
+                <Code>/repositories</Code> — a strategy-oriented SN74 repository catalog. It combines the live
+                whitelist policy with Gittensor PR aggregates, GitHub metadata, and subnet emission estimates so
+                miners can compare where work is likely to be valuable.
               </P>
               <Ul>
-                <Li><strong>Weight / emission share</strong>: the repo's configured SN74 reward allocation share (0-1)</Li>
-                <Li><strong>Band</strong>: Flagship (≥0.5), High (0.3–0.5), Mid-high (0.15–0.3), Standard (0.05–0.15), Low</Li>
-                <Li><strong>Issues / Open</strong>: total cached issues + currently open</Li>
-                <Li><strong>PRs / PR Open / Merged</strong>: total / open / merged pulls</Li>
-                <Li><strong>Activity</strong>: last update timestamp across issues + PRs</Li>
+                <Li><strong>Market view</strong>: emission, miner / validator split, recycling, treasury, and owner-cut context for SN74</Li>
+                <Li><strong>Strategy filters</strong>: show all repos or bias the list toward bugs, enhancements, features, refactors, or issue discovery</Li>
+                <Li><strong>Card / list views</strong>: TAO/day estimates, repo stream split, label multipliers, language metadata, 30-day PR activity, and issue submissions</Li>
+                <Li><strong>Compare</strong>: add up to four repositories and inspect relative reward, competition, stream, label, and eligibility signals</Li>
+                <Li><strong>Drawer</strong>: open a repository for GitHub links, description, emission breakdown, eligibility rules, labels, and language details</Li>
+                <Li><strong>Tracking</strong>: star repositories from the cards or list rows to keep them in your tracked repo set for issue and PR filtering</Li>
               </Ul>
               <P>
                 The SN74 whitelist auto-syncs from{' '}
                 <a href="https://github.com/entrius/gittensor/blob/main/gittensor/validator/weights/master_repositories.json" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-fg)' }}>
                   master_repositories.json
                 </a>{' '}
-                every hour. Custom repos added via Manage Repositories appear with a blue <Pill>CUSTOM</Pill> pill.
+                every few minutes. GitHub descriptions, language ratios, open PR counts, and issue-submission
+                sparklines are cached separately because that metadata changes more slowly.
               </P>
             </Article>
 

@@ -1,0 +1,2431 @@
+/* Repositories page — port of repositories.html design system.
+ *
+ * The HTML used its own --app/--app-surface/--fg/etc. CSS vars. Here we map
+ * those onto the project-wide vars already set in `app/globals.css` so theme
+ * switching flows through the same inline pre-paint script that the rest of
+ * the app uses (`gittensor.theme` localStorage key, `data-theme` attribute). */
+
+.scope {
+  --app: var(--bg-canvas);
+  --app-surface: var(--bg-subtle);
+  --app-elev: var(--bg-emphasis);
+  --app-deep: var(--bg-inset);
+  --border: var(--border-default);
+  --border-strong: var(--border-strong);
+  --fg: var(--fg-default);
+  --fg-dim: var(--fg-muted);
+  --fg-mute: var(--fg-subtle);
+  --fg-faint: var(--border-strong);
+
+  --soft-border: rgba(255, 255, 255, 0.06);
+  --softer-border: rgba(255, 255, 255, 0.04);
+  --soft-fill: rgba(255, 255, 255, 0.04);
+  --softer-fill: rgba(255, 255, 255, 0.025);
+  --hatch-a: var(--bg-emphasis);
+  --hatch-b: var(--bg-subtle);
+
+  /* Brand / semantic colors — mapped to app-wide tokens from globals.css
+   * so the page matches the rest of gittensor-hub:
+   *   --color-tao  = TAO emissions (indigo, matches PriceTicker)
+   *   --color-mine = "you / your repo" (light indigo, brand)
+   *   --color-bug  = bug label (danger red)
+   *   --color-enh  = enhancement label (attention yellow)
+   *   --color-feat = feature label (success green)
+   *   --color-stream-pr = PR stream / market-bar segments (saturated
+   *      indigo — saturated variant so big fills feel anchored to the
+   *      brand without colliding with the lighter --color-mine outline)
+   *   --color-stream-issue = issue-discovery stream (custom cyan, kept
+   *      distinct from PR so 2-stream split bars stay readable)
+   *   --color-refact = refactor label (custom rust; 4 strategy chips need
+   *      to stay individually identifiable)
+   *   --color-moss-* = maintainer cut + credibility chips (success green) */
+  --color-bug: var(--danger-fg);
+  --color-enh: var(--attention-fg);
+  --color-feat: var(--success-fg);
+  --color-refact: #c5503a;
+  --color-stream-pr: var(--accent-emphasis);
+  /* Issue-discovery: vivid green. Maximum hue contrast against the
+   * indigo PR color (opposite cool/warm-ish halves of the wheel) and
+   * theme-stable across both backgrounds. Distinct from --color-feat
+   * (success-fg, more muted) so feature-label and issue-stream don't
+   * collide. */
+  --color-stream-issue: #22c55e;
+  --color-moss-400: var(--success-fg);
+  --color-moss-500: var(--success-emphasis);
+  --color-mine: var(--accent-fg);
+  --color-tao: var(--accent-fg);
+
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  /* Tells native form widgets (select option highlight, checkbox tick,
+   * radio dot, range thumb) to use the brand indigo instead of the OS
+   * default bright blue. Matches Linear / Gittensor-hub styling. */
+  accent-color: var(--accent-emphasis);
+}
+
+:global([data-theme='light']) .scope {
+  --soft-border: rgba(0, 0, 0, 0.08);
+  --softer-border: rgba(0, 0, 0, 0.05);
+  --soft-fill: rgba(0, 0, 0, 0.04);
+  --softer-fill: rgba(0, 0, 0, 0.025);
+  --hatch-a: #e8eaee;
+  --hatch-b: #f0f1f4;
+  /* All color tokens now point at app vars or theme-stable hex —
+   * #1875ff reads cleanly on both themes, no explicit light override
+   * needed. */
+}
+
+/* `.mono` and `.tnum` are referenced as bare class names throughout the
+ * page (matching the HTML prototype's `font-mono` / `tnum` Tailwind
+ * utilities). CSS Modules would normally hash these, breaking the
+ * `<span className="mono">` pattern, so mark them :global within the
+ * page scope. */
+.scope :global(.tnum), .scope :global(.mono) {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' on, 'cv11';
+}
+.scope :global(.mono) {
+  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, monospace;
+  letter-spacing: -0.01em;
+}
+
+/* Numeric typography */
+.num2xl { font-size: 36px; line-height: 0.95; font-weight: 500; letter-spacing: -0.025em; }
+.numXl  { font-size: 26px; line-height: 1; font-weight: 500; letter-spacing: -0.02em; }
+.numL   { font-size: 20px; line-height: 1; font-weight: 500; letter-spacing: -0.015em; }
+.numM   { font-size: 15px; line-height: 1; font-weight: 500; letter-spacing: -0.01em; }
+
+/* Container width matches HTML reference (max-w-[1440px]) */
+.container {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+/* Scope-wide mobile safety: clip any sideways overflow so a stray fixed-
+ * width child (mono number, badge group, etc.) can't push the layout
+ * past the viewport. Also reset min-width on flex/grid containers — the
+ * default `auto` value is what makes long nowrap text shove parents
+ * around. */
+.scope { overflow-x: clip; }
+.scope :is(.repoCard, .repoGrid, .container) { min-width: 0; }
+.scope :is(.repoCard, .repoGrid) > * { min-width: 0; }
+
+/* Headline + stat row: stacks on mobile/tablet, lays out side-by-side at lg+
+ * exactly like the HTML's `flex flex-col lg:flex-row lg:items-start
+ * lg:justify-between` layout. */
+.headlineRow {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+@media (min-width: 1024px) {
+  .headlineRow {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 32px;
+  }
+}
+
+.statRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  flex-shrink: 0;
+}
+@media (min-width: 768px) {
+  /* 3 cols at md so a 6-card row (Repos / Miners / Validators / Recycling
+   * / Treasury / Owner) splits cleanly 3+3 instead of 4+2. */
+  .statRow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+}
+@media (min-width: 1024px) {
+  /* On wide screens the stats sit inline, aligned to bottom and the
+   * label/sub-text right-aligns under the stat headline (HTML's
+   * lg:text-right). */
+  .statRow {
+    display: flex;
+    align-items: flex-end;
+    gap: 24px;
+  }
+  .statRow > * { text-align: right; }
+}
+
+.marketLegend {
+  font-size: 10.5px;
+  color: var(--fg-subtle);
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Vertical hairline divider used in the strategy bar between chip group
+ * and the sort selector — mirrors HTML's `w-px h-4 bg-[#1f2024]`. */
+.vDivider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-default);
+  display: none;
+}
+@media (min-width: 640px) {
+  .vDivider { display: block; }
+}
+
+/* ============ BUTTONS ============ */
+/* Primary button — uses app-wide brand button tokens so it matches every
+ * primary CTA in the hub (indigo fill, white text, lighter-indigo hover). */
+.priBtn {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  font-weight: 500;
+  font-size: 12.5px;
+  padding: 6px 11px;
+  border-radius: 5px;
+  border: 0;
+  cursor: pointer;
+  transition: background 100ms;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none !important;
+}
+.priBtn:hover, .priBtn:focus, .priBtn:focus-visible {
+  background: var(--btn-primary-hover-bg);
+  text-decoration: none !important;
+}
+/* Light-mode primary stays on app vars (which already re-theme). */
+
+.secBtn {
+  background: var(--soft-fill);
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  padding: 6px 11px;
+  border-radius: 5px;
+  border: 1px solid var(--soft-border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 100ms, color 100ms;
+  text-decoration: none !important;
+}
+.secBtn:hover, .secBtn:focus, .secBtn:focus-visible {
+  background: var(--app-elev);
+  color: var(--fg);
+  text-decoration: none !important;
+}
+
+.ghostBtn {
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 100ms, color 100ms;
+}
+.ghostBtn:hover {
+  background: var(--soft-fill);
+  color: var(--fg);
+}
+
+/* ============ INPUTS ============ */
+.input {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 5px;
+}
+/* HTML's prototype uses a thin border-color change on focus, not a glow ring.
+ * Override the project's default focus-visible box-shadow so this matches. */
+.input:focus, .input:focus-visible {
+  outline: none !important;
+  /* Focus border now uses the app accent (indigo) instead of the
+   * prototype's green — matches every other focused input in the hub. */
+  border-color: var(--accent-emphasis);
+  box-shadow: none !important;
+}
+.input::placeholder { color: var(--fg-mute); }
+
+/* Editable TAO input — looks like text until hover. HTML's prototype used a
+ * subtle dashed border that only appears on hover/focus; suppress the
+ * project's wider focus glow so the inline-text affordance is preserved. */
+.taoEdit {
+  background: transparent;
+  border: 1px dashed transparent;
+  color: var(--color-tao);
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  width: 80px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-align: right;
+  transition: border-color 120ms, background 120ms;
+}
+.taoEdit:hover { border-color: var(--border); background: var(--soft-fill); }
+.taoEdit:focus, .taoEdit:focus-visible {
+  outline: none !important;
+  border-color: var(--accent-emphasis);
+  border-style: solid;
+  background: var(--app-elev);
+  box-shadow: none !important;
+}
+
+/* ============ CHIPS ============ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  border-radius: 5px;
+  background: var(--soft-fill);
+  border: 1px solid var(--soft-border);
+  color: var(--fg-dim);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+  user-select: none;
+}
+.chip:hover { background: var(--app-elev); color: var(--fg); }
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+.chipBug    { background: rgba(236, 72, 153, 0.12); border-color: rgba(236, 72, 153, 0.4); color: var(--color-bug); }
+.chipEnh    { background: rgba(234, 179, 8, 0.12); border-color: rgba(234, 179, 8, 0.4); color: var(--color-enh); }
+.chipFeat   { background: rgba(134, 239, 172, 0.16); border-color: rgba(134, 239, 172, 0.5); color: var(--color-feat); }
+.chipRefact { background: rgba(197, 80, 58, 0.12); border-color: rgba(197, 80, 58, 0.4); color: var(--color-refact); }
+.chipIssue  { background: rgba(95, 200, 223, 0.12); border-color: rgba(95, 200, 223, 0.4); color: var(--color-stream-issue); }
+.chipNone   { background: rgba(134, 239, 172, 0.12); border-color: rgba(134, 239, 172, 0.4); color: var(--color-feat); }
+
+/* ============ PANELS ============ */
+.panel {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+}
+
+/* ============ BADGES ============ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  line-height: 1.5;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.badgeSelf      { background: rgba(134, 239, 172, 0.12); color: var(--color-feat); border-color: rgba(134, 239, 172, 0.36); font-weight: 500; }
+.badgeTrusted   { background: rgba(95, 200, 223, 0.06); color: var(--color-stream-issue); border-color: rgba(95, 200, 223, 0.18); }
+.badgeZero      { background: rgba(197, 80, 58, 0.06); color: var(--color-refact); border-color: rgba(197, 80, 58, 0.18); }
+.badgeIssue     { background: rgba(95, 200, 223, 0.08); color: var(--color-stream-issue); border-color: rgba(95, 200, 223, 0.22); }
+.badgeMixed     { background: var(--attention-subtle); color: var(--color-enh); border-color: var(--attention-subtle-strong); }
+.badgeOverrides { background: rgba(34, 197, 94, 0.06); color: var(--color-enh); border-color: rgba(34, 197, 94, 0.18); }
+.badgeMaint     { background: rgba(158, 184, 114, 0.10); color: var(--color-moss-400); border-color: rgba(158, 184, 114, 0.28); }
+
+.demoTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--soft-fill);
+  color: var(--fg-mute);
+  border: 1px dashed var(--soft-border);
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: help;
+}
+.demoTag::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fg-mute);
+  flex-shrink: 0;
+}
+
+/* ============ AVATARS ============ */
+.avatar {
+  display: inline-block;
+  flex-shrink: 0;
+  background: var(--app-elev);
+  object-fit: cover;
+  border: 1px solid var(--soft-border);
+}
+.avatarXs { width: 14px; height: 14px; border-radius: 3px; }
+.avatarSm { width: 20px; height: 20px; border-radius: 4px; }
+.avatarMd { width: 28px; height: 28px; border-radius: 5px; }
+.avatarLg { width: 36px; height: 36px; border-radius: 6px; }
+.avatarXl { width: 44px; height: 44px; border-radius: 7px; }
+
+/* ============ LANG PILLS ============ */
+.langPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: var(--soft-fill);
+  color: var(--fg-dim);
+  border: 1px solid var(--soft-border);
+}
+.langDot { width: 6px; height: 6px; border-radius: 1.5px; }
+
+/* ============ MARKET BAR ============ */
+.seg {
+  position: relative;
+  height: 100%;
+  transition: filter 100ms;
+  cursor: pointer;
+  border-right: 1px solid var(--app-deep);
+}
+.seg:hover { filter: brightness(1.25); z-index: 1; }
+/* Selection ring: theme-stable white inner stroke (high contrast on any
+ * fill — indigo PR, green issue, or mixed) + brand indigo outer glow.
+ * Was --fg-default which flips per theme — that turned the ring near-
+ * black in light mode, reading as a harsh "shadow" around the segment. */
+.seg.isSelected {
+  box-shadow: inset 0 0 0 2px #ffffff, 0 0 12px var(--accent-glow);
+  z-index: 2;
+  filter: brightness(1.1);
+}
+
+.marketBarWrap {
+  position: relative;
+  padding-top: 22px;
+  padding-bottom: 20px;
+}
+.marketBar {
+  position: relative;
+  height: 36px;
+  display: flex;
+  background: var(--app-deep);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--soft-border);
+}
+/* Match the HTML prototype: in light mode the bar bg equals --hatch-b
+ * so the hatched slack gaps blend into the bar bg (single tone) and
+ * only --hatch-a stripes are visible. App-wide --bg-inset is slightly
+ * lighter (#f4f5f7 vs #f0f1f4) which made three greys appear at once. */
+:global([data-theme='light']) .marketBar {
+  background: #f0f1f4;
+}
+.marketPcts, .marketLabels {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.marketPcts { top: 0; height: 18px; }
+.marketLabels { bottom: 0; height: 16px; }
+.segPctAbs, .segLabelAbs {
+  position: absolute;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  padding: 0 2px;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+.segPctAbs { top: 0; font-size: 10.5px; color: var(--fg-dim); line-height: 18px; }
+.segLabelAbs { bottom: 0; font-size: 10px; color: var(--fg-mute); line-height: 16px; }
+
+@media (max-width: 639px) {
+  .segPctAbs, .segLabelAbs { display: none; }
+  .marketBarWrap { padding-top: 0; padding-bottom: 0; }
+  .marketBar { height: 44px; }
+}
+
+/* Tooltip on hover */
+.tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--app-elev);
+  border: 1px solid var(--soft-border);
+  padding: 6px 9px;
+  border-radius: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms;
+  z-index: 10;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.seg:hover .tip { opacity: 1; }
+
+/* ============ BAR INSPECTOR ============ */
+.barInspector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Allow the per-repo earners row (flex-basis: 100%) to wrap onto its
+   * own line below the main flex row. Existing children don't have any
+   * shrink-trigger conditions that would cause them to wrap. */
+  flex-wrap: wrap;
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  padding: 12px;
+  min-height: 64px;
+  transition: border-color 150ms, background 150ms;
+}
+
+/* ─── Per-repo top earners (rendered inline inside .barInspector) ───── */
+.inspectorEarners {
+  /* Label sits on its own row above the chip list. The block still
+   * lives inside the inspector flex row, so the whole earner column
+   * stays compact next to the stats group. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.inspectorEarnersLabel {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--fg-subtle);
+  flex-shrink: 0;
+}
+.inspectorEarnersList {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.inspectorEarnersEmpty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+.inspectorEarnersEmpty svg {
+  color: var(--color-refact, #c5503a);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+.inspectorEarnerChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px 3px 4px;
+  border-radius: 999px;
+  background: var(--app-elev);
+  border: 1px solid var(--soft-border);
+  color: var(--fg-default);
+  text-decoration: none;
+  font-size: 11px;
+  line-height: 1;
+  transition: border-color 100ms, background 100ms;
+}
+.inspectorEarnerChip:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--app-surface);
+}
+.inspectorEarnerRank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid;
+  font-size: 9.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.inspectorEarnerName {
+  font-size: 11px;
+  color: var(--fg-muted);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inspectorEarnerScore {
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.minersHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.minersHeaderMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.minersHeaderCount {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg-default);
+  letter-spacing: -0.02em;
+}
+.minersHeaderTag {
+  font-size: 9.5px;
+  font-family: ui-monospace, monospace;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid;
+}
+
+/* ─── Drawer miner treemap ─────────────────────────────────────────── */
+.mtileContainer {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 2.7;
+  min-height: 260px;
+  max-height: 360px;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid var(--soft-border);
+  background: var(--app-deep, var(--app-surface));
+}
+.mtile {
+  position: absolute;
+  border: 1px solid;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: filter 100ms, z-index 0s;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  /* `flex-start` so the avatar/name section anchors to the top instead
+   * of floating in the middle. The bottom block uses `margin-top: auto`
+   * to stick to the floor. */
+  justify-content: flex-start;
+  min-width: 0;
+  min-height: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.mtile,
+.mtile:hover,
+.mtile:focus,
+.mtile:focus-visible {
+  text-decoration: none !important;
+}
+.mtile:hover {
+  filter: brightness(1.18);
+  z-index: 4;
+}
+/* ─── Tile tier palettes (Linear-indigo for eligibles, neutral for not) ─── */
+.mtileTierLeader {
+  background: rgba(94, 106, 210, 0.42);
+  border-color: rgba(94, 106, 210, 0.55);
+  color: #ffffff;
+}
+.mtileTierTop {
+  background: rgba(94, 106, 210, 0.24);
+  border-color: rgba(94, 106, 210, 0.32);
+  color: #f7f8f8;
+}
+.mtileTierMid {
+  background: rgba(94, 106, 210, 0.12);
+  border-color: rgba(94, 106, 210, 0.22);
+  color: #f4f6f5;
+}
+.mtileTierIneligible {
+  /* Subtle wash so the tile sits quietly behind eligible tiles. */
+  background: rgba(120, 125, 135, 0.05);
+  border-color: rgba(120, 125, 135, 0.14);
+  color: #d5d9df;
+}
+/* Light-mode: solid darker indigo so the tile reads against the lighter
+ * page background. White text stays legible across all eligible tiers;
+ * ineligible flips to dark text on a soft neutral. */
+[data-theme="light"] .mtileTierLeader {
+  background: rgba(94, 106, 210, 0.92);
+  border-color: rgba(94, 106, 210, 1);
+  color: #ffffff;
+}
+[data-theme="light"] .mtileTierTop {
+  background: rgba(94, 106, 210, 0.68);
+  border-color: rgba(94, 106, 210, 0.85);
+  color: #ffffff;
+}
+[data-theme="light"] .mtileTierMid {
+  /* Bumped from 0.42 → 0.55 so white text is legible at this tier too,
+   * matching the leader/top tiers' text color for a uniform look. */
+  background: rgba(94, 106, 210, 0.55);
+  border-color: rgba(94, 106, 210, 0.72);
+  color: #ffffff;
+}
+[data-theme="light"] .mtileTierIneligible {
+  /* Very light wash + dark text so scores read clearly. */
+  background: rgba(120, 125, 135, 0.07);
+  border-color: rgba(120, 125, 135, 0.20);
+  color: #2b2e36;
+}
+.mtileXl { padding: 14px 14px; }
+.mtileLg { padding: 10px 11px; }
+.mtileMd { padding: 7px 8px; }
+.mtileSm { padding: 5px 7px; }
+.mtileXs { padding: 3px 5px; }
+.mtileTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  justify-content: space-between;
+  min-width: 0;
+}
+.mtileTopMeta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-left: auto;
+  min-width: 0;
+  flex-shrink: 0;
+}
+.mtileCrown {
+  color: #fde047;
+  font-size: 14px;
+  line-height: 1;
+}
+.mtileMid {
+  margin: 6px 0 4px;
+  min-width: 0;
+}
+.mtileIdentityStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  /* flex:1 makes the column claim all remaining width after the
+   * right-aligned topMeta — without it the stack sized to its widest
+   * intrinsic child (the avatar) and squeezed the name. */
+  flex: 1 1 0;
+  min-width: 0;
+}
+.mtileNameRow .mtileName {
+  /* Single-line ellipsis on the full-row name. Username fits in the
+   * tile's content width directly without the uid stealing space. */
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mtileIdentityRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+}
+.mtileIdentityText {
+  min-width: 0;
+  flex: 1;
+}
+.mtileName {
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mtileNameSmall {
+  font-size: 11.5px;
+  line-height: 1.15;
+}
+.mtileCompactName {
+  width: 100%;
+  max-width: 100%;
+  /* Single-line ellipsis instead of mid-word wrapping — "jakearmstrong"
+   * was being broken into "jakearmstro…" on a new line, which looked
+   * worse than a clean truncation. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  line-height: 1.15;
+}
+.mtileNameTiny {
+  width: 100%;
+  max-width: 100%;
+  font-size: 9px;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+/* Avatars inside tiles render as circles — uses the global Avatar img
+ * directly so we don't have to introduce a new prop just for this view. */
+.mtile img {
+  border-radius: 50%;
+}
+.mtileAvatarWrap {
+  --cred-color: #7b8494;
+
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 1.5px solid var(--cred-color);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+}
+.mtileAvatarWrap img {
+  display: block;
+  border: 0;
+}
+.mtileCredBadge {
+  position: absolute;
+  right: -8px;
+  bottom: -5px;
+  min-width: 22px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cred-color);
+  color: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.28);
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.mtileUid {
+  font-size: 10px;
+  color: inherit;
+  opacity: 0.68;
+  white-space: nowrap;
+}
+.mtileBottom {
+  min-width: 0;
+  overflow: hidden;
+  padding-bottom: 1px;
+  /* Pins this row to the bottom of the tile so the avatar/name stay at
+   * the top regardless of how much vertical space is left over. */
+  margin-top: auto;
+}
+.mtileNameRow {
+  /* Name sits directly below the avatar row, anchored to the top.
+   * Spans full content width so a username like `jakearmstrong` gets
+   * the entire tile to itself instead of competing with the uid. */
+  margin-top: 8px;
+  min-width: 0;
+}
+/* Horizontal layout for wide-short tiles: avatar + name on one row,
+ * uid/crown pushed to the far right. Saves the vertical space that the
+ * standard 3-section layout was eating up. */
+.mtileTopHorizontal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.mtileHorizontalName {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mtileTao {
+  font-size: 14.5px;
+  color: inherit;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.mtileTaoUnit {
+  font-size: 10px;
+  font-weight: 400;
+  color: inherit;
+  opacity: 0.72;
+  margin-left: 1px;
+}
+.mtileMeta {
+  font-size: 10.5px;
+  color: inherit;
+  opacity: 0.78;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.25;
+}
+.mtileMeta span {
+  white-space: nowrap;
+}
+.mtileSep { color: inherit; opacity: 0.4; }
+.mtileCompact {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  gap: 7px;
+}
+.mtileCompactWithStats {
+  justify-content: space-between;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+.mtileCompactIdentity {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.mtileCompactStats {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  overflow: hidden;
+  line-height: 1.1;
+}
+.mtileCompactScore {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.mtileCompactScore span {
+  font-size: 8px;
+  font-weight: 500;
+  opacity: 0.72;
+}
+.mtileCompactMeta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8.5px;
+  opacity: 0.76;
+}
+.mtileTiny {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  overflow: hidden;
+}
+.mtileTinyWithStats {
+  justify-content: space-between;
+  gap: 4px;
+}
+.mtileTinyIdentity {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  overflow: hidden;
+}
+.mtileTinyStats {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  overflow: hidden;
+  font-size: 8px;
+  line-height: 1.05;
+  opacity: 0.76;
+}
+.mtileTinyStats span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mtileTiny .mtileAvatarWrap {
+  margin-right: 7px;
+  margin-bottom: 2px;
+}
+.mtileTiny .mtileCredBadge {
+  right: -7px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 13px;
+  font-size: 8px;
+  padding: 0 3px;
+}
+.mtileLegendDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+@media (max-width: 640px) {
+  .mtileContainer {
+    aspect-ratio: 1 / 1.65;
+    min-height: 520px;
+    max-height: 720px;
+  }
+}
+.barInspector.isActive {
+  border-color: var(--accent-glow);
+  background: var(--accent-subtle);
+}
+.inspectorEmpty {
+  color: var(--fg-mute);
+  font-size: 12px;
+  text-align: center;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.inspectorHint { color: var(--fg-faint); font-size: 10.5px; }
+.inspectorStats {
+  display: none;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  margin: 0 8px;
+  border-left: 1px solid var(--soft-border);
+  border-right: 1px solid var(--soft-border);
+  height: 40px;
+}
+@media (min-width: 1024px) {
+  .inspectorStats { display: flex; }
+}
+.inspectorStat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.inspectorStatLabel {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  line-height: 1.2;
+}
+.inspectorStatValue {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.inspectorOpenBtn {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  font-weight: 500;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 5px;
+  border: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 100ms;
+  min-height: 36px;
+  flex-shrink: 0;
+}
+.inspectorOpenBtn:hover { background: var(--btn-primary-hover-bg); }
+/* Inspector "Browse all repos" button — tinted secondary, brand indigo
+ * to match the rest of the page's accent surfaces. Hover deepens the
+ * tint instead of changing hue. */
+.inspectorBrowseBtn {
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent-glow);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 100ms;
+  min-height: 36px;
+}
+.inspectorBrowseBtn:hover {
+  background: var(--menu-item-hover-bg);
+  border-color: var(--accent-emphasis);
+}
+.inspectorBrowseLink {
+  background: transparent;
+  border: 0;
+  color: var(--fg-mute);
+  font-size: 10.5px;
+  text-align: left;
+  padding: 2px 0;
+  text-decoration: underline;
+  text-decoration-color: var(--soft-border);
+  text-underline-offset: 3px;
+  transition: color 100ms;
+  cursor: pointer;
+}
+.inspectorBrowseLink:hover { color: var(--accent-fg); text-decoration-color: var(--accent-glow); }
+
+/* ============ TOP-N LEADERBOARD ============ */
+.leaderGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 1024px) { .leaderGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .leaderGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1536px) { .leaderGrid { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
+
+.leaderCard {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 100ms, background 100ms;
+  display: block;
+  width: 100%;
+}
+/* HTML hover: subtle border + soft bg tint (rgba(255,255,255,0.14) + #14151a).
+ * The previous --border-strong made the edge bright enough to read as a
+ * "selected" state. */
+.leaderCard:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--app-elev);
+}
+/* Suppress the project-wide button :focus-visible accent glow — it tints
+ * the card with the blue/purple accent ring on click, which looks like a
+ * colored hover halo. Cards still get the subtle hover treatment above. */
+.leaderCard:focus, .leaderCard:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.leaderRank {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--soft-fill);
+  color: var(--fg-mute);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+/* Podium colors: rank-1 = success (gold), rank-2 = accent (silver, matches
+ * the indigo brand), rank-3 = attention (bronze). Each chip's bg + fg
+ * stay in the same hue family so it reads as a tinted pill. */
+.leaderCard:nth-child(1) .leaderRank { background: var(--success-subtle); color: var(--color-feat); }
+.leaderCard:nth-child(2) .leaderRank { background: var(--accent-subtle);  color: var(--color-tao); }
+.leaderCard:nth-child(3) .leaderRank { background: var(--attention-subtle); color: var(--color-enh); }
+.leaderStream { width: 8px; height: 3px; border-radius: 1.5px; flex-shrink: 0; }
+.leaderMore {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--soft-border);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: transparent;
+}
+
+/* ============ REPO CARDS ============ */
+.repoGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: stretch; /* default — explicit so cards in a row equalise */
+}
+@media (min-width: 768px) { .repoGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .repoGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.repoCard {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+  position: relative;
+  /* Flex column so sections lay out top-down and the label chart can pin
+   * to the bottom via `marginTop: auto`. Heights only equalize at >=md
+   * where cards sit side-by-side; on mobile each card is full-width and
+   * stacked, so a forced min-height just wastes vertical space. */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* min-width: 0 / max-width: 100% keep the card sized to its grid track
+   * on mobile (without these a fixed-width child could push the layout
+   * past the viewport). NOTE: do NOT clip with overflow:hidden — the
+   * BEST/PENALIZED `::before`/`::after` badges sit at top: -8px and would
+   * be sliced in half. Per-section overflow handling (description
+   * ellipsis, language flex-wrap, scope-level overflow-x: clip) takes
+   * care of the original mobile-overflow concern. */
+  min-width: 0;
+  max-width: 100%;
+}
+@media (min-width: 768px) {
+  .repoCard { min-height: 420px; }
+}
+@media (max-width: 640px) {
+  .repoCard {
+    padding: 14px;
+    border-radius: 8px;
+  }
+  /* Headline TAO number — 36px is too dominant on phone widths. */
+  .repoCard .num2xl,
+  .repoCard :global(.num-2xl) { font-size: 28px; }
+}
+/* HTML hover is a *very* subtle border-only highlight — the actual value
+ * is rgba(255,255,255,0.12). Using --border-strong (#3a3d44) overshoots and
+ * makes the card look like it's "lifting" more than the HTML intended. */
+.repoCard:hover { border-color: rgba(255, 255, 255, 0.12); }
+:global([data-theme='light']) .repoCard:hover {
+  /* Light theme: HTML swaps to a tinted background instead of a brighter border. */
+  border-color: var(--border-default);
+  background: var(--app-elev);
+}
+/* Same focus-glow suppression as leaderCard — these are clickable surfaces,
+ * not form controls, so the accent-colored focus ring looks out of place. */
+.repoCard:focus, .repoCard:focus-visible,
+.repoListRow:focus, .repoListRow:focus-visible,
+.paletteItem:focus, .paletteItem:focus-visible,
+.compareBtn:focus, .compareBtn:focus-visible,
+.viewToggle:focus, .viewToggle:focus-visible,
+.chip:focus, .chip:focus-visible,
+.searchTrigger:focus, .searchTrigger:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.repoCard.isSelf {
+  border-color: var(--accent-glow);
+  background: var(--accent-subtle);
+}
+.repoCard.isSelf:hover { border-color: var(--accent-emphasis); }
+.repoCard.isSelected { border-color: var(--accent-emphasis); background: var(--accent-subtle); }
+.repoCard.isBest { border-color: var(--success-subtle); box-shadow: 0 0 0 1px var(--success-subtle); }
+.repoCard.isBest::before {
+  content: 'BEST FOR YOUR STRATEGY';
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  /* White on success-green stays readable in BOTH themes (dark green in
+   * light mode + mid green in dark mode). Was #1a1714 which broke in
+   * light mode where --color-feat = #1a6943 (dark green). */
+  color: #ffffff;
+  background: var(--color-feat);
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+.repoCard.isWarn::after {
+  content: 'PENALIZED FOR YOUR STRATEGY';
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #f7f8f8;
+  background: var(--color-refact);
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+.compareBtn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--soft-fill);
+  border: 1px solid var(--soft-border);
+  display: grid;
+  place-items: center;
+  color: var(--fg-mute);
+  cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+.compareBtn:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent-glow);
+  color: var(--accent-fg);
+}
+.compareBtn.on {
+  background: var(--accent-emphasis);
+  border-color: var(--accent-emphasis);
+  /* White checkmark on saturated indigo — matches the brand button
+   * tokens used by .priBtn / .inspectorOpenBtn. */
+  color: #ffffff;
+}
+.trackBtn {
+  right: 40px;
+}
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Bars */
+.shareBar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.shareBar > span {
+  display: block;
+  height: 100%;
+  background: var(--color-feat);
+  border-radius: 2px;
+}
+.splitBar {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--app-elev);
+}
+.splitPr { background: var(--color-stream-pr); }
+.splitIss { background: var(--color-stream-issue); }
+.splitMaint { background: var(--color-moss-400); }
+
+/* Label profile rows */
+/* Label row: three explicit grid tracks so the value cell can never get
+ * pushed off the right edge. `minmax(0, 1fr)` lets the bar shrink as
+ * narrow as needed; the value column is a fixed 48px so ×N.NN always
+ * has somewhere visible to render. */
+.labelBarRow {
+  display: grid;
+  grid-template-columns: minmax(60px, max-content) minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  width: 100%;
+}
+.labelBarRow > :nth-child(1) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.labelBarRow > :nth-child(3) {
+  text-align: right;
+  white-space: nowrap;
+  min-width: 0;
+}
+.labelBarTrack {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 6px;
+  border-radius: 2px;
+  /* `--border-default` rather than `--app-elev` so the track stays
+   * visible when a parent (e.g. .repoCard:hover) shifts its bg to
+   * --app-elev — same value collision was hiding the bar on hover. */
+  background: var(--border-default);
+  overflow: hidden;
+}
+.labelBarTrack::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--border);
+}
+.labelBarFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+}
+
+/* Repo-card activity grid: 3 columns at >=400px, wraps to a single column
+ * on very narrow viewports so each metric stays readable. */
+.activityRow {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--softer-border);
+  display: grid;
+  gap: 16px;
+  align-items: center;
+  grid-template-columns: 1fr 1fr auto;
+}
+@media (max-width: 419px) {
+  .activityRow {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Activity sparkline */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 14px;
+}
+.sparkBar {
+  width: 4px;
+  background: rgba(134, 239, 172, 0.5);
+  border-radius: 1px;
+}
+
+/* ============ LIST VIEW ============ */
+.repoList {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.repoListHeader, .repoListRow {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  /* Mobile: actions + name + TAO (3 cols) */
+  grid-template-columns: 52px minmax(0, 1fr) 80px;
+}
+@media (min-width: 640px) {
+  .repoListHeader, .repoListRow {
+    gap: 12px;
+    grid-template-columns: 52px minmax(0, 1fr) 90px 70px 100px;
+  }
+}
+@media (min-width: 1024px) {
+  /* 8 columns now (added merge-rate); tighten mult+stream so the langs
+   * fr-track keeps enough room for 2 pills to render side-by-side. */
+  .repoListHeader, .repoListRow {
+    gap: 12px;
+    grid-template-columns: 52px minmax(0, 1fr) 96px 66px 92px minmax(120px, 1fr) 60px 58px;
+  }
+}
+@media (min-width: 1280px) {
+  /* 9 columns at xl — no arrow column; row hover + cursor:pointer is
+   * sufficient affordance and a dedicated chevron column was leaving
+   * an empty slot in the header. */
+  .repoListHeader, .repoListRow {
+    gap: 14px;
+    grid-template-columns: 52px minmax(0, 1.5fr) 110px 74px 120px minmax(140px, 1fr) 64px 60px 70px;
+  }
+}
+.listColLangs, .listColAct, .listColRate, .listColSpark, .listColArrow, .listColMult, .listColStream {
+  display: none;
+}
+@media (min-width: 640px) {
+  .listColMult, .listColStream { display: block; }
+}
+@media (min-width: 1024px) {
+  .listColLangs, .listColAct, .listColRate { display: block; }
+}
+@media (min-width: 1280px) {
+  .listColSpark { display: flex; justify-content: flex-end; }
+}
+.repoListHeader {
+  padding: 10px 14px;
+  background: var(--app-deep);
+  border-bottom: 1px solid var(--soft-border);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--fg-mute);
+  user-select: none;
+}
+.repoListRow {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--softer-border);
+  cursor: pointer;
+  transition: background 100ms;
+  position: relative;
+  border-left: 3px solid transparent;
+  padding-left: 11px;
+}
+.repoListRow:last-child { border-bottom: none; }
+.repoListRow:hover { background: var(--softer-fill); }
+.repoListRow:hover .rowArrow { opacity: 1; transform: translateX(0); }
+.repoListRow.isSelf { background: var(--accent-subtle); }
+.repoListRow.isSelf:hover { background: var(--menu-item-hover-bg); }
+.repoListRow.isSelected { background: var(--accent-subtle); }
+.repoListRow.isSelected:hover { background: var(--menu-item-hover-bg); }
+.repoListRow.isBest { border-left-color: var(--color-feat); }
+.repoListRow.isWarn { border-left-color: var(--color-refact); }
+.repoListRow.isWarn .rowName { opacity: 0.75; }
+.rowArrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 120ms, transform 120ms;
+  color: var(--fg-mute);
+}
+
+/* Mini stream + spark for list */
+.miniStream {
+  display: flex;
+  height: 3px;
+  border-radius: 1.5px;
+  overflow: hidden;
+  background: var(--app-elev);
+}
+.miniSpark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 16px;
+}
+.miniSparkBar {
+  width: 3px;
+  background: rgba(134, 239, 172, 0.5);
+  border-radius: 1px;
+}
+
+/* View toggle — exact HTML values:
+ *   group: padding 2px, bg rgba(255,255,255,0.03), border rgba(255,255,255,0.06)
+ *   button: padding 4px 8px, bg transparent, border 0
+ *   active: bg rgba(255,255,255,0.06), color #f7f8f8
+ * Using literals (not CSS vars) so the dark-mode look matches HTML
+ * exactly and isn't subject to var alias drift. Light-mode override
+ * below. */
+.viewToggleGroup {
+  display: inline-flex;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  padding: 2px;
+  /* Reset for any line-height inheritance that might bloat the height */
+  line-height: 1;
+}
+.viewToggle {
+  /* Defensive resets — Primer/Next button defaults can otherwise leak in */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  margin: 0;
+  font: inherit;
+  /* HTML values */
+  padding: 4px 8px;
+  border-radius: 3px;
+  color: var(--fg-subtle);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  line-height: 1;
+  transition: background 100ms, color 100ms;
+}
+.viewToggle:hover { color: var(--fg-muted); }
+.viewToggle.active { color: var(--fg-default); background: rgba(255, 255, 255, 0.06); }
+
+:global([data-theme='light']) .viewToggleGroup {
+  background: var(--app-surface);
+  border-color: var(--border-default);
+}
+:global([data-theme='light']) .viewToggle { color: var(--fg-muted); }
+:global([data-theme='light']) .viewToggle:hover { color: var(--fg-default); }
+:global([data-theme='light']) .viewToggle.active {
+  color: var(--fg-default);
+  background: var(--app-elev);
+}
+
+.viewToggleLabel { display: none; }
+@media (min-width: 768px) { .viewToggleLabel { display: inline; } }
+
+/* ============ DETAILS PANEL ============ */
+.refPanel {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+}
+.refPanel > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.refPanel > summary::-webkit-details-marker { display: none; }
+.chev { transition: transform 120ms ease; }
+.refPanel[open] .chev { transform: rotate(90deg); }
+
+/* Two-column body for the share-formula panel — HTML uses
+ * `grid-cols-1 md:grid-cols-2 gap-4` so eligibility + earned_score sit
+ * side-by-side on tablet and up, stacked on phones. */
+.refPanelBody2col {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid var(--soft-border);
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+@media (min-width: 768px) {
+  .refPanelBody2col { grid-template-columns: 1fr 1fr; }
+}
+
+/* ============ COMPARE TRAY (bottom) ============ */
+/* Z-index notes:
+ *  AppHeader (sticky top chrome) uses zIndex: 170. Every overlay below has
+ *  to sit above that so it isn't clipped by the page header.
+ *      compare tray   →  190  (background, dismissable)
+ *      backdrops      →  195
+ *      drawer / panel →  200
+ *      command palette → 210  (above the drawer for cmd+K from inside it)
+ */
+.compareTray {
+  position: fixed;
+  bottom: 0;
+  left: var(--sidebar-width, 0);
+  right: 0;
+  border-top: 1px solid var(--soft-border);
+  background: var(--app-elev);
+  /* backdrop-filter alone leaves the bg transparent enough to bleed through;
+   * pair it with a translucent fill so the tray reads as a discrete strip */
+  backdrop-filter: blur(8px);
+  z-index: 190;
+  transition: transform 200ms;
+  transform: translateY(100%);
+}
+.compareTray.open { transform: translateY(0); }
+
+.tray {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============ COMPARE PANEL: MOBILE STACKED LAYOUT ============ */
+.cmpMobileTabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 8px 0 10px 0;
+  margin-bottom: 4px;
+  background: linear-gradient(180deg, var(--app) 70%, color-mix(in srgb, var(--app) 95%, transparent) 100%);
+  border-bottom: 1px solid var(--soft-border);
+}
+.cmpMobileTabs::-webkit-scrollbar { display: none; }
+.cmpMobileTab {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid var(--soft-border);
+  background: var(--app-surface);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  max-width: 140px;
+  min-height: 36px;
+  text-decoration: none;
+}
+.cmpMobileTab:active { background: var(--app-elev); }
+.cmpMobileTab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmpMobileSections {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 4px;
+}
+.cmpMobileSection {
+  scroll-margin-top: 64px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--softer-border);
+}
+.cmpMobileSection:last-child { border-bottom: none; }
+.cmpStatCard {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.cmpStatLabel {
+  font-size: 9.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-mute);
+  line-height: 1.4;
+}
+
+/* Toggle compare layout based on viewport (HTML used `hidden md:block` /
+ * `md:hidden` Tailwind utilities; same effect with explicit media queries
+ * so each variant only ever takes up DOM space when active). */
+.cmpDesktop { display: none; }
+.cmpMobile { display: block; }
+@media (min-width: 768px) {
+  .cmpDesktop { display: block; }
+  .cmpMobile { display: none; }
+}
+
+/* ============ COMPARE PANEL (modal sliding from bottom) ============ */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 195;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+.backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+:global([data-theme='light']) .backdrop { background: rgba(0, 0, 0, 0.30); }
+
+.comparePanel {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  height: 92vh;
+  background: var(--app);
+  border-top: 1px solid var(--soft-border);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  box-shadow: 0 -24px 64px rgba(0, 0, 0, 0.5);
+  transform: translateY(100%);
+  transition: transform 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.comparePanel.open { transform: translateY(0); }
+@media (min-width: 640px) {
+  .comparePanel { height: 88vh; }
+}
+
+/* ============ DRAWER (right side) ============ */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 100%;
+  max-width: 640px;
+  background: var(--app-surface);
+  border-left: 1px solid var(--soft-border);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.drawer.open { transform: translateX(0); }
+
+/* ============ TREEMAP (mobile market visualization) ============ */
+.treemapWrap { display: none; }
+@media (max-width: 767px) {
+  .treemapWrap { display: block; }
+  .hideOnMobile { display: none !important; }
+}
+.treemapGrid {
+  position: relative;
+  width: 100%;
+  height: 56vh;
+  min-height: 340px;
+  max-height: 480px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--app-deep);
+  border: 1px solid var(--soft-border);
+}
+.treemapCell {
+  position: absolute;
+  cursor: pointer;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 9px;
+  transition: filter 100ms, box-shadow 100ms;
+  /* Cell separator stroke. Dark mode: dark inset (separates indigo
+   * tiles from each other); light mode: light inset (separates them
+   * against a white background without a harsh black line). */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+:global([data-theme='light']) .treemapCell {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+.treemapCell:active { filter: brightness(1.18); z-index: 5; }
+/* "Your repo" outline — indigo brand (was green --color-feat which is
+ * inconsistent with the rest of the page now that everything else uses
+ * the accent palette). */
+.treemapCell.isSelf {
+  box-shadow: inset 0 0 0 2px var(--color-mine), inset 0 0 0 3px rgba(0, 0, 0, 0.4);
+  z-index: 3;
+}
+:global([data-theme='light']) .treemapCell.isSelf {
+  box-shadow: inset 0 0 0 2px var(--color-mine), inset 0 0 0 3px rgba(255, 255, 255, 0.45);
+}
+.treemapCell.isSlack {
+  background: var(--app-deep) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+:global([data-theme='light']) .treemapCell.isSlack {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+.treemapCell.isSlack::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(45deg, transparent 0 8px, rgba(255, 255, 255, 0.02) 8px 9px);
+  pointer-events: none;
+}
+.treemapCellTop {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.treemapCellName {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(20, 15, 8, 0.92);
+  flex: 1;
+  min-width: 0;
+}
+.treemapCellBottom {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  margin-top: auto;
+}
+.treemapCellPct {
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  color: rgba(20, 15, 8, 0.75);
+  line-height: 1;
+}
+.treemapCellTao {
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, monospace;
+  color: rgba(20, 15, 8, 0.55);
+  line-height: 1;
+}
+.treemapCell.textLight .treemapCellName { color: rgba(255, 255, 255, 0.95); }
+.treemapCell.textLight .treemapCellPct  { color: rgba(255, 255, 255, 0.85); }
+.treemapCell.textLight .treemapCellTao  { color: rgba(255, 255, 255, 0.55); }
+.treemapCell.isSlack .treemapCellName { color: rgba(255, 255, 255, 0.55); font-weight: 500; }
+.treemapCell.isSlack .treemapCellPct  { color: rgba(255, 255, 255, 0.35); }
+.treemapCell.isSlack .treemapCellTao  { color: rgba(255, 255, 255, 0.25); }
+.treemapCell.sizeTiny .treemapCellTao,
+.treemapCell.sizeTiny .treemapCellPct { display: none; }
+.treemapCell.sizeTiny .treemapCellName { font-size: 10px; }
+.treemapCell.sizeSmall .treemapCellTao { display: none; }
+.treemapCell.sizeSmall .treemapCellName { font-size: 11px; }
+.treemapCell.sizeSmall .treemapCellPct { font-size: 10px; }
+
+.treemapSelfDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-feat);
+  box-shadow: 0 0 0 2px rgba(134, 239, 172, 0.25);
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+/* ============ COMMAND PALETTE ============ */
+.paletteOuter {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: none;
+}
+.paletteOuter.open { display: block; }
+.paletteBg {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+.paletteBox {
+  position: relative;
+  max-width: 36rem;
+  margin: 14vh auto 0;
+  background: var(--app-elev);
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.paletteHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--soft-border);
+}
+.paletteInput {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  /* Globals.css adds a 2px+2px focus glow to every focus-visible input. The
+   * palette's input is the only interactive element in its row, so the ring
+   * just looks like clutter; suppress it here. */
+  box-shadow: none !important;
+}
+.paletteInput:focus, .paletteInput:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.paletteInput::placeholder { color: var(--fg-mute); }
+.paletteResults {
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 6px;
+}
+.paletteItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.paletteItem:hover, .paletteItem:focus-visible {
+  background: var(--soft-fill);
+  outline: none;
+}
+
+/* kbd */
+.kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--soft-fill);
+  border: 1px solid var(--soft-border);
+  color: var(--fg-dim);
+  line-height: 1;
+}
+
+/* Search trigger — matches HTML's `#search-trigger-full` pill exactly:
+ *   px-2.5 py-1.5 rounded-md border border-soft text-[12.5px] text-fg-dim
+ *   min-w-[200px] hover:bg-app-elev
+ *   children: <svg> · "Search repos" · <ml-auto kbd group>
+ * Key detail: the kbd wrapper uses `margin-left: auto` so ⌘K floats to
+ * the right edge of the 200-px pill, not flush against "Search repos". */
+.searchTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: var(--fg-subtle);
+  font-size: 12.5px;
+  line-height: 1;
+  cursor: pointer;
+  /* Defensive button resets so Primer/Next defaults don't bleed in */
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  font-family: inherit;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+.searchTrigger:hover {
+  background: #16171a;
+  color: #f7f8f8;
+}
+:global([data-theme='light']) .searchTrigger {
+  border-color: var(--border-default);
+  background: var(--app-surface);
+  color: var(--fg-muted);
+}
+:global([data-theme='light']) .searchTrigger:hover {
+  background: var(--app-elev);
+  color: var(--fg-default);
+}
+.searchTriggerLabel { display: none; }
+.searchTriggerKbd {
+  display: none;
+  margin-left: auto;
+  align-items: center;
+  gap: 4px;
+}
+@media (min-width: 768px) {
+  .searchTriggerLabel { display: inline; }
+  .searchTriggerKbd { display: inline-flex; }
+  .searchTrigger { min-width: 200px; }
+}
+
+/* Theme-aware color helpers */
+.textTao   { color: var(--color-tao); }
+.textMine  { color: var(--color-mine); }
+.textPr    { color: var(--color-stream-pr); }
+.textIssue { color: var(--color-stream-issue); }
+.textMoss  { color: var(--color-moss-400); }
+.textFg    { color: var(--fg); }
+.textFgDim { color: var(--fg-dim); }
+.textFgMute { color: var(--fg-mute); }
+.textFgFaint { color: var(--fg-faint); }
+.textRefact { color: var(--color-refact); }
+.textEnh   { color: var(--color-enh); }
+.textBug   { color: var(--color-bug); }
+.textFeat  { color: var(--color-feat); }
+
+/* ╔══════════════════════════════════════════════════════════════════════╗
+   ║  REF PANELS — eligibility cards + interactive formula + PR archetypes ║
+   ║  Ported from repositories.html so the React port renders the same     ║
+   ║  ShareFormulaPanel and PR-archetype panel structure.                  ║
+   ╚══════════════════════════════════════════════════════════════════════╝ */
+
+/* Eligibility mini-cards (5-up at lg+). */
+.checkCardMini {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 11px;
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+}
+.checkCardMiniIcon {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+/* Interactive formula bar — each token is a clickable factor. */
+.formulaBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  row-gap: 8px;
+}
+.formulaToken {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  background: var(--soft-fill);
+  border: 1px solid var(--soft-border);
+  line-height: 1.15;
+  transition: all 120ms ease-out;
+  min-width: 58px;
+  cursor: pointer;
+  user-select: none;
+}
+.formulaToken:hover {
+  background: var(--app-elev);
+  border-color: var(--accent-glow);
+  transform: translateY(-1px);
+}
+.formulaTokenActive {
+  background: var(--accent-subtle);
+  border-color: var(--accent-emphasis);
+  box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px var(--accent-glow);
+  transform: translateY(-1px);
+}
+.formulaTokenActive .formulaName { color: var(--accent-fg); }
+.formulaTokenEq {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-mute);
+  font-size: 12px;
+  font-style: italic;
+  padding-left: 0;
+  min-width: 0;
+  cursor: default;
+}
+.formulaTokenEq:hover {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+.formulaName {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg-default);
+  letter-spacing: -0.005em;
+}
+.formulaValue {
+  font-size: 10.5px;
+  color: var(--fg-mute);
+  letter-spacing: -0.01em;
+}
+.formulaOp {
+  color: var(--fg-faint);
+  font-size: 14px;
+  padding: 0 2px;
+  font-family: ui-monospace, monospace;
+}
+.formulaDetail {
+  margin-top: 14px;
+  padding: 16px 18px;
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  min-height: 96px;
+}
+.formulaDetailEmpty {
+  color: var(--fg-mute);
+  font-size: 12.5px;
+  text-align: center;
+  padding: 14px 0;
+  font-style: italic;
+}
+.formulaDetailTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.formulaDetailName {
+  font-family: ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-fg);
+  letter-spacing: -0.01em;
+}
+.formulaDetailTag {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  color: var(--accent-fg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-glow);
+}
+.formulaDetailRule {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--fg-default);
+  padding: 9px 12px;
+  background: var(--app-elev);
+  border: 1px solid var(--softer-border);
+  border-radius: 5px;
+  margin-bottom: 10px;
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.formulaDetailDesc {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  line-height: 1.55;
+}
+
+/* Inline source-code block + syntax tokens — used by PR archetypes. */
+.astCodeBlock {
+  background: var(--app-elev);
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  padding: 14px 16px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--fg-dim);
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 4;
+  margin: 0;
+}
+.astTkClass   { color: #86efac; font-weight: 500; background: rgba(134,239,172,0.10); padding: 0 3px; border-radius: 2px; }
+.astTkFn      { color: #86efac; font-weight: 500; background: rgba(134,239,172,0.10); padding: 0 3px; border-radius: 2px; }
+.astTkId      { color: #c9cccf; background: rgba(74,222,128,0.06); padding: 0 2px; border-radius: 2px; }
+.astTkCall    { color: #9eb872; background: rgba(158,184,114,0.10); padding: 0 2px; border-radius: 2px; }
+.astTkIf      { color: #eab308; background: rgba(234,179,8,0.08); padding: 0 2px; border-radius: 2px; }
+.astTkReturn  { color: #eab308; background: rgba(234,179,8,0.08); padding: 0 2px; border-radius: 2px; }
+.astTkKeyword { color: #9298a3; background: rgba(146,152,163,0.08); padding: 0 2px; border-radius: 2px; }
+.astTkLeaf    { color: #62666d; }
+.astTkComment {
+  color: #c5503a; font-style: italic; opacity: 0.7;
+  background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(197,80,58,0.15) 3px 4px);
+  padding: 0 3px; border-radius: 2px;
+}
+
+/* PR archetypes — collapsible row per contribution type. */
+.prArchetypes {
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--app-surface);
+}
+.prArchetypeRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 60px 70px minmax(120px, 180px);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+  transition: background 80ms;
+}
+.prArchetypeRow::-webkit-details-marker { display: none; }
+.prArchetypeHead {
+  background: var(--softer-fill);
+  border-bottom: 1px solid var(--soft-border);
+  cursor: default;
+}
+.prArchetypeCard {
+  border-top: 1px solid var(--softer-border);
+}
+.prArchetypeCard:first-of-type { border-top: none; }
+.prArchetypeCard > summary:hover { background: var(--app-elev); }
+.prArchetypeCard[open] > summary { background: var(--app-elev); }
+.prArchetypeCard[open] > summary .chev { transform: rotate(90deg); }
+.prArchetypeCard .chev { transition: transform 120ms; }
+
+.prArchetypeIcon {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.prEffbar {
+  flex: 1;
+  height: 5px;
+  background: var(--app-elev);
+  border-radius: 2.5px;
+  overflow: hidden;
+  min-width: 60px;
+}
+.prEffbarFill {
+  height: 100%;
+  border-radius: 2.5px;
+}
+.prArchetypeDetail {
+  padding: 14px 16px 16px 50px;
+  background: var(--app-elev);
+  border-top: 1px solid var(--softer-border);
+}
+.prArchetypeDetail .astCodeBlock {
+  font-size: 12px;
+  padding: 12px 14px;
+}
+.prArchetypeMath {
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  padding: 12px 14px;
+  font-size: 11.5px;
+}
+.prMathRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+.prMathDivider {
+  height: 1px;
+  background: var(--soft-border);
+  margin: 6px 0 2px;
+}
+.prMathTotal {
+  font-weight: 500;
+  padding-top: 4px;
+}
+.prArchetypeNote {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(127,185,146,0.05);
+  border: 1px solid rgba(127,185,146,0.20);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.55;
+}
+.prArchetypeNoteWarn {
+  background: rgba(197,80,58,0.04);
+  border-color: rgba(197,80,58,0.22);
+}
+
+@media (max-width: 640px) {
+  .prArchetypeRow {
+    grid-template-columns: 1fr 60px;
+    gap: 8px;
+  }
+  .prArchetypeRow > :nth-child(3),
+  .prArchetypeRow > :nth-child(4),
+  .prArchetypeRow > :nth-child(5) {
+    display: none;
+  }
+  .prArchetypeDetail {
+    padding-left: 16px;
+  }
+}
+
+/* Language-weights table icons (Devicon SVG + colored-letter fallback). */
+.langIcon {
+  width: 18px; height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 1px rgba(255,255,255,0.06));
+}
+:global([data-theme='light']) .langIcon { filter: none; }
+.langIconFallback {
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, monospace;
+  font-size: 8px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  text-transform: uppercase;
+  letter-spacing: -0.5px;
+}
+:global([data-theme='light']) .langIconFallback {
+  color: rgba(255,255,255,0.95);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+}
+
+.drawerLangGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 18px;
+  row-gap: 7px;
+}
+.drawerLangRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.drawerLangName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.drawerLangPct {
+  flex-shrink: 0;
+  font-size: 11.5px;
+}
+
+@media (max-width: 430px) {
+  .drawerLangGrid {
+    grid-template-columns: 1fr;
+  }
+}

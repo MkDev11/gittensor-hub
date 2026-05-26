@@ -126,6 +126,18 @@ async function refresh(): Promise<Cached> {
   const weekAgo = now - WEEK_MS;
   const twoWeeksAgo = now - 2 * WEEK_MS;
 
+  // Day-bucket for the per-repo daily sparklines. `dayStartMs` is the UTC
+  // midnight epoch of "today"; bin index = floor((dayStart - prDayStart) / 86_400_000),
+  // valid when in [0, N-1] → most recent N days. Output arrays are
+  // oldest-first (index 0 = oldest, index N-1 = today) so the UI doesn't
+  // have to reverse. We compute both a 14-day spark (kept for back-compat)
+  // and a 30-day spark + 30-day filtered counts (merged, closed, total,
+  // active contributors) for the new 30-day activity panel.
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const todayStart = Math.floor(now / DAY_MS) * DAY_MS;
+  const THIRTY_DAYS_MS = 30 * DAY_MS;
+  const thirtyDaysAgo = now - THIRTY_DAYS_MS;
+
   interface Agg {
     totalScore: number;
     totalPrCount: number;
@@ -135,6 +147,13 @@ async function refresh(): Promise<Cached> {
     prsLastWeek: number;
     contributors: Set<string>;
     lastPrAt: number;
+    dailyPrs14d: number[];
+    // 30-day window — all use `prCreatedAt` to define the window
+    prsLast30d: number;
+    mergedLast30d: number;
+    closedLast30d: number;
+    contributors30d: Set<string>;
+    dailyPrs30d: number[];
   }
   const aggMap = new Map<string, Agg>();
   const ensure = (k: string): Agg => {
@@ -150,6 +169,12 @@ async function refresh(): Promise<Cached> {
         prsLastWeek: 0,
         contributors: new Set<string>(),
         lastPrAt: 0,
+        dailyPrs14d: new Array(14).fill(0),
+        prsLast30d: 0,
+        mergedLast30d: 0,
+        closedLast30d: 0,
+        contributors30d: new Set<string>(),
+        dailyPrs30d: new Array(30).fill(0),
       };
       aggMap.set(key, a);
     }
@@ -170,6 +195,31 @@ async function refresh(): Promise<Cached> {
     if (t > a.lastPrAt) a.lastPrAt = t;
     if (t >= weekAgo) a.prsThisWeek += 1;
     else if (t >= twoWeeksAgo) a.prsLastWeek += 1;
+    // 30-day window — filters by `prCreatedAt`, then classifies by current state.
+    // PRs created in the last 30d whose state is currently OPEN don't count
+    // toward merged or closed — they're still pending and will show up in
+    // the live open-PR count from /api/repos/metadata.
+    if (t > 0 && t >= thirtyDaysAgo) {
+      a.prsLast30d += 1;
+      if (p.mergedAt) {
+        a.mergedLast30d += 1;
+        const author = p.author || p.githubId;
+        if (author) a.contributors30d.add(author);
+      } else if (p.prState && p.prState !== 'OPEN' && p.prState !== 'open') {
+        a.closedLast30d += 1;
+      }
+    }
+    // Per-day binning for the 14-day + 30-day sparklines
+    if (t > 0) {
+      const prDayStart = Math.floor(t / DAY_MS) * DAY_MS;
+      const daysAgo = Math.floor((todayStart - prDayStart) / DAY_MS);
+      if (daysAgo >= 0 && daysAgo < 14) {
+        a.dailyPrs14d[13 - daysAgo] += 1;
+      }
+      if (daysAgo >= 0 && daysAgo < 30) {
+        a.dailyPrs30d[29 - daysAgo] += 1;
+      }
+    }
   }
 
   const repos: GtRepo[] = reposRaw.map((r) => {
@@ -199,6 +249,12 @@ async function refresh(): Promise<Cached> {
       prsLastWeek,
       trendingPct,
       lastPrAt: a?.lastPrAt ? new Date(a.lastPrAt).toISOString() : null,
+      dailyPrs14d: a?.dailyPrs14d ?? new Array(14).fill(0),
+      prsLast30d: a?.prsLast30d ?? 0,
+      mergedLast30d: a?.mergedLast30d ?? 0,
+      closedLast30d: a?.closedLast30d ?? 0,
+      contributorsLast30d: a?.contributors30d.size ?? 0,
+      dailyPrs30d: a?.dailyPrs30d ?? new Array(30).fill(0),
     };
   });
 

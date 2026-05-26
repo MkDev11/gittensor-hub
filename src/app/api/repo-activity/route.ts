@@ -51,11 +51,23 @@ function addAllowedRepo(map: Map<string, string>, fullName: string) {
 }
 
 async function loadAllowedRepos(db: ReturnType<typeof getDb>): Promise<Map<string, string>> {
-  const { repos: liveRepos } = await getLiveReposAsyncServer();
   const allowedRepos = new Map<string, string>();
-  for (const repo of liveRepos) addAllowedRepo(allowedRepos, repo.fullName);
-  const userRepos = db.prepare('SELECT full_name FROM user_repos').all() as Array<{ full_name: string }>;
-  for (const repo of userRepos) addAllowedRepo(allowedRepos, repo.full_name);
+  // Each source is independently failable — if the live-repo fetch dies
+  // or the user_repos table is missing on a stale DB, the other source
+  // still contributes. Empty map → route returns the empty-activity
+  // payload, never throws to the client.
+  try {
+    const { repos: liveRepos } = await getLiveReposAsyncServer();
+    for (const repo of liveRepos) addAllowedRepo(allowedRepos, repo.fullName);
+  } catch (err) {
+    console.error('[repo-activity] live repo fetch failed:', err instanceof Error ? err.message : err);
+  }
+  try {
+    const userRepos = db.prepare('SELECT full_name FROM user_repos').all() as Array<{ full_name: string }>;
+    for (const repo of userRepos) addAllowedRepo(allowedRepos, repo.full_name);
+  } catch (err) {
+    console.error('[repo-activity] user_repos query failed:', err instanceof Error ? err.message : err);
+  }
   return allowedRepos;
 }
 
@@ -76,18 +88,27 @@ function countOpenRows(db: ReturnType<typeof getDb>, baselines: BaselineRow[], k
     ? "i.state = 'open'"
     : "p.state = 'open' AND p.draft = 0 AND p.merged = 0";
 
-  return db
-    .prepare(
-      `WITH baselines(repo, since) AS (VALUES ${valuesSql})
-       SELECT ${alias}.repo_full_name AS repo, COUNT(*) AS cnt
-       FROM ${table} ${alias}
-       JOIN baselines b ON b.repo = ${alias}.repo_full_name
-       WHERE ${openFilter}
-         AND COALESCE(${alias}.created_at, '') > b.since
-         AND ${alias}.first_seen_at > b.since
-       GROUP BY ${alias}.repo_full_name`,
-    )
-    .all(...params) as RepoCountRow[];
+  try {
+    return db
+      .prepare(
+        `WITH baselines(repo, since) AS (VALUES ${valuesSql})
+         SELECT ${alias}.repo_full_name AS repo, COUNT(*) AS cnt
+         FROM ${table} ${alias}
+         JOIN baselines b ON b.repo = ${alias}.repo_full_name
+         WHERE ${openFilter}
+           AND COALESCE(${alias}.created_at, '') > b.since
+           AND ${alias}.first_seen_at > b.since
+         GROUP BY ${alias}.repo_full_name`,
+      )
+      .all(...params) as RepoCountRow[];
+  } catch (err) {
+    // Schema drift / unindexed scan / sqlite lock can throw here. Degrade
+    // gracefully — the whole route still renders, just without this kind's
+    // baseline counts. Production logs get the actual cause.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[repo-activity] countOpenRows(${kind}) failed: ${msg}`);
+    return [];
+  }
 }
 
 async function activityResponse(sinceInput: unknown, viewedInput: unknown) {
@@ -121,9 +142,31 @@ async function activityResponse(sinceInput: unknown, viewedInput: unknown) {
   return NextResponse.json({ since, baselines: baselinesByRepo, activity: map });
 }
 
+/** Last-resort wrapper around activityResponse — guarantees the client
+ *  always gets a structured JSON body (never a generic 500 from an
+ *  uncaught throw). The actual error is logged for diagnosis.
+ *  Returns 200 + empty-activity payload instead of 5xx so the consumer
+ *  (RepoExplorer.tsx — treats !r.ok as fatal and leaves its skeleton
+ *  spinning) unblocks the render. The `error` field is there for any
+ *  caller that wants to surface it. */
+async function safeActivityResponse(sinceInput: unknown, viewedInput: unknown) {
+  try {
+    return await activityResponse(sinceInput, viewedInput);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[repo-activity] handler crashed:', msg, err instanceof Error ? err.stack : undefined);
+    return NextResponse.json({
+      since: defaultSince(),
+      baselines: {},
+      activity: {},
+      error: msg,
+    });
+  }
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  return activityResponse(url.searchParams.get('since'), null);
+  return safeActivityResponse(url.searchParams.get('since'), null);
 }
 
 export async function POST(req: NextRequest) {
@@ -137,5 +180,5 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  return activityResponse(body.since, body.viewed_at);
+  return safeActivityResponse(body.since, body.viewed_at);
 }

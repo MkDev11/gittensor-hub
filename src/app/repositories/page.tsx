@@ -1,1141 +1,697 @@
 'use client';
 
+/* SN74 repositories explorer.
+ *
+ * Reimplemented from the `repositories.html` prototype against the live data
+ * layer (`/api/gt/repositories` for stats, `useSn74Repos()` for policy). The
+ * surface area: TAO emission headline + editable input, market bar, mobile
+ * treemap, bar inspector, leaderboard, strategy chips, card/list view, repo
+ * cards, compare tray + modal, right-side drawer, command palette, and the
+ * collapsible reference panels at the bottom (reward formula, language
+ * weights, AST token weights). */
+
 export const dynamic = 'force-dynamic';
 
-import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { PageLayout, Heading, Text, Box, TextInput, Label } from '@primer/react';
-import {
-  SearchIcon,
-  StarIcon,
-  StarFillIcon,
-  TableIcon,
-  ListUnorderedIcon,
-  TriangleDownIcon,
-  TriangleUpIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  GitPullRequestIcon,
-  GitMergeIcon,
-  ArrowDownIcon,
-  ArrowUpIcon,
-} from '@primer/octicons-react';
-import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
+import type { GtPrSummary, GtRepo, GtReposResponse } from '@/types/entities';
+import { useSn74Repos } from '@/lib/use-sn74-repos';
+import { useSession } from '@/lib/settings';
 import { isTracked as repoIsTracked, useTrackedRepos } from '@/lib/tracked-repos';
-import { formatRelativeTime, formatNumber, formatCount, formatPercent } from '@/lib/format';
-import type { GtRepo, GtPrSummary, GtReposResponse } from '@/types/entities';
+import { CardGridSkeleton, TableRowsSkeleton } from '@/components/Skeleton';
 
-type SortKey = 'weight' | 'totalScore' | 'mergedPrCount' | 'contributorCount' | 'fullName';
-type StatusFilter = 'all' | 'active' | 'inactive';
-type ViewMode = 'list' | 'grid';
+import styles from './page.module.css';
+import { buildRows, type RepoMeta } from './_lib/rows';
+import {
+  effectiveLabelMult,
+  repoDailyTAO,
+  rewardSignal,
+  type RepoRow,
+  type StrategyKey,
+} from './_lib/incentives';
+import { LABEL_COLORS, strategyChipClass } from './_lib/colors';
 
-const PAGE_SIZES = [10, 12, 25, 50, 100];
+import Dropdown from '@/components/Dropdown';
+import MarketSection, { type SelectedSeg } from './_components/MarketSection';
+import RepoCard from './_components/RepoCard';
+import RepoListRow from './_components/RepoListRow';
+import CompareTray from './_components/CompareTray';
+import CompareModal from './_components/CompareModal';
+import Drawer from './_components/Drawer';
+import Palette from './_components/Palette';
+import RefPanels from './_components/RefPanels';
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'weight', label: 'Weight' },
-  { key: 'totalScore', label: 'Total Score' },
-  { key: 'mergedPrCount', label: 'PRs' },
-  { key: 'contributorCount', label: 'Contributors' },
-  { key: 'fullName', label: 'Repository' },
+const EMPTY_GT: GtRepo[] = [];
+const EMPTY_PRS: GtPrSummary[] = [];
+
+type SortKey = 'strategy' | 'tao' | 'share' | 'velocity' | 'name';
+type ViewMode = 'card' | 'list';
+
+const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
+  { key: 'strategy', label: 'Best for strategy' },
+  { key: 'tao',      label: 'Daily TAO ↓' },
+  { key: 'share',    label: 'Share ↓' },
+  { key: 'velocity', label: 'Velocity ↓' },
+  { key: 'name',     label: 'Name (A→Z)' },
 ];
 
-function avatarUrl(owner: string): string {
-  return `https://github.com/${owner}.png?size=48`;
-}
+const STRATEGIES: Array<{ key: StrategyKey; label: string; dotClass: string }> = [
+  { key: 'none',        label: 'Show all',         dotClass: '' },
+  { key: 'bug',         label: 'Bug fixes',        dotClass: 'bug' },
+  { key: 'enhancement', label: 'Enhancements',     dotClass: 'enh' },
+  { key: 'feature',     label: 'Features',         dotClass: 'feat' },
+  { key: 'refactor',    label: 'Refactors',        dotClass: 'refact' },
+  { key: 'issue',       label: 'Issue discovery',  dotClass: 'issue' },
+];
+
+const MAX_COMPARE = 4;
 
 export default function RepositoriesPage() {
-  const { tracked, toggle } = useTrackedRepos();
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<StatusFilter>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('weight');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [view, setView] = useState<ViewMode>('list');
-  const [pageSize, setPageSize] = useState<number>(10);
-  const [page, setPage] = useState<number>(1);
+  const { repos: policyRepos } = useSn74Repos();
+  const { username } = useSession();
+  const { tracked, toggle: toggleTrackedRepo } = useTrackedRepos();
 
-  const { data, isLoading, isError } = useQuery<GtReposResponse>({
+  const { data, isLoading, isError, error } = useQuery<GtReposResponse>({
     queryKey: ['gt-repositories'],
-    queryFn: async () => {
-      const r = await fetch('/api/gt/repositories');
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
+    queryFn: async ({ signal }) => {
+      const response = await fetch('/api/gt/repositories', { signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json() as Promise<GtReposResponse>;
     },
     refetchInterval: 30_000,
     refetchIntervalInBackground: true,
   });
+  const gtRepos = data?.repos ?? EMPTY_GT;
+  // Reserved for future inline activity hints; reference to silence "unused".
+  void (data?.recentPrs ?? EMPTY_PRS);
 
-  const onSortChange = (k: SortKey) => {
-    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else {
-      setSortKey(k);
-      setSortDir('desc');
+  /* Per-repo description + language breakdown, fetched server-side via the
+   * GitHub API. Cached for an hour upstream — metadata is slow-changing. */
+  const { data: metaResp } = useQuery<{ repos: Record<string, RepoMeta> }>({
+    queryKey: ['repos-metadata'],
+    queryFn: async ({ signal }) => {
+      const r = await fetch('/api/repos/metadata', { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<{ repos: Record<string, RepoMeta> }>;
+    },
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const metadata = metaResp?.repos ?? null;
+  const metadataLoaded = metaResp != null;
+
+  /* Hydration gate: TanStack Query returns empty data on the server (no
+   * fetch) but may have warm data on the client (re-mount, navigation
+   * cache). Rendering the real `rows` immediately produces a server↔client
+   * mismatch on every stat that depends on it. Hold rows empty until after
+   * mount so the first client render matches the SSR'd HTML, then re-render
+   * with live data. */
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+
+  /* "self" repo = any SN74 repo owned by the signed-in GitHub user. Falls
+   * through to null when the user isn't a repo owner — we just don't
+   * highlight anything as "yours" then. Picks the highest-emission match
+   * if the user happens to own more than one tracked repo. */
+  const selfFullName = useMemo<string | null>(() => {
+    if (!username) return null;
+    const ownerLower = username.toLowerCase();
+    const owned = policyRepos.filter((r) => r.owner.toLowerCase() === ownerLower);
+    if (owned.length === 0) return null;
+    return owned.sort((a, b) => b.weight - a.weight)[0].fullName;
+  }, [policyRepos, username]);
+
+  /* Merge policy + stats into RepoRow[]. */
+  const rows = useMemo(
+    () =>
+      hydrated
+        ? buildRows(policyRepos, gtRepos, { selfFullName, metadata })
+        : [],
+    [policyRepos, gtRepos, hydrated, metadata, selfFullName],
+  );
+
+  /* Live SN74 daily TAO emissions, proxied from TaoMarketCap. The
+   * `/api/sn74-emission` endpoint multiplies per-UID `alpha_per_day` by
+   * the subnet's alpha-to-TAO price to give us the true on-chain
+   * emissions to UID 0 (recycle), UID 111 (treasury), and active miners.
+   * The breakdown cards (Claimable / Recycling / Treasury) read these
+   * values directly instead of deriving them from `configured_share`. */
+  interface EmissionResp {
+    totalTaoPerDay?: number;
+    minerTaoPerDay?: number;
+    validatorTaoPerDay?: number;
+    recycleTaoPerDay?: number;
+    treasuryTaoPerDay?: number;
+    /** Per-UID active-miner alpha — used as the basis for per-repo TAO
+     *  math. NOT the same as `minerTaoPerDay`, which is the headline
+     *  card value matching TaoMarketCap. */
+    activeMinerTaoPerDay?: number;
+    ownerTaoPerDay?: number;
+    minerCount?: number;
+    validatorCount?: number;
+  }
+  const { data: emissionData } = useQuery<EmissionResp>({
+    queryKey: ['sn74-emission'],
+    queryFn: async ({ signal }) => {
+      const r = await fetch('/api/sn74-emission', { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<EmissionResp>;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const totalSubnetTAO = emissionData?.totalTaoPerDay ?? 30.0;
+  const subnetTAOLoaded = emissionData?.totalTaoPerDay != null;
+  const minerTAO     = emissionData?.minerTaoPerDay ?? null;
+  const validatorTAO = emissionData?.validatorTaoPerDay ?? null;
+  const recycleTAO   = emissionData?.recycleTaoPerDay ?? null;
+  const treasuryTAO  = emissionData?.treasuryTaoPerDay ?? null;
+  const activeMinerTAO = emissionData?.activeMinerTaoPerDay ?? null;
+  const ownerTAO     = emissionData?.ownerTaoPerDay ?? null;
+  const minerCount     = emissionData?.minerCount ?? null;
+  const validatorCount = emissionData?.validatorCount ?? null;
+
+  /* The miner pool — the slice of total subnet emission that funds the
+   * Gittensor `emission_allocation` (active-miner UIDs + recycle UID 0
+   * + treasury UID 111). This is what the protocol formula
+   * `emission_share × OSS_POOL` is a fraction of, so per-repo TAO math
+   * MUST use this — not the full subnet emission (which would credit
+   * the validator portion to miners) and not `minerTaoPerDay` (which
+   * is the TaoMarketCap-style headline value that already lumps recycle
+   * + treasury in implicitly). */
+  const minerPoolTAO = useMemo(() => {
+    if (activeMinerTAO == null || recycleTAO == null || treasuryTAO == null) {
+      // Fallback while emission data is loading — approximate as half of
+      // total (since on SN74 the chain split is ~50/50 miner:validator).
+      return totalSubnetTAO / 2;
     }
-    setPage(1);
-  };
+    return activeMinerTAO + recycleTAO + treasuryTAO;
+  }, [activeMinerTAO, recycleTAO, treasuryTAO, totalSubnetTAO]);
 
-  const filtered = useMemo(() => {
-    if (!data?.repos) return [] as GtRepo[];
-    const q = query.trim().toLowerCase();
-    let list = data.repos.filter((r) => {
-      if (status === 'active' && !r.isActive) return false;
-      if (status === 'inactive' && r.isActive) return false;
-      if (q && !r.fullName.toLowerCase().includes(q)) return false;
-      return true;
+  /* `subnetTAO` (passed downstream to repoDailyTAO etc.) is the miner-pool
+   * value so per-repo TAO matches what the chain will actually emit.
+   * The headline still shows totalSubnetTAO for completeness. */
+  const subnetTAO = minerPoolTAO;
+
+  /* =========== State =========== */
+  const [strategy, setStrategy] = useState<StrategyKey>('none');
+  const [sortKey, setSortKey] = useState<SortKey>('strategy');
+  const [view, setView] = useState<ViewMode>('card');
+  const [compare, setCompare] = useState<Set<string>>(() => new Set());
+  const [drawerKey, setDrawerKey] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [selectedSeg, setSelectedSeg] = useState<SelectedSeg>(null);
+
+  /* When user picks a strategy, swap the sort to "strategy" automatically;
+   * matches the HTML's UX. */
+  const setStrategySmart = useCallback(
+    (s: StrategyKey) => {
+      setStrategy(s);
+      if (s !== 'none' && sortKey === 'share') setSortKey('strategy');
+      if (s === 'none' && sortKey === 'strategy') setSortKey('tao');
+    },
+    [sortKey],
+  );
+
+  /* Filtered + sorted rows */
+  const sortedRows = useMemo(() => {
+    let list = rows;
+    if (strategy === 'issue') list = list.filter((r) => r.issue > 0);
+    const arr = [...list];
+    if (sortKey === 'strategy' && strategy !== 'none') {
+      arr.sort((a, b) => rewardSignal(b, strategy) - rewardSignal(a, strategy));
+    } else if (sortKey === 'tao') {
+      arr.sort((a, b) => repoDailyTAO(b, subnetTAO) - repoDailyTAO(a, subnetTAO));
+    } else if (sortKey === 'velocity') {
+      arr.sort((a, b) => b.activity.merged30d - a.activity.merged30d);
+    } else if (sortKey === 'name') {
+      arr.sort((a, b) => a.fullName.toLowerCase().localeCompare(b.fullName.toLowerCase()));
+    } else {
+      arr.sort((a, b) => b.share - a.share);
+    }
+    return arr;
+  }, [rows, strategy, sortKey, subnetTAO]);
+
+  /* Best / penalized callouts (mirrors HTML's bestRepo / warnRepo logic) */
+  const { bestRepo, warnRepo } = useMemo(() => {
+    if (strategy === 'none') return { bestRepo: null as RepoRow | null, warnRepo: null as RepoRow | null };
+    if (strategy === 'issue') {
+      const best = sortedRows.find((r) => r.issue === 1) ?? sortedRows.find((r) => r.issue > 0) ?? null;
+      return { bestRepo: best, warnRepo: null };
+    }
+    const eligible = sortedRows.filter((r) => r.share > 0);
+    if (eligible.length === 0) return { bestRepo: null, warnRepo: null };
+    const best = eligible.reduce((a, b) => (rewardSignal(a, strategy) >= rewardSignal(b, strategy) ? a : b));
+    const penalized = eligible.filter((r) => effectiveLabelMult(r, strategy) < 0.5);
+    const warn = penalized.length > 0
+      ? penalized.reduce((a, b) => (effectiveLabelMult(a, strategy) <= effectiveLabelMult(b, strategy) ? a : b))
+      : null;
+    return { bestRepo: best, warnRepo: warn };
+  }, [sortedRows, strategy]);
+
+  const compareRows = useMemo(() => {
+    const byKey = new Map(rows.map((r) => [r.fullName.toLowerCase(), r]));
+    return Array.from(compare)
+      .map((k) => byKey.get(k.toLowerCase()))
+      .filter((x): x is RepoRow => Boolean(x));
+  }, [compare, rows]);
+
+  const drawerRow = useMemo(
+    () => (drawerKey ? rows.find((r) => r.fullName.toLowerCase() === drawerKey.toLowerCase()) ?? null : null),
+    [drawerKey, rows],
+  );
+
+  /* =========== Handlers =========== */
+  const toggleCompare = useCallback(
+    (full: string) => {
+      setCompare((prev) => {
+        const next = new Set(prev);
+        const key = full;
+        if (next.has(key)) {
+          next.delete(key);
+        } else {
+          if (next.size >= MAX_COMPARE) return prev;
+          next.add(key);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const removeCompare = useCallback((full: string) => {
+    setCompare((prev) => {
+      const next = new Set(prev);
+      next.delete(full);
+      return next;
     });
-    list = [...list].sort((a, b) => {
-      let cmp = 0;
-      if (sortKey === 'weight') cmp = a.weight - b.weight;
-      else if (sortKey === 'totalScore') cmp = a.totalScore - b.totalScore;
-      else if (sortKey === 'mergedPrCount') cmp = a.mergedPrCount - b.mergedPrCount;
-      else if (sortKey === 'contributorCount') cmp = a.contributorCount - b.contributorCount;
-      else if (sortKey === 'fullName') cmp = a.fullName.localeCompare(b.fullName);
-      if (cmp === 0) cmp = sortKey === 'fullName' ? 0 : a.weight - b.weight;
-      return sortDir === 'desc' ? -cmp : cmp;
-    });
-    return list;
-  }, [data, query, status, sortKey, sortDir]);
+  }, []);
 
-  const trending = useMemo(() => {
-    if (!data?.repos) return [] as GtRepo[];
-    return [...data.repos]
-      .filter((r) => r.trendingPct > 0)
-      .sort((a, b) => b.trendingPct - a.trendingPct)
-      .slice(0, 5);
-  }, [data]);
+  const clearCompare = useCallback(() => {
+    setCompare(new Set());
+    setCompareOpen(false);
+  }, []);
 
-  const topCollateral = useMemo(() => {
-    if (!data?.repos) return [] as GtRepo[];
-    return [...data.repos]
-      .filter((r) => r.collateralStaked > 0)
-      .sort((a, b) => b.collateralStaked - a.collateralStaked)
-      .slice(0, 5);
-  }, [data]);
+  const openDrawer = useCallback((full: string) => setDrawerKey(full), []);
+  const closeDrawer = useCallback(() => setDrawerKey(null), []);
 
-  const recentPrs = data?.recentPrs?.slice(0, 5) ?? [];
+  // Cmd+K toggles the palette; Esc closes any open overlay.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const pageStart = (safePage - 1) * pageSize;
-  const pageItems = filtered.slice(pageStart, pageStart + pageSize);
+  /* =========== Strategy hint =========== */
+  let strategyHint: React.ReactNode = null;
+  if (strategy === 'issue') {
+    strategyHint = (
+      <span>
+        Only <span className={`mono ${styles.textFg}`}>{sortedRows.length}</span> repo
+        {sortedRows.length === 1 ? '' : 's'} run{sortedRows.length === 1 ? 's' : ''} issue discovery.
+      </span>
+    );
+  } else if (strategy !== 'none' && bestRepo) {
+    const m = effectiveLabelMult(bestRepo, strategy);
+    const sig = (rewardSignal(bestRepo, strategy) * subnetTAO).toFixed(3);
+    const color = LABEL_COLORS[strategy]?.fg ?? 'var(--color-feat)';
+    strategyHint = (
+      <span>
+        Best: <span className="mono" style={{ color }}>{bestRepo.name}</span>{' '}
+        · ×<span className={`mono ${styles.textFg}`}>{m.toFixed(2)}</span> for{' '}
+        <span className="mono">{strategy}</span> · ~
+        <span className={`mono ${styles.textTao}`}>{sig} TAO/day</span> max signal
+      </span>
+    );
+  }
+
+  const totalReal = rows.length;
+  const isRepoLoading = !hydrated || isLoading;
+  const repoError = isError
+    ? error instanceof Error
+      ? error.message
+      : 'Failed to load repositories.'
+    : null;
+  const headingPrefix = view === 'card' ? (
+    <>
+      Add up to <span className={styles.textMine}>4 to compare</span> · click cards for full detail
+    </>
+  ) : (
+    <>
+      Click any row for full detail · use <span className={styles.textMine}>+</span> to compare
+    </>
+  );
+
+  // List view mult-column header label
+  const multHeader = strategy === 'none' ? '×Best' : strategy === 'issue' ? 'Issue %' : `×${strategy}`;
 
   return (
-    <PageLayout containerWidth="xlarge" padding="normal">
-      <PageLayout.Header>
-        <Heading sx={{ fontSize: 4, mb: 1 }}>Repositories</Heading>
-        <Text sx={{ color: 'fg.muted' }}>
-          SN74 tracked repositories — weight, scoring, and contributor activity.
-        </Text>
-      </PageLayout.Header>
-      <PageLayout.Content>
-        {/* Top three info cards */}
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: ['1fr', null, null, 'repeat(3, minmax(0, 1fr))'],
-            gap: 3,
-            mb: 3,
-          }}
+    <div
+      className={styles.scope}
+      style={{ paddingBottom: compare.size > 0 ? 80 : 24, minHeight: '100%' }}
+    >
+      <MarketSection
+        rows={rows}
+        subnetTAO={subnetTAO}
+        totalSubnetTAO={totalSubnetTAO}
+        subnetTAOLoaded={subnetTAOLoaded}
+        minerTAO={minerTAO}
+        validatorTAO={validatorTAO}
+        recycleTAO={recycleTAO}
+        treasuryTAO={treasuryTAO}
+        ownerTAO={ownerTAO}
+        minerCount={minerCount}
+        validatorCount={validatorCount}
+        selected={selectedSeg}
+        onSelect={setSelectedSeg}
+        onOpenDrawer={openDrawer}
+        onOpenPalette={() => setPaletteOpen(true)}
+      />
+
+      {/* Strategy bar */}
+      <section
+        style={{
+          padding: '14px 16px',
+          borderTop: '1px solid var(--soft-border, rgba(255,255,255,0.06))',
+          borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))',
+          background: 'var(--bg-subtle)',
+        }}
+      >
+        <div
+          className={styles.container}
+          style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}
         >
-          <InfoCard title="TRENDING THIS WEEK">
-            {trending.length === 0 ? (
-              <EmptyHint>No PR activity in the last 7 days.</EmptyHint>
-            ) : (
-              trending.map((r) => (
-                <CardRow key={r.fullName} repo={r} right={<PctBadge pct={r.trendingPct} />} />
-              ))
-            )}
-          </InfoCard>
-
-          <InfoCard title="MOST COLLATERAL STAKED">
-            {topCollateral.length === 0 ? (
-              <EmptyHint>No collateral data yet.</EmptyHint>
-            ) : (
-              topCollateral.map((r) => (
-                <CardRow
-                  key={r.fullName}
-                  repo={r}
-                  right={
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
-                        {r.collateralStaked.toFixed(1)}
-                      </Text>
-                      <Text sx={{ display: 'block', fontSize: 0, color: 'fg.muted' }}>({r.totalPrCount} PRs)</Text>
-                    </Box>
-                  }
-                />
-              ))
-            )}
-          </InfoCard>
-
-          <InfoCard title="RECENT PULL REQUESTS">
-            {recentPrs.length === 0 ? (
-              <EmptyHint>No recent PRs.</EmptyHint>
-            ) : (
-              recentPrs.map((p) => <RecentPrRow key={`${p.repository}#${p.pullRequestNumber}`} pr={p} />)
-            )}
-          </InfoCard>
-        </Box>
-
-        {/* Toolbar */}
-        <Box
-          sx={{
-            border: '1px solid',
-            borderColor: 'border.default',
-            borderRadius: 2,
-            bg: 'canvas.subtle',
-            p: 3,
-            mb: 0,
-            borderBottomLeftRadius: 0,
-            borderBottomRightRadius: 0,
-            borderBottom: 'none',
-          }}
-        >
-          <Box sx={{ display: 'flex', flexDirection: ['column', null, 'row'], alignItems: ['stretch', null, 'center'], gap: 3, flexWrap: 'wrap' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: '100%', overflowX: 'auto', pb: ['2px', null, 0] }}>
-              <StatusTab active={status === 'all'} onClick={() => { setStatus('all'); setPage(1); }} label="All" count={data?.count} />
-              <StatusTab active={status === 'active'} onClick={() => { setStatus('active'); setPage(1); }} label="Active" count={data?.activeCount} />
-              <StatusTab active={status === 'inactive'} onClick={() => { setStatus('inactive'); setPage(1); }} label="Inactive" count={data?.inactiveCount} />
-            </Box>
-
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'fg.muted', fontSize: 1 }}>
-              <Text sx={{ color: 'fg.muted' }}>Rows:</Text>
-              <Box
-                as="select"
-                value={pageSize}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(1);
-                }}
-                sx={{
-                  bg: 'canvas.default',
-                  color: 'fg.default',
-                  border: '1px solid',
-                  borderColor: 'border.default',
-                  borderRadius: 1,
-                  px: 1,
-                  py: '2px',
-                  fontSize: 1,
-                  cursor: 'pointer',
-                }}
-              >
-                {PAGE_SIZES.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </Box>
-            </Box>
-
-            <Box sx={{ flex: 1, minWidth: [0, null, 240], width: ['100%', null, 'auto'] }}>
-              <TextInput
-                leadingVisual={SearchIcon}
-                placeholder="Search or enter owner/name…"
-                value={query}
-                onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-                sx={{ width: '100%' }}
-              />
-            </Box>
-
-            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-              <ViewToggleBtn active={view === 'list'} onClick={() => setView('list')} aria="List view">
-                <ListUnorderedIcon size={14} />
-              </ViewToggleBtn>
-              <ViewToggleBtn active={view === 'grid'} onClick={() => setView('grid')} aria="Grid view">
-                <TableIcon size={14} />
-              </ViewToggleBtn>
-            </Box>
-          </Box>
-
-          {/* Card layouts have no sortable table headers, so expose sort controls there. */}
-          {(view === 'grid' || view === 'list') && (
-            <Box
-              sx={{
-                display: view === 'grid' ? 'flex' : ['flex', null, null, 'none'],
-                flexDirection: ['column', null, 'row'],
-                alignItems: ['stretch', null, 'center'],
-                justifyContent: 'flex-end',
-                gap: 2,
-                mt: 3,
-                color: 'fg.muted',
-                fontSize: 1,
-              }}
-            >
-              <Text sx={{ color: 'fg.muted' }}>Sort:</Text>
-              <Box
-                as="select"
-                value={sortKey}
-                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => { setSortKey(e.target.value as SortKey); setPage(1); }}
-                sx={{
-                  bg: 'canvas.default',
-                  color: 'fg.default',
-                  border: '1px solid',
-                  borderColor: 'border.default',
-                  borderRadius: 1,
-                  px: 2,
-                  py: '4px',
-                  fontSize: 1,
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  minWidth: [0, null, 140],
-                }}
-              >
-                {SORT_OPTIONS.map((o) => (
-                  <option key={o.key} value={o.key}>{o.label}</option>
-                ))}
-              </Box>
-              <Box
-                as="button"
-                onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
-                aria-label={sortDir === 'desc' ? 'Sort descending' : 'Sort ascending'}
-                title={sortDir === 'desc' ? 'Descending' : 'Ascending'}
-                sx={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: ['100%', null, 28],
-                  height: 28,
-                  bg: 'canvas.default',
-                  color: 'fg.default',
-                  border: '1px solid',
-                  borderColor: 'border.default',
-                  borderRadius: 1,
-                  cursor: 'pointer',
-                  '&:hover': { borderColor: 'border.muted' },
-                }}
-              >
-                {sortDir === 'desc' ? <ArrowDownIcon size={14} /> : <ArrowUpIcon size={14} />}
-              </Box>
-            </Box>
-          )}
-        </Box>
-
-        {isError && (
-          <Box sx={{ p: 3, border: '1px solid', borderColor: 'danger.emphasis', bg: 'danger.subtle', borderRadius: 2, mb: 2 }}>
-            <Text sx={{ color: 'danger.fg' }}>Failed to load repositories.</Text>
-          </Box>
-        )}
-        {isLoading && !data && (
-          view === 'grid' ? (
-            <CardGridSkeleton count={9} columns={3} cardHeight={140} />
-          ) : (
-            <TableRowsSkeleton
-              rows={12}
-              cols={[
-                { width: 24 },
-                { flex: 1 },
-                { width: 60 },
-                { width: 60 },
-                { width: 60 },
-                { width: 60 },
-                { width: 80 },
-              ]}
-            />
-          )
-        )}
-
-        {data && view === 'list' && (
-          <>
-            <Box sx={{ display: ['block', null, null, 'none'] }}>
-              <RepoCards
-                rows={pageItems}
-                startRank={pageStart + 1}
-                tracked={tracked}
-                onToggleTrack={toggle}
-              />
-            </Box>
-            <Box sx={{ display: ['none', null, null, 'block'] }}>
-              <RepoTable
-                rows={pageItems}
-                startRank={pageStart + 1}
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSort={onSortChange}
-                tracked={tracked}
-                onToggleTrack={toggle}
-              />
-            </Box>
-          </>
-        )}
-
-        {data && view === 'grid' && (
-          <RepoCards
-            rows={pageItems}
-            startRank={pageStart + 1}
-            tracked={tracked}
-            onToggleTrack={toggle}
-          />
-        )}
-
-        {data && (
-          <Box
-            sx={{
-              border: '1px solid',
-              borderColor: 'border.default',
-              borderTop: 'none',
-              borderBottomLeftRadius: 2,
-              borderBottomRightRadius: 2,
-              bg: 'canvas.subtle',
-              px: 3,
-              py: 2,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: ['space-between', null, 'flex-end'],
-              gap: 2,
-              flexWrap: 'wrap',
-              color: 'fg.muted',
-              fontSize: 1,
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--fg-subtle)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.07em',
+              fontWeight: 500,
+              flexShrink: 0,
             }}
           >
-            <Text>
-              {filtered.length === 0
-                ? '0 of 0'
-                : `${pageStart + 1}-${Math.min(pageStart + pageSize, filtered.length)} of ${filtered.length}`}
-            </Text>
-            <PageBtn onClick={() => setPage(1)} disabled={safePage <= 1} aria="First page">|‹</PageBtn>
-            <PageBtn onClick={() => setPage(safePage - 1)} disabled={safePage <= 1} aria="Previous page">
-              <ChevronLeftIcon size={14} />
-            </PageBtn>
-            <PageBtn onClick={() => setPage(safePage + 1)} disabled={safePage >= totalPages} aria="Next page">
-              <ChevronRightIcon size={14} />
-            </PageBtn>
-            <PageBtn onClick={() => setPage(totalPages)} disabled={safePage >= totalPages} aria="Last page">›|</PageBtn>
-          </Box>
-        )}
-      </PageLayout.Content>
-    </PageLayout>
-  );
-}
-
-function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderRadius: 2,
-        bg: 'canvas.subtle',
-        p: 3,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-        minWidth: 0,
-        overflow: 'hidden',
-      }}
-    >
-      <Text
-        sx={{
-          fontSize: '11px',
-          fontWeight: 600,
-          letterSpacing: '0.5px',
-          color: 'fg.muted',
-          textTransform: 'uppercase',
-          mb: 2,
-        }}
-      >
-        {title}
-      </Text>
-      <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>{children}</Box>
-    </Box>
-  );
-}
-
-function EmptyHint({ children }: { children: React.ReactNode }) {
-  return (
-    <Box sx={{ py: 3, textAlign: 'center', color: 'fg.muted', fontSize: 1 }}>{children}</Box>
-  );
-}
-
-function CardRow({ repo, right }: { repo: GtRepo; right: React.ReactNode }) {
-  return (
-    <Link href={`/repos/${repo.owner}/${repo.name}`} prefetch={false} style={{ display: 'block', minWidth: 0, textDecoration: 'none' }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          minWidth: 0,
-          py: '8px',
-          borderTop: '1px solid',
-          borderColor: 'border.muted',
-          '&:first-of-type': { borderTop: 'none' },
-          '&:hover': { bg: 'canvas.default' },
-          mx: -2,
-          px: 2,
-          borderRadius: 1,
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={avatarUrl(repo.owner)}
-          alt={repo.owner}
-          loading="lazy"
-          style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-muted)', flexShrink: 0 }}
-        />
-        <Text
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            color: 'fg.default',
-            fontWeight: 500,
-            fontSize: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {repo.fullName}
-        </Text>
-        <Box sx={{ flexShrink: 0 }}>{right}</Box>
-      </Box>
-    </Link>
-  );
-}
-
-function PctBadge({ pct }: { pct: number }) {
-  const positive = pct >= 0;
-  return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        px: 2,
-        py: '2px',
-        bg: positive ? 'success.subtle' : 'danger.subtle',
-        color: positive ? 'success.fg' : 'danger.fg',
-        border: '1px solid',
-        borderColor: positive ? 'success.muted' : 'danger.muted',
-        borderRadius: 999,
-        fontFamily: 'mono',
-        fontVariantNumeric: 'tabular-nums',
-        fontSize: 0,
-        fontWeight: 700,
-      }}
-    >
-      {formatPercent(pct, { signed: true })}
-    </Box>
-  );
-}
-
-function RecentPrRow({ pr }: { pr: GtPrSummary }) {
-  const merged = !!pr.mergedAt;
-  const Icon = merged ? GitMergeIcon : GitPullRequestIcon;
-  const color = merged ? 'done.fg' : pr.prState === 'CLOSED' ? 'danger.fg' : 'success.fg';
-  return (
-    <Link
-      href={`https://github.com/${pr.repository}/pull/${pr.pullRequestNumber}`}
-      target="_blank"
-      prefetch={false}
-      style={{ display: 'block', minWidth: 0, textDecoration: 'none' }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: 2,
-          minWidth: 0,
-          py: '8px',
-          borderTop: '1px solid',
-          borderColor: 'border.muted',
-          '&:first-of-type': { borderTop: 'none' },
-          '&:hover': { bg: 'canvas.default' },
-          mx: -2,
-          px: 2,
-          borderRadius: 1,
-        }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={avatarUrl(pr.repository.split('/')[0] ?? '')}
-          alt={pr.repository}
-          loading="lazy"
-          style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-muted)', flexShrink: 0, marginTop: 2 }}
-        />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Text sx={{ display: 'block', color: 'fg.muted', fontSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {pr.repository}
-          </Text>
-          <Box sx={{ display: 'flex', alignItems: ['flex-start', null, 'center'], gap: 1, minWidth: 0, mt: '2px' }}>
-            <Box sx={{ color, flexShrink: 0, display: 'inline-flex' }}>
-              <Icon size={12} />
-            </Box>
-            <Text
-              sx={{
-                color: 'fg.default',
-                fontWeight: 500,
-                fontSize: 1,
-                overflow: 'hidden',
-                textOverflow: ['clip', null, 'ellipsis'],
-                whiteSpace: ['normal', null, 'nowrap'],
-                overflowWrap: 'anywhere',
-                lineHeight: 1.35,
-                flex: 1,
-              }}
-              title={pr.title}
-            >
-              {pr.title}
-            </Text>
-          </Box>
-          <Text sx={{ display: ['block', null, 'none'], color: 'fg.muted', fontSize: 0, mt: 1 }}>
-            {formatRelativeTime(pr.prCreatedAt)}
-          </Text>
-        </Box>
-        <Text sx={{ display: ['none', null, 'block'], color: 'fg.muted', fontSize: 0, flexShrink: 0 }}>
-          {formatRelativeTime(pr.prCreatedAt)}
-        </Text>
-      </Box>
-    </Link>
-  );
-}
-
-function StatusTab({
-  active,
-  onClick,
-  label,
-  count,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count?: number;
-}) {
-  return (
-    <Box
-      as="button"
-      onClick={onClick}
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 1,
-        px: 2,
-        py: '4px',
-        border: '1px solid',
-        borderColor: active ? 'border.default' : 'transparent',
-        borderRadius: 1,
-        bg: active ? 'canvas.default' : 'transparent',
-        color: active ? 'fg.default' : 'fg.muted',
-        fontSize: 1,
-        fontWeight: active ? 600 : 500,
-        flexShrink: 0,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        '&:hover': { color: 'fg.default' },
-      }}
-    >
-      <Text>{label}</Text>
-      {count !== undefined && (
-        <Text sx={{ color: active ? 'fg.muted' : 'fg.subtle', fontWeight: 500 }}>{count}</Text>
-      )}
-    </Box>
-  );
-}
-
-function ViewToggleBtn({
-  active,
-  onClick,
-  aria,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  aria: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Box
-      as="button"
-      onClick={onClick}
-      aria-label={aria}
-      title={aria}
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 28,
-        height: 28,
-        border: '1px solid',
-        borderColor: active ? 'border.default' : 'transparent',
-        borderRadius: 1,
-        bg: active ? 'canvas.default' : 'transparent',
-        color: active ? 'fg.default' : 'fg.muted',
-        cursor: 'pointer',
-      }}
-    >
-      {children}
-    </Box>
-  );
-}
-
-function PageBtn({
-  onClick,
-  disabled,
-  aria,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  aria: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Box
-      as="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={aria}
-      title={aria}
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 24,
-        height: 24,
-        px: 1,
-        bg: 'transparent',
-        border: '1px solid',
-        borderColor: 'transparent',
-        borderRadius: 1,
-        color: disabled ? 'fg.subtle' : 'fg.muted',
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.4 : 1,
-        fontFamily: 'mono',
-        fontSize: 1,
-        '&:hover': disabled ? undefined : { color: 'fg.default', bg: 'canvas.default' },
-      }}
-    >
-      {children}
-    </Box>
-  );
-}
-
-function RepoTable({
-  rows,
-  startRank,
-  sortKey,
-  sortDir,
-  onSort,
-  tracked,
-  onToggleTrack,
-}: {
-  rows: GtRepo[];
-  startRank: number;
-  sortKey: SortKey;
-  sortDir: 'asc' | 'desc';
-  onSort: (k: SortKey) => void;
-  tracked: Set<string>;
-  onToggleTrack: (fullName: string) => void;
-}) {
-  return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderTop: 'none',
-        bg: 'canvas.subtle',
-        overflowX: 'auto',
-        overflowY: 'hidden',
-      }}
-    >
-      <Box as="table" sx={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 1 }}>
-        <Box as="thead" sx={{ borderBottom: '1px solid', borderColor: 'border.default' }}>
-          <Box as="tr">
-            <Th width={70}>RANK</Th>
-            <Th>REPOSITORY</Th>
-            <Th align="right" sortKey="weight" current={sortKey} dir={sortDir} onSort={onSort}>WEIGHT</Th>
-            <Th align="right" sortKey="totalScore" current={sortKey} dir={sortDir} onSort={onSort}>TOTAL SCORE</Th>
-            <Th align="right" sortKey="mergedPrCount" current={sortKey} dir={sortDir} onSort={onSort}>PRS</Th>
-            <Th align="right" sortKey="contributorCount" current={sortKey} dir={sortDir} onSort={onSort}>CONTRIBUTORS</Th>
-            <Th align="center" width={36}>★</Th>
-          </Box>
-        </Box>
-        <Box as="tbody">
-          {rows.map((r, i) => {
-            const rank = startRank + i;
-            const isTracked = repoIsTracked(tracked, r.fullName);
-            return (
-              <Box
-                as="tr"
-                key={r.fullName}
-                sx={{
-                  borderBottom: '1px solid',
-                  borderColor: 'border.muted',
-                  '&:hover': { bg: 'canvas.default' },
-                  '&:last-child': { borderBottom: 'none' },
-                  opacity: r.isActive ? 1 : 0.55,
-                }}
-              >
-                <Box as="td" sx={{ p: 2, verticalAlign: 'middle' }}>
-                  <Box
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      minWidth: 28,
-                      height: 24,
-                      px: 1,
-                      border: '1px solid',
-                      borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
-                      borderRadius: 1,
-                      fontFamily: 'mono',
-                      fontWeight: 700,
-                      fontSize: 0,
-                      color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
-                    }}
-                  >
-                    {rank}
-                  </Box>
-                </Box>
-                <Box as="td" sx={{ p: 2, verticalAlign: 'middle' }}>
-                  <Link href={`/repos/${r.owner}/${r.name}`} prefetch={false} style={{ textDecoration: 'none' }}>
-                    <Box
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 2,
-                        color: 'fg.default',
-                        '&:hover': { color: 'accent.fg' },
+            Filter by
+          </span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+            {STRATEGIES.map((s) => {
+              const active = strategy === s.key;
+              const activeCls = active ? styles[strategyChipClass(s.key)] : '';
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  className={`${styles.chip} ${activeCls}`}
+                  onClick={() => setStrategySmart(s.key)}
+                >
+                  {s.dotClass ? (
+                    <span
+                      className={styles.chipDot}
+                      style={{
+                        background:
+                          s.dotClass === 'bug'    ? 'var(--color-bug)'
+                        : s.dotClass === 'enh'    ? 'var(--color-enh)'
+                        : s.dotClass === 'feat'   ? 'var(--color-feat)'
+                        : s.dotClass === 'refact' ? 'var(--color-refact)'
+                        : s.dotClass === 'issue'  ? 'var(--color-stream-issue)'
+                        : 'var(--fg-muted)',
                       }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={avatarUrl(r.owner)}
-                        alt={r.owner}
-                        loading="lazy"
-                        style={{ width: 20, height: 20, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
-                      />
-                      <Text sx={{ fontWeight: 600 }}>{r.fullName}</Text>
-                      {!r.isActive && (
-                        <Label variant="secondary" sx={{ fontSize: '10px' }}>
-                          INACTIVE
-                        </Label>
-                      )}
-                    </Box>
-                  </Link>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                    {r.weight.toFixed(2)}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', color: r.totalScore > 0 ? 'fg.default' : 'fg.muted' }}>
-                    {formatNumber(r.totalScore)}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', color: r.mergedPrCount > 0 ? 'fg.default' : 'fg.muted' }}>
-                    {formatCount(r.mergedPrCount)}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', color: r.contributorCount > 0 ? 'fg.default' : 'fg.muted' }}>
-                    {formatCount(r.contributorCount)}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'center', verticalAlign: 'middle' }}>
-                  <Box
-                    as="button"
-                    onClick={() => onToggleTrack(r.fullName)}
-                    aria-label={isTracked ? 'Untrack' : 'Track'}
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 24,
-                      height: 24,
-                      bg: 'transparent',
-                      border: 'none',
-                      borderRadius: 1,
-                      color: isTracked ? 'attention.fg' : 'fg.muted',
-                      cursor: 'pointer',
-                      '&:hover': { bg: 'canvas.inset', color: 'attention.fg' },
-                    }}
-                  >
-                    {isTracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
-                  </Box>
-                </Box>
-              </Box>
-            );
-          })}
-          {rows.length === 0 && (
-            <Box as="tr">
-              <Box as="td" colSpan={7} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
-                No repositories match.
-              </Box>
-            </Box>
-          )}
-        </Box>
-      </Box>
-    </Box>
-  );
-}
+                    />
+                  ) : null}
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
 
-function RepoCards({
-  rows,
-  startRank,
-  tracked,
-  onToggleTrack,
-}: {
-  rows: GtRepo[];
-  startRank: number;
-  tracked: Set<string>;
-  onToggleTrack: (fullName: string) => void;
-}) {
-  return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderTop: 'none',
-        borderBottomLeftRadius: 2,
-        borderBottomRightRadius: 2,
-        bg: 'canvas.subtle',
-        p: [2, null, 3],
-      }}
-    >
-      {rows.length === 0 ? (
-        <Box sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
-          No repositories match.
-        </Box>
-      ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))',
-            gap: 3,
-          }}
-        >
-          {rows.map((r, i) => (
-            <RepoGridCard
-              key={r.fullName}
-              repo={r}
-              rank={startRank + i}
-              isTracked={repoIsTracked(tracked, r.fullName)}
-              onToggleTrack={() => onToggleTrack(r.fullName)}
+          <div className={styles.vDivider} aria-hidden />
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className={styles.hideOnMobile} style={{ fontSize: 11, color: 'var(--fg-subtle)' }}>
+              Sort
+            </span>
+            <Dropdown<SortKey>
+              value={sortKey}
+              options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+              onChange={setSortKey}
+              size="xsmall"
+              width={170}
+              ariaLabel="Sort"
+              closeOnScroll
             />
-          ))}
-        </Box>
-      )}
-    </Box>
-  );
-}
+          </label>
 
-function RepoGridCard({
-  repo,
-  rank,
-  isTracked,
-  onToggleTrack,
-}: {
-  repo: GtRepo;
-  rank: number;
-  isTracked: boolean;
-  onToggleTrack: () => void;
-}) {
-  // Weight bar fills proportionally to the max possible weight (1.0).
-  const weightPct = Math.min(100, Math.max(0, repo.weight * 100));
-  return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: 'border.default',
-        borderRadius: 2,
-        bg: 'canvas.default',
-        p: 3,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Box
-          sx={{
-            minWidth: 26,
-            height: 22,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            px: 1,
-            border: '1px solid',
-            borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
-            borderRadius: 1,
-            fontFamily: 'mono',
-            fontWeight: 700,
-            fontSize: '11px',
-            color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
-          }}
-        >
-          {rank}
-        </Box>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={avatarUrl(repo.owner)}
-          alt={repo.owner}
-          loading="lazy"
-          style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
-        />
-        <Link href={`/repos/${repo.owner}/${repo.name}`} prefetch={false} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
-          <Text
-            sx={{
-              fontWeight: 600,
-              color: 'fg.default',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              display: 'block',
-              '&:hover': { color: 'accent.fg' },
-            }}
-            title={repo.fullName}
+          <div className={styles.viewToggleGroup}>
+            <button
+              type="button"
+              className={`${styles.viewToggle} ${view === 'card' ? styles.active : ''}`}
+              onClick={() => setView('card')}
+              title="Card view"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              <span className={styles.viewToggleLabel}>Cards</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggle} ${view === 'list' ? styles.active : ''}`}
+              onClick={() => setView('list')}
+              title="List view"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+              <span className={styles.viewToggleLabel}>List</span>
+            </button>
+          </div>
+
+          {/* Search trigger — matches HTML's header search button (cmd+K hint).
+            * On mobile we render the icon-only variant; on md+ the full pill. */}
+          <button
+            type="button"
+            className={styles.searchTrigger}
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search repositories"
           >
-            {repo.fullName}
-          </Text>
-        </Link>
-        <StatusChip active={repo.isActive} />
-        <Box
-          as="button"
-          onClick={onToggleTrack}
-          aria-label={isTracked ? 'Untrack' : 'Track'}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            bg: 'transparent',
-            border: 'none',
-            borderRadius: 1,
-            color: isTracked ? 'attention.fg' : 'fg.muted',
-            cursor: 'pointer',
-            '&:hover': { color: 'attention.fg' },
-          }}
-        >
-          {isTracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
-        </Box>
-      </Box>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-3.6-3.6" />
+            </svg>
+            <span className={styles.searchTriggerLabel}>Search repos</span>
+            <span className={styles.searchTriggerKbd}>
+              <span className={styles.kbd}>⌘</span>
+              <span className={styles.kbd}>K</span>
+            </span>
+          </button>
 
-      {/* WEIGHT row — label left, value right, then full-width bar */}
-      <Box sx={{ mt: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: '6px' }}>
-          <Text sx={{ fontSize: '10px', color: 'fg.muted', fontWeight: 600, letterSpacing: '0.5px' }}>WEIGHT</Text>
-          <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-            {repo.weight.toFixed(2)}
-          </Text>
-        </Box>
-        <Box sx={{ width: '100%', height: 4, bg: 'canvas.inset', borderRadius: 999, overflow: 'hidden' }}>
-          <Box sx={{ height: '100%', bg: 'accent.emphasis' }} style={{ width: `${weightPct}%` }} />
-        </Box>
-      </Box>
+          {strategyHint ? (
+            <div
+              className={styles.hideOnMobile}
+              style={{
+                marginLeft: 'auto',
+                fontSize: 11.5,
+                color: 'var(--fg-muted)',
+                maxWidth: 400,
+                textAlign: 'right',
+              }}
+            >
+              {strategyHint}
+            </div>
+          ) : null}
+        </div>
+      </section>
 
-      {/* 3-col stats row: TOTAL SCORE / PRS / CONTRIBUTORS */}
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: '1.4fr 1fr 1.2fr',
-          gap: 1,
-          pt: 2,
-          borderTop: '1px solid',
-          borderColor: 'border.muted',
+      {/* Repo cards / list */}
+      <section style={{ padding: '20px 16px 0' }}>
+        <div className={styles.container}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 500 }}>
+                {totalReal} repositor{totalReal === 1 ? 'y' : 'ies'}
+              </div>
+              <h2 style={{ fontSize: 14.5, fontWeight: 500, marginTop: 4, lineHeight: 1.2 }}>{headingPrefix}</h2>
+            </div>
+            <span className={`tnum ${styles.textFgMute}`} style={{ fontSize: 11.5, flexShrink: 0 }}>
+              {sortedRows.length} of {totalReal}
+            </span>
+          </div>
+
+          {view === 'card' ? (
+            <div className={styles.repoGrid}>
+              {sortedRows.map((r) => (
+                <RepoCard
+                  key={r.fullName}
+                  row={r}
+                  subnetTAO={subnetTAO}
+                  strategy={strategy}
+                  isSelected={compare.has(r.fullName)}
+                  isBest={r === bestRepo}
+                  isWarn={r === warnRepo}
+                  isTracked={repoIsTracked(tracked, r.fullName)}
+                  metadataLoaded={metadataLoaded}
+                  onOpen={() => openDrawer(r.fullName)}
+                  onToggleCompare={() => toggleCompare(r.fullName)}
+                  onToggleTrack={() => toggleTrackedRepo(r.fullName)}
+                />
+              ))}
+              {isRepoLoading ? (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <CardGridSkeleton count={6} columns={3} cardHeight={220} />
+                </div>
+              ) : repoError ? (
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    padding: 32,
+                    textAlign: 'center',
+                    fontSize: 13,
+                    color: 'var(--danger-fg)',
+                    border: '1px dashed var(--danger-subtle)',
+                    borderRadius: 8,
+                  }}
+                >
+                  Failed to load repositories: {repoError}
+                </div>
+              ) : sortedRows.length === 0 ? (
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    padding: 32,
+                    textAlign: 'center',
+                    fontSize: 13,
+                    color: 'var(--fg-subtle)',
+                    border: '1px dashed var(--soft-border, rgba(255,255,255,0.06))',
+                    borderRadius: 8,
+                  }}
+                >
+                  No repositories match the current filter.
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div>
+              <div className={styles.repoList}>
+                <div className={styles.repoListHeader}>
+                  <span />
+                  <span>Repository</span>
+                  <span style={{ textAlign: 'right' }}>TAO/day</span>
+                  <span className={styles.listColMult} style={{ textAlign: 'right' }}>{multHeader}</span>
+                  <span className={styles.listColStream}>Stream</span>
+                  <span className={styles.listColLangs}>Languages</span>
+                  {/* Activity group (30d) — only the leftmost column carries the
+                    * qualifier; the rate + submissions columns inherit it. */}
+                  <span className={styles.listColAct} style={{ textAlign: 'right' }} title="Merged PRs in the last 30 days.">
+                    Merged <span style={{ color: 'var(--border-strong)', fontWeight: 400 }}>(30d)</span>
+                  </span>
+                  <span className={styles.listColRate} style={{ textAlign: 'right' }} title="Merged ÷ (merged + closed) over the last 30 days.">
+                    Merge rate
+                  </span>
+                  <span className={styles.listColSpark} style={{ textAlign: 'right' }} title="PRs opened per day (last 30 days).">
+                    Submissions
+                  </span>
+                </div>
+                <div>
+                  {sortedRows.map((r) => (
+                    <RepoListRow
+                      key={r.fullName}
+                      row={r}
+                      subnetTAO={subnetTAO}
+                      strategy={strategy}
+                      isSelected={compare.has(r.fullName)}
+                      isBest={r === bestRepo}
+                      isWarn={r === warnRepo}
+                      isTracked={repoIsTracked(tracked, r.fullName)}
+                      metadataLoaded={metadataLoaded}
+                      onOpen={() => openDrawer(r.fullName)}
+                      onToggleCompare={() => toggleCompare(r.fullName)}
+                      onToggleTrack={() => toggleTrackedRepo(r.fullName)}
+                    />
+                  ))}
+                  {isRepoLoading ? (
+                    <TableRowsSkeleton
+                      rows={8}
+                      rowHeight={58}
+                      px={14}
+                      cols={[
+                        { width: 48 },
+                        { flex: 1 },
+                        { width: 88 },
+                        { width: 64 },
+                        { width: 90 },
+                        { flex: 1 },
+                        { width: 52 },
+                        { width: 48 },
+                      ]}
+                    />
+                  ) : repoError ? (
+                    <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--danger-fg)' }}>
+                      Failed to load repositories: {repoError}
+                    </div>
+                  ) : sortedRows.length === 0 ? (
+                    <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--fg-subtle)' }}>
+                      No repositories match the current filter.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <RefPanels />
+
+      <CompareTray
+        rows={compareRows}
+        subnetTAO={subnetTAO}
+        onRemove={removeCompare}
+        onClear={clearCompare}
+        onOpen={() => setCompareOpen(true)}
+      />
+
+      <CompareModal
+        open={compareOpen}
+        repos={compareRows}
+        subnetTAO={subnetTAO}
+        strategy={strategy}
+        onClose={() => setCompareOpen(false)}
+        onRemove={(full) => {
+          removeCompare(full);
+          // If we drop below 2 repos, the modal has nothing to compare.
+          if (compare.size <= 2) setCompareOpen(false);
         }}
-      >
-        <GridStat label="TOTAL SCORE" value={formatNumber(repo.totalScore)} muted={repo.totalScore === 0} />
-        <GridStat label="PRS" value={formatCount(repo.mergedPrCount)} muted={repo.mergedPrCount === 0} />
-        <GridStat label="CONTRIBUTORS" value={formatCount(repo.contributorCount)} muted={repo.contributorCount === 0} />
-      </Box>
-    </Box>
-  );
-}
+      />
 
-function GridStat({ label, value, muted }: { label: string; value: string; muted: boolean }) {
-  return (
-    <Box>
-      <Text sx={{ display: 'block', fontSize: '10px', letterSpacing: '0.5px', color: 'fg.muted', fontWeight: 600, mb: '2px' }}>
-        {label}
-      </Text>
-      <Text
-        sx={{
-          fontFamily: 'mono',
-          fontVariantNumeric: 'tabular-nums',
-          fontWeight: 700,
-          color: muted ? 'fg.muted' : 'fg.default',
-          fontSize: 2,
-        }}
-      >
-        {value}
-      </Text>
-    </Box>
-  );
-}
+      <Drawer
+        open={drawerRow != null}
+        row={drawerRow}
+        subnetTAO={subnetTAO}
+        isInCompare={drawerRow != null && compare.has(drawerRow.fullName)}
+        metadataLoaded={metadataLoaded}
+        onClose={closeDrawer}
+        onToggleCompare={(full) => toggleCompare(full)}
+      />
 
-function StatusChip({ active }: { active: boolean }) {
-  return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        px: 2,
-        py: '2px',
-        borderRadius: 1,
-        bg: active ? 'success.subtle' : 'neutral.subtle',
-        color: active ? 'success.fg' : 'fg.muted',
-        border: '1px solid',
-        borderColor: active ? 'success.muted' : 'border.default',
-        fontSize: '10px',
-        fontWeight: 700,
-        letterSpacing: '0.5px',
-        flexShrink: 0,
-      }}
-    >
-      {active ? 'ACTIVE' : 'INACTIVE'}
-    </Box>
-  );
-}
-
-function Th({
-  children,
-  align = 'left',
-  width,
-  sortKey,
-  current,
-  dir,
-  onSort,
-}: {
-  children?: React.ReactNode;
-  align?: 'left' | 'right' | 'center';
-  width?: number;
-  sortKey?: SortKey;
-  current?: SortKey;
-  dir?: 'asc' | 'desc';
-  onSort?: (k: SortKey) => void;
-}) {
-  const isSortable = !!sortKey && !!onSort;
-  const active = isSortable && current === sortKey;
-  return (
-    <Box
-      as="th"
-      onClick={isSortable && sortKey ? () => onSort!(sortKey) : undefined}
-      sx={{
-        p: 2,
-        textAlign: align,
-        width,
-        fontWeight: 600,
-        fontSize: '11px',
-        color: active ? 'fg.default' : 'fg.muted',
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px',
-        whiteSpace: 'nowrap',
-        cursor: isSortable ? 'pointer' : 'default',
-        userSelect: 'none',
-        '&:hover': isSortable ? { color: 'fg.default' } : undefined,
-      }}
-    >
-      <Box
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 1,
-          justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
-        }}
-      >
-        {active && (dir === 'desc' ? <TriangleDownIcon size={12} /> : <TriangleUpIcon size={12} />)}
-        {children}
-      </Box>
-    </Box>
+      <Palette
+        open={paletteOpen}
+        rows={rows}
+        subnetTAO={subnetTAO}
+        onClose={() => setPaletteOpen(false)}
+        onSelect={(full) => openDrawer(full)}
+      />
+    </div>
   );
 }

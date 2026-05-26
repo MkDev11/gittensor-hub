@@ -294,6 +294,13 @@ export function getDb(): Database.Database {
   if (!haveCol('issue_body_links_backfilled_at')) {
     db.exec('ALTER TABLE repo_meta ADD COLUMN issue_body_links_backfilled_at TEXT');
   }
+  // Marker for backfillPrIssueLinksIfNeeded — set on first successful
+  // backfill so a repo with legitimately zero linked issues doesn't
+  // get re-scanned on every request (existingCount === 0 alone isn't
+  // enough to distinguish "never ran" from "ran, found nothing").
+  if (!haveCol('pr_issue_links_backfilled_at')) {
+    db.exec('ALTER TABLE repo_meta ADD COLUMN pr_issue_links_backfilled_at TEXT');
+  }
 
   const repoWeightsCols = db.prepare('PRAGMA table_info(repo_weights)').all() as Array<{ name: string }>;
   if (!repoWeightsCols.some((c) => c.name === 'config_json')) {

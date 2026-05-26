@@ -279,20 +279,103 @@ export async function refreshIssueLinkedPrsIfStale(
   return p;
 }
 
-/**
- * One-time backfill of `pr_issue_links` for a repo. Cheap subsequent calls
- * because the work is gated on the table being empty for that repo. Returns
- * the number of link rows now present.
- */
+/** Per-repo in-flight gate so concurrent cold requests don't each schedule
+ *  their own backfill (which would queue serially on the better-sqlite3
+ *  writer connection and amplify the event-loop stall). */
+const inFlightLinksBackfill = new Set<string>();
+
+/** Defer-and-fire-and-forget backfill of `pr_issue_links`. Called from
+ *  request handlers (8 routes) but never blocks the request path: the
+ *  heavy synchronous work (load all pulls, regex-extract every body,
+ *  write links in a tx) is moved off the current event-loop tick via
+ *  setImmediate so the route returns immediately. Was previously
+ *  blocking inline — for repos with hundreds of PRs the synchronous
+ *  load-all-pulls + regex + writer transaction could stall the event
+ *  loop long enough for Cloudflare to 524 (>100s) at the edge before
+ *  the route ever responded.
+ *
+ *  Returns the current `pr_issue_links` count for this repo (0 means
+ *  "backfill scheduled, retry shortly"). Callers don't consume the
+ *  return value today, but it preserves the original signature so the
+ *  8 existing call sites need no changes.
+ *
+ *  KNOWN TRADEOFFS (acceptable vs the previous 524, but worth tracking):
+ *
+ *  1. First-request emptiness: the FIRST cold-cache request per repo
+ *     returns empty linked-PR / linked-issue enrichment. Subsequent
+ *     requests (after the deferred backfill commits) see the full
+ *     data. For `/api/repos/[owner]/[name]/issues` this is fine — the
+ *     skeleton renders empty briefly then auto-refetches. For
+ *     `/api/repos/[owner]/[name]/issues-meta` this is louder because
+ *     `state_counts.completed` depends on the JOIN being populated;
+ *     until backfill commits, Completed issues are bucketed as
+ *     Not-planned. Self-heals in ~1 polling interval (15s). A future
+ *     fix could add `awaitBackfill(repo, timeoutMs)` for callers that
+ *     need correctness over latency.
+ *
+ *  2. Second-request blocking: better-sqlite3 transactions are
+ *     synchronous; once the deferred backfill starts running, OTHER
+ *     in-flight requests still block on the event loop until the tx
+ *     commits. For very large repos the backfill itself could still
+ *     exceed Cloudflare's 100s. Future fix would chunk the
+ *     transaction to commit in smaller batches with setImmediate
+ *     yields between batches. */
 export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
   // Hot-path gate uses the read connection so it doesn't queue behind any
-  // ongoing writer transactions in the poller.
-  const existingCount = (getReadDb()
+  // ongoing writer transactions in the poller. Two-part check:
+  //   - existingCount > 0   → links exist, fast hot path
+  //   - completedAt is set  → backfill ran successfully (even if it
+  //                            wrote zero links because the repo
+  //                            legitimately has none). Without this
+  //                            marker, "linkless" repos would
+  //                            re-trigger the full PR scan on every
+  //                            single request.
+  const readDb = getReadDb();
+  const existingCount = (readDb
     .prepare(`SELECT COUNT(*) AS c FROM pr_issue_links WHERE repo_full_name = ?`)
     .get(repoFullName) as { c: number }).c;
   if (existingCount > 0) return existingCount;
-  const db = getDb();
+  const completedAt = (readDb
+    .prepare('SELECT pr_issue_links_backfilled_at FROM repo_meta WHERE full_name = ?')
+    .get(repoFullName) as { pr_issue_links_backfilled_at: string | null } | undefined)
+    ?.pr_issue_links_backfilled_at;
+  if (completedAt) return 0;
 
+  // Cold path: schedule the backfill OFF the request path.
+  if (!inFlightLinksBackfill.has(repoFullName)) {
+    inFlightLinksBackfill.add(repoFullName);
+    setImmediate(() => {
+      try {
+        runPrIssueLinksBackfill(repoFullName);
+        // Persistent marker so subsequent requests don't re-schedule
+        // when the repo legitimately has zero linked issues.
+        getDb()
+          .prepare(
+            `INSERT INTO repo_meta (full_name, pr_issue_links_backfilled_at)
+             VALUES (?, ?)
+             ON CONFLICT(full_name) DO UPDATE SET pr_issue_links_backfilled_at = excluded.pr_issue_links_backfilled_at`,
+          )
+          .run(repoFullName, new Date().toISOString());
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[refresh] backfillPrIssueLinks(${repoFullName}) failed:`, msg);
+        // Intentionally do NOT write the completed marker on failure
+        // — the next request should retry rather than treat a failed
+        // backfill as "ran, found nothing".
+      } finally {
+        inFlightLinksBackfill.delete(repoFullName);
+      }
+    });
+  }
+  return 0;
+}
+
+/** The actual blocking backfill body — separated so it can be invoked
+ *  from the deferred path (setImmediate above) and from any future
+ *  caller that genuinely wants to block until it's done (poller,
+ *  migrations, tests). */
+function runPrIssueLinksBackfill(repoFullName: string): number {
+  const db = getDb();
   const pulls = db
     .prepare(`SELECT number, title, body FROM pulls WHERE repo_full_name = ?`)
     .all(repoFullName) as Array<{ number: number; title: string; body: string | null }>;
