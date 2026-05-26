@@ -435,7 +435,9 @@ function minerKey(m: RepoMiner): string {
 }
 
 const TOP_ACTIVE_MINERS_LIMIT = 5;
-const MAX_DOMINANT_MINER_TILE_SHARE = 0.64;
+const MAX_DOMINANT_MINER_TILE_SHARE = 0.58;
+const MIN_INELIGIBLE_TILE_POOL = 0.2;
+const MAX_INELIGIBLE_TILE_POOL = 0.32;
 
 function repoWorkScore(m: RepoMiner): number {
   return Math.max(
@@ -450,26 +452,69 @@ function tileScale(value: number): number {
   return Math.pow(Math.max(value, 0), 0.35);
 }
 
-function minerTileWeight(m: RepoMiner, topEligibleScore: number, hasEligibleMiners: boolean): number {
+function eligibleTileUnit(m: RepoMiner, topEligibleScore: number): number {
   const finalScore = Math.max(m.score ?? 0, 0);
   const eligibleFloor = 3.2;
   const topEligibleUnit = Math.max(tileScale(topEligibleScore), eligibleFloor);
-  if (m.isEligible === true) {
-    return Math.max(tileScale(finalScore), topEligibleUnit * 0.72, eligibleFloor);
-  }
+  return Math.max(tileScale(finalScore), topEligibleUnit * 0.72, eligibleFloor);
+}
 
+function ineligibleTileUnit(m: RepoMiner): number {
   const baseRepoScore = Math.max(
     m.baseScore ?? 0,
-    finalScore,
+    m.score ?? 0,
     0.15,
   );
-  if (!hasEligibleMiners) return Math.max(tileScale(baseRepoScore), 0.75);
+  return Math.max(tileScale(baseRepoScore), 0.75);
+}
 
-  // Keep historical/ineligible miners visible, but visually subordinate to
-  // every eligible tile in the top-five set, even when the eligible miner's
-  // current repo score is zero and the historical base scores are large.
-  const damped = tileScale(baseRepoScore) * 0.22;
-  return Math.min(Math.max(damped, 0.35), topEligibleUnit * 0.42);
+function distributeMinerPool(
+  miners: RepoMiner[],
+  pool: number,
+  unitFor: (m: RepoMiner) => number,
+): Array<{ w: number; data: RepoMiner }> {
+  if (miners.length === 0 || pool <= 0) return [];
+  const units = miners.map((miner) => Math.max(unitFor(miner), 0.72));
+  const total = units.reduce((sum, unit) => sum + unit, 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    const even = pool / miners.length;
+    return miners.map((miner) => ({ w: even, data: miner }));
+  }
+  return miners.map((miner, i) => ({ w: (units[i] / total) * pool, data: miner }));
+}
+
+function buildMinerTileWeights(miners: RepoMiner[]): Array<{ w: number; data: RepoMiner }> {
+  const eligible = miners.filter((m) => m.isEligible);
+  const ineligible = miners.filter((m) => !m.isEligible);
+
+  if (eligible.length === 0) {
+    return distributeMinerPool(ineligible, 1, ineligibleTileUnit);
+  }
+  if (ineligible.length === 0) {
+    const topEligibleScore = Math.max(0, ...eligible.map((m) => m.score ?? 0));
+    return distributeMinerPool(eligible, 1, (m) => eligibleTileUnit(m, topEligibleScore));
+  }
+
+  const topEligibleScore = Math.max(0, ...eligible.map((m) => m.score ?? 0));
+  const eligibleUnits = eligible.map((m) => eligibleTileUnit(m, topEligibleScore));
+  const ineligibleUnits = ineligible.map(ineligibleTileUnit);
+  const eligibleTotal = eligibleUnits.reduce((sum, unit) => sum + unit, 0);
+  const ineligibleTotal = ineligibleUnits.reduce((sum, unit) => sum + unit, 0);
+  const smallestEligibleShare = eligibleTotal > 0 ? Math.min(...eligibleUnits) / eligibleTotal : 1;
+  const largestIneligibleShare = ineligibleTotal > 0 ? Math.max(...ineligibleUnits) / ineligibleTotal : 1;
+  const ineligibleShareCap =
+    (smallestEligibleShare * 0.86) / (largestIneligibleShare + smallestEligibleShare * 0.86);
+  const requestedIneligiblePool = Math.min(
+    MAX_INELIGIBLE_TILE_POOL,
+    Math.max(MIN_INELIGIBLE_TILE_POOL, ineligible.length * 0.11),
+  );
+  const ineligiblePool = Math.min(requestedIneligiblePool, ineligibleShareCap);
+  const eligiblePool = 1 - ineligiblePool;
+
+  return [
+    ...distributeMinerPool(eligible, eligiblePool, (m) => eligibleTileUnit(m, topEligibleScore)),
+    ...distributeMinerPool(ineligible, ineligiblePool, ineligibleTileUnit),
+  ];
 }
 
 function capDominantMinerTile<T>(items: Array<{ w: number; data: T }>): Array<{ w: number; data: T }> {
@@ -678,14 +723,8 @@ function MinerTreemap({
   const W = isNarrow ? 600 : 1000;
   const H = isNarrow ? 990 : 560;
   const tiles = useMemo(() => {
-    const eligibleMiners = miners.filter((m) => m.isEligible);
-    const topEligibleScore = Math.max(0, ...eligibleMiners.map((m) => m.score ?? 0));
-    const weightedMiners = miners.map((m) => ({
-      w: minerTileWeight(m, topEligibleScore, eligibleMiners.length > 0),
-      data: m,
-    }));
     return squarify(
-      capDominantMinerTile(weightedMiners),
+      capDominantMinerTile(buildMinerTileWeights(miners)),
       0,
       0,
       W,
