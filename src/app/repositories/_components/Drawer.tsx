@@ -435,6 +435,7 @@ function minerKey(m: RepoMiner): string {
 }
 
 const TOP_ACTIVE_MINERS_LIMIT = 5;
+const MAX_DOMINANT_MINER_TILE_SHARE = 0.64;
 
 function repoWorkScore(m: RepoMiner): number {
   return Math.max(
@@ -469,6 +470,23 @@ function minerTileWeight(m: RepoMiner, topEligibleScore: number, hasEligibleMine
   // current repo score is zero and the historical base scores are large.
   const damped = tileScale(baseRepoScore) * 0.22;
   return Math.min(Math.max(damped, 0.35), topEligibleUnit * 0.42);
+}
+
+function capDominantMinerTile<T>(items: Array<{ w: number; data: T }>): Array<{ w: number; data: T }> {
+  if (items.length < 2) return items;
+  const total = items.reduce((sum, item) => sum + item.w, 0);
+  if (!Number.isFinite(total) || total <= 0) return items;
+
+  let maxIndex = 0;
+  for (let i = 1; i < items.length; i++) {
+    if (items[i].w > items[maxIndex].w) maxIndex = i;
+  }
+
+  const rest = total - items[maxIndex].w;
+  if (rest <= 0 || items[maxIndex].w / total <= MAX_DOMINANT_MINER_TILE_SHARE) return items;
+
+  const cappedMax = (MAX_DOMINANT_MINER_TILE_SHARE / (1 - MAX_DOMINANT_MINER_TILE_SHARE)) * rest;
+  return items.map((item, i) => (i === maxIndex ? { ...item, w: cappedMax } : item));
 }
 
 function useNarrowTreemap(): boolean {
@@ -636,7 +654,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
           </span>
         </span>
         <span style={{ fontStyle: 'italic' }}>
-          Top five only · tile size follows repo score
+          Top five only · tile size follows repo score, capped for readability
         </span>
       </div>
     </div>
@@ -662,8 +680,12 @@ function MinerTreemap({
   const tiles = useMemo(() => {
     const eligibleMiners = miners.filter((m) => m.isEligible);
     const topEligibleScore = Math.max(0, ...eligibleMiners.map((m) => m.score ?? 0));
+    const weightedMiners = miners.map((m) => ({
+      w: minerTileWeight(m, topEligibleScore, eligibleMiners.length > 0),
+      data: m,
+    }));
     return squarify(
-      miners.map((m) => ({ w: minerTileWeight(m, topEligibleScore, eligibleMiners.length > 0), data: m })),
+      capDominantMinerTile(weightedMiners),
       0,
       0,
       W,
