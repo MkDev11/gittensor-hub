@@ -21,6 +21,22 @@ const SORT_COLUMN: Record<SortKey, string> = {
   state: '__state_rank__',
 };
 
+/** Empty response shape — keep in sync with the success shape below so
+ *  the consumer (RepoExplorer.tsx) renders an empty pulls list rather
+ *  than getting stuck on its skeleton. */
+function emptyPullsResponse(repo: string, errorMsg?: string) {
+  return NextResponse.json({
+    repo,
+    count: 0,
+    state_counts: { open: 0, draft: 0, merged: 0, closed: 0 },
+    last_fetch: null,
+    last_error: errorMsg ?? null,
+    pulls: [],
+    linked_issues_by_pull: {},
+    ...(errorMsg ? { error: errorMsg } : {}),
+  });
+}
+
 export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ owner: string; name: string }> }
@@ -28,6 +44,20 @@ export async function GET(
   const params = await ctx.params;
   const { owner, name } = params;
   const full = `${owner}/${name}`;
+  try {
+    return await getPullsImpl(req, full);
+  } catch (err) {
+    // Catch-all: any uncaught throw (schema drift, missing column, DB
+    // lock, external API death) becomes a 200 + empty payload instead
+    // of a 500. The skeleton on the consumer (RepoExplorer.tsx:1041
+    // throws on !r.ok) unblocks; production logs get the actual stack.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[pulls] handler crashed for ${full}: ${msg}`, err instanceof Error ? err.stack : undefined);
+    return emptyPullsResponse(full, msg);
+  }
+}
+
+async function getPullsImpl(req: NextRequest, full: string) {
 
   // Poller handles refresh on its own cadence — see the same note in the
   // /issues route for why we don't call refresh from request handlers.
@@ -165,31 +195,40 @@ export async function GET(
     Array<{ number: number; title: string; state: string; state_reason: string | null; author_login: string | null }>
   > = {};
   if (prNumbers.length > 0) {
-    const placeholders = prNumbers.map(() => '?').join(',');
-    const linkRows = db
-      .prepare(
-        `SELECT l.pr_number, i.number AS issue_number, i.title, i.state, i.state_reason, i.author_login
-         FROM pr_issue_links l
-         JOIN issues i ON i.repo_full_name = l.repo_full_name AND i.number = l.issue_number
-         WHERE l.repo_full_name = ? AND l.pr_number IN (${placeholders})`,
-      )
-      .all(full, ...prNumbers) as Array<{
-        pr_number: number;
-        issue_number: number;
-        title: string;
-        state: string;
-        state_reason: string | null;
-        author_login: string | null;
-      }>;
-    for (const lr of linkRows) {
-      if (!linked_issues_by_pull[lr.pr_number]) linked_issues_by_pull[lr.pr_number] = [];
-      linked_issues_by_pull[lr.pr_number].push({
-        number: lr.issue_number,
-        title: lr.title,
-        state: lr.state,
-        state_reason: lr.state_reason,
-        author_login: lr.author_login,
-      });
+    // Linked-issues enrichment is per-PR-page nice-to-have, NOT load-
+    // bearing for the list render. Wrap in try/catch so a missing
+    // `pr_issue_links` table, schema drift on the JOIN, or even an
+    // intermittent lock leaves the PR list intact (just without
+    // sidebar issue chips).
+    try {
+      const placeholders = prNumbers.map(() => '?').join(',');
+      const linkRows = db
+        .prepare(
+          `SELECT l.pr_number, i.number AS issue_number, i.title, i.state, i.state_reason, i.author_login
+           FROM pr_issue_links l
+           JOIN issues i ON i.repo_full_name = l.repo_full_name AND i.number = l.issue_number
+           WHERE l.repo_full_name = ? AND l.pr_number IN (${placeholders})`,
+        )
+        .all(full, ...prNumbers) as Array<{
+          pr_number: number;
+          issue_number: number;
+          title: string;
+          state: string;
+          state_reason: string | null;
+          author_login: string | null;
+        }>;
+      for (const lr of linkRows) {
+        if (!linked_issues_by_pull[lr.pr_number]) linked_issues_by_pull[lr.pr_number] = [];
+        linked_issues_by_pull[lr.pr_number].push({
+          number: lr.issue_number,
+          title: lr.title,
+          state: lr.state,
+          state_reason: lr.state_reason,
+          author_login: lr.author_login,
+        });
+      }
+    } catch (err) {
+      console.error(`[pulls] linked-issues join failed for ${full}: ${err instanceof Error ? err.message : err}`);
     }
   }
 
