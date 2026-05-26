@@ -4,25 +4,58 @@ import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
 
 export const dynamic = 'force-dynamic';
 
-const PRS_URL = 'https://api.gittensor.io/prs';
 const MINERS_URL = 'https://api.gittensor.io/miners';
 const REPOS_URL = 'https://api.gittensor.io/dash/repos';
+const REPO_EVALS_URL_BASE = 'https://api.gittensor.io/repos';
 const TTL_MS = 30_000;
-const TOP_MINERS_LIMIT = 5;
-
-interface UpstreamPr {
-  repository: string;
-  author?: string | null;
-  githubId?: string | null;
-  mergedAt: string | null;
-  score?: string | number | null;
-}
+const TOP_ISSUE_DISCOVERY_LIMIT = 5;
 
 interface UpstreamMiner {
   id: string;
   githubUsername: string;
   githubId?: string | null;
   totalScore?: string | number | null;
+  uid?: string | number | null;
+}
+
+interface UpstreamRepoMiner {
+  id?: string | number | null;
+  uid?: string | number | null;
+  repositoryFullName?: string | null;
+  repository_full_name?: string | null;
+  githubUsername?: string | null;
+  github_username?: string | null;
+  githubId?: string | number | null;
+  github_id?: string | number | null;
+  credibility?: string | number | null;
+  repoCredibility?: string | number | null;
+  repo_credibility?: string | number | null;
+  prCredibility?: string | number | null;
+  pr_credibility?: string | number | null;
+  baseTotalScore?: string | number | null;
+  base_total_score?: string | number | null;
+  totalScore?: string | number | null;
+  total_score?: string | number | null;
+  totalCollateralScore?: string | number | null;
+  total_collateral_score?: string | number | null;
+  totalOpenPrs?: string | number | null;
+  total_open_prs?: string | number | null;
+  totalClosedPrs?: string | number | null;
+  total_closed_prs?: string | number | null;
+  totalMergedPrs?: string | number | null;
+  total_merged_prs?: string | number | null;
+  totalPrs?: string | number | null;
+  total_prs?: string | number | null;
+  isEligible?: boolean | null;
+  is_eligible?: boolean | null;
+  failedReason?: string | null;
+  failed_reason?: string | null;
+  alphaPerDay?: string | number | null;
+  alpha_per_day?: string | number | null;
+  taoPerDay?: string | number | null;
+  tao_per_day?: string | number | null;
+  usdPerDay?: string | number | null;
+  usd_per_day?: string | number | null;
 }
 
 interface UpstreamRepo {
@@ -34,7 +67,6 @@ interface UpstreamRepo {
 
 interface CachedShared {
   fetched_at: number;
-  prs: UpstreamPr[];
   miners: UpstreamMiner[];
   issueDiscoveryShareByRepo: Map<string, number>;
   ossRankByGithubId: Map<string, number>;
@@ -73,8 +105,7 @@ function issueDiscoveryReason(row: {
 }
 
 async function refresh(): Promise<CachedShared> {
-  const [prs, miners, repos] = await Promise.all([
-    fetchJson<UpstreamPr[]>(PRS_URL),
+  const [miners, repos] = await Promise.all([
     fetchJson<UpstreamMiner[]>(MINERS_URL),
     fetchJson<UpstreamRepo[]>(REPOS_URL),
   ]);
@@ -88,7 +119,7 @@ async function refresh(): Promise<CachedShared> {
   const ossRanked = [...miners].sort((a, b) => num(b.totalScore) - num(a.totalScore));
   const ossRankByGithubId = new Map<string, number>();
   ossRanked.forEach((m, i) => { if (m.githubId) ossRankByGithubId.set(m.githubId, i + 1); });
-  const next: CachedShared = { fetched_at: Date.now(), prs, miners, issueDiscoveryShareByRepo, ossRankByGithubId };
+  const next: CachedShared = { fetched_at: Date.now(), miners, issueDiscoveryShareByRepo, ossRankByGithubId };
   cache = next;
   return next;
 }
@@ -100,12 +131,87 @@ async function getShared(): Promise<CachedShared> {
   return inFlight;
 }
 
+const repoMinersCache = new Map<string, { fetched_at: number; rows: UpstreamRepoMiner[] }>();
+const repoMinersInFlight = new Map<string, Promise<UpstreamRepoMiner[]>>();
+
+async function fetchRepoMiners(fullName: string): Promise<UpstreamRepoMiner[]> {
+  const key = fullName.toLowerCase();
+  const now = Date.now();
+  const cached = repoMinersCache.get(key);
+  if (cached && now - cached.fetched_at < TTL_MS) return cached.rows;
+  const existing = repoMinersInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const r = await fetch(`${REPO_EVALS_URL_BASE}/${encodeURIComponent(fullName)}/miners`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!r.ok) throw new Error(`upstream repo miners ${fullName} ${r.status}`);
+    const raw = (await r.json()) as unknown;
+    const rows = Array.isArray(raw)
+      ? raw
+      : (raw && typeof raw === 'object' && Array.isArray((raw as { miners?: unknown }).miners))
+        ? ((raw as { miners: unknown[] }).miners)
+        : [];
+    const typedRows = rows
+      .filter((row): row is UpstreamRepoMiner => Boolean(row) && typeof row === 'object')
+      .filter((row) => {
+        const rowRepo = repoNameFromRow(row);
+        return !rowRepo || rowRepo === key;
+      });
+    repoMinersCache.set(key, { fetched_at: Date.now(), rows: typedRows });
+    return typedRows;
+  })().finally(() => {
+    repoMinersInFlight.delete(key);
+  });
+
+  repoMinersInFlight.set(key, promise);
+  return promise;
+}
+
+function stringValue(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return '';
+}
+
+function repoNameFromRow(row: UpstreamRepoMiner): string {
+  return stringValue(row.repositoryFullName ?? row.repository_full_name).toLowerCase();
+}
+
+function repoScopedCredibility(row: UpstreamRepoMiner): number {
+  return num(row.credibility ?? row.repoCredibility ?? row.repo_credibility ?? row.prCredibility ?? row.pr_credibility);
+}
+
+function meaningfulRepoMiner(row: {
+  isEligible: boolean;
+  score: number;
+  baseScore: number;
+  collateralScore: number;
+  prCount: number;
+  openPrCount: number;
+  closedPrCount: number;
+  totalPrCount: number;
+}): boolean {
+  return (
+    row.isEligible ||
+    row.score > 0 ||
+    row.baseScore > 0 ||
+    row.collateralScore > 0 ||
+    row.prCount > 0 ||
+    row.openPrCount > 0 ||
+    row.closedPrCount > 0 ||
+    row.totalPrCount > 0
+  );
+}
+
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
   const fullName = `${params.owner}/${params.name}`;
   const fullNameKey = fullName.toLowerCase();
   try {
-    const shared = await getShared();
+    const [shared, repoMinerRows] = await Promise.all([getShared(), fetchRepoMiners(fullName)]);
     const issueDiscoveryEnabled = (shared.issueDiscoveryShareByRepo.get(fullNameKey) ?? 0) > 0;
     const minersByGithubId = new Map<string, UpstreamMiner>();
     const minersByLogin = new Map<string, UpstreamMiner>();
@@ -114,40 +220,55 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
       minersByLogin.set(m.githubUsername.toLowerCase(), m);
     }
 
-    // OSS Contributions: sum of merged PR scores per author for this repo.
-    interface OssAgg { githubId: string; githubUsername: string; prCount: number; score: number }
-    const ossMap = new Map<string, OssAgg>();
-    for (const p of shared.prs) {
-      if (p.repository.toLowerCase() !== fullNameKey) continue;
-      const id = p.githubId || p.author;
-      if (!id) continue;
-      let row = ossMap.get(id);
-      if (!row) {
-        row = { githubId: p.githubId || '', githubUsername: p.author || id, prCount: 0, score: 0 };
-        ossMap.set(id, row);
-      }
-      // Count only merged PRs and their official PR scores.
-      if (p.mergedAt) {
-        row.prCount += 1;
-        row.score += num(p.score);
-      }
-    }
-    const ossContributions = [...ossMap.values()]
-      .filter((r) => r.prCount > 0 || r.score > 0)
-      .sort((a, b) => b.score - a.score || b.prCount - a.prCount)
-      .slice(0, TOP_MINERS_LIMIT)
+    // OSS Contributions: per-repo validator rows. This endpoint already
+    // includes the repo-scoped score and eligibility gate, so do not rebuild
+    // the panel from global PR data or global miner score.
+    const ossContributions = repoMinerRows
       .map((r) => {
-        const m = r.githubId ? minersByGithubId.get(r.githubId) : undefined;
-        const username = m?.githubUsername || r.githubUsername;
+        const githubId = stringValue(r.githubId ?? r.github_id);
+        const username = r.githubUsername ?? r.github_username ?? '';
+        const m = githubId ? minersByGithubId.get(githubId) : minersByLogin.get(username.toLowerCase());
+        const rawUid = r.uid ?? m?.uid;
+        const uidNum =
+          typeof rawUid === 'number'
+            ? rawUid
+            : typeof rawUid === 'string'
+              ? Number.parseInt(rawUid, 10)
+              : NaN;
+        const score = num(r.totalScore ?? r.total_score);
+        const baseScore = num(r.baseTotalScore ?? r.base_total_score);
+        const collateralScore = num(r.totalCollateralScore ?? r.total_collateral_score);
+        const prCount = num(r.totalMergedPrs ?? r.total_merged_prs);
+        const openPrCount = num(r.totalOpenPrs ?? r.total_open_prs);
+        const closedPrCount = num(r.totalClosedPrs ?? r.total_closed_prs);
+        const totalPrCount = num(r.totalPrs ?? r.total_prs);
+        const isEligible = (r.isEligible ?? r.is_eligible) === true;
         return {
-          githubId: r.githubId,
-          githubUsername: username,
-          prCount: r.prCount,
-          score: Number(r.score.toFixed(2)),
-          ossRank: r.githubId ? shared.ossRankByGithubId.get(r.githubId) ?? null : null,
+          githubId,
+          githubUsername: username || m?.githubUsername || githubId,
+          prCount,
+          score: Number(score.toFixed(2)),
+          baseScore: Number(baseScore.toFixed(2)),
+          collateralScore: Number(collateralScore.toFixed(2)),
+          openPrCount,
+          closedPrCount,
+          totalPrCount,
+          credibility: repoScopedCredibility(r),
+          ossRank: githubId ? shared.ossRankByGithubId.get(githubId) ?? null : null,
           globalScore: m ? Number(num(m.totalScore).toFixed(2)) : null,
-          avatarUrl: `https://github.com/${username}.png?size=48`,
+          uid: Number.isFinite(uidNum) ? uidNum : null,
+          avatarUrl: `https://github.com/${encodeURIComponent(username || m?.githubUsername || githubId)}.png?size=48`,
+          isEligible,
+          failedReason: r.failedReason ?? r.failed_reason ?? null,
+          alphaPerDay: num(r.alphaPerDay ?? r.alpha_per_day),
+          taoPerDay: num(r.taoPerDay ?? r.tao_per_day),
+          usdPerDay: num(r.usdPerDay ?? r.usd_per_day),
         };
+      })
+      .filter(meaningfulRepoMiner)
+      .sort((a, b) => {
+        if ((a.isEligible ? 1 : 0) !== (b.isEligible ? 1 : 0)) return a.isEligible ? -1 : 1;
+        return b.score - a.score || b.baseScore - a.baseScore || b.collateralScore - a.collateralScore || b.prCount - a.prCount;
       });
 
     // Issue Discoveries: repo-specific candidates only. Gittensor scores a
@@ -263,7 +384,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
         avatarUrl: string;
       } => Boolean(row))
       .sort((a, b) => b.issueCount - a.issueCount || b.candidateIssueCount - a.candidateIssueCount || b.solvedIssueCount - a.solvedIssueCount)
-      .slice(0, TOP_MINERS_LIMIT);
+      .slice(0, TOP_ISSUE_DISCOVERY_LIMIT);
 
     return NextResponse.json({
       fullName,
