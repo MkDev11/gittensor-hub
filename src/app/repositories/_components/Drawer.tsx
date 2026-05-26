@@ -705,6 +705,11 @@ function MinerTreemap({
         // and name share the top row, freeing vertical room for the
         // score/meta to render in full.
         const wideShort = (sizeClass === 'lg' || sizeClass === 'md') && t.w > t.h * 1.6;
+        const showCompactStats =
+          !wideShort && (
+            (sizeClass === 'sm' && t.h >= 145) ||
+            (sizeClass === 'xs' && t.w >= 72 && t.h >= 170)
+          );
         // Tier styling lives in CSS so light/dark themes can swap palettes
         // without recomputing colors here. textTone is inherited from the
         // tile's CSS `color` per tier.
@@ -751,6 +756,7 @@ function MinerTreemap({
               tao={tao}
               share={share}
               textTone={textTone}
+              showCompactStats={showCompactStats}
             />
           </a>
         );
@@ -768,6 +774,7 @@ function MinerTileContent({
   tao,
   share,
   textTone,
+  showCompactStats,
 }: {
   sizeClass: 'xl' | 'lg' | 'md' | 'sm' | 'xs';
   wideShort: boolean;
@@ -777,6 +784,7 @@ function MinerTileContent({
   tao: number;
   share: number;
   textTone: string;
+  showCompactStats: boolean;
 }) {
   const visibleScore = eligible ? miner.score : (miner.baseScore ?? 0);
   const scoreNode = (
@@ -876,26 +884,43 @@ function MinerTileContent({
   }
   if (sizeClass === 'sm') {
     return (
-      <div className={styles.mtileCompact}>
+      <div className={`${styles.mtileCompact} ${showCompactStats ? styles.mtileCompactWithStats : ''}`}>
         <div className={styles.mtileCompactIdentity}>
           <MinerCredAvatar miner={miner} size="sm" />
           <div className={`${styles.mtileName} ${styles.mtileNameSmall} ${styles.mtileCompactName}`} style={{ color: textTone }}>
             {miner.githubUsername}
           </div>
         </div>
+        {showCompactStats ? (
+          <div className={styles.mtileCompactStats}>
+            <div className={`${styles.mtileCompactScore} mono`}>
+              {visibleScore.toFixed(1)}
+              <span>{eligible ? ' score' : ' base'}</span>
+            </div>
+            <div className={`${styles.mtileCompactMeta} mono`}>
+              {eligible ? `${formatTAO(tao)} T/Day` : 'ineligible'}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
   // xs — identity-only. Hide UID/star from the visible layout because those
   // controls steal the horizontal space the username needs in tiny tiles.
   return (
-    <div className={styles.mtileTiny}>
+    <div className={`${styles.mtileTiny} ${showCompactStats ? styles.mtileTinyWithStats : ''}`}>
       <div className={styles.mtileTinyIdentity}>
         <MinerCredAvatar miner={miner} size="xs" />
         <div className={`${styles.mtileName} ${styles.mtileNameTiny}`} style={{ color: textTone }}>
           {miner.githubUsername}
         </div>
       </div>
+      {showCompactStats ? (
+        <div className={styles.mtileTinyStats}>
+          <span className="mono">{visibleScore.toFixed(1)}</span>
+          <span>{eligible ? 'score' : 'ineligible'}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

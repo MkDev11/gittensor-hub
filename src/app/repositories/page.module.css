@@ -911,6 +911,11 @@
   height: 100%;
   gap: 7px;
 }
+.mtileCompactWithStats {
+  justify-content: space-between;
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
 .mtileCompactIdentity {
   width: 100%;
   min-width: 0;
@@ -921,6 +926,37 @@
   gap: 8px;
   overflow: hidden;
 }
+.mtileCompactStats {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  overflow: hidden;
+  line-height: 1.1;
+}
+.mtileCompactScore {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.mtileCompactScore span {
+  font-size: 8px;
+  font-weight: 500;
+  opacity: 0.72;
+}
+.mtileCompactMeta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 8.5px;
+  opacity: 0.76;
+}
 .mtileTiny {
   display: flex;
   flex-direction: column;
@@ -928,6 +964,10 @@
   align-items: center;
   height: 100%;
   overflow: hidden;
+}
+.mtileTinyWithStats {
+  justify-content: space-between;
+  gap: 4px;
 }
 .mtileTinyIdentity {
   width: 100%;
@@ -938,6 +978,24 @@
   justify-content: center;
   gap: 7px;
   overflow: hidden;
+}
+.mtileTinyStats {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  overflow: hidden;
+  font-size: 8px;
+  line-height: 1.05;
+  opacity: 0.76;
+}
+.mtileTinyStats span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mtileTiny .mtileAvatarWrap {
   margin-right: 7px;
