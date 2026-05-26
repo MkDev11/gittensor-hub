@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import { getDb } from '@/lib/db';
 import { getSessionFromCookies } from '@/lib/auth';
 
@@ -15,6 +16,8 @@ export async function POST(
   ctx: { params: Promise<{ owner: string; name: string; number: string }> },
 ) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

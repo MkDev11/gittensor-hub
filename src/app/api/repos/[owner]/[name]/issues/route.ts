@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import { getReadDb, IssueRow } from '@/lib/db';
 import { refreshIssuesIfStale, backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
@@ -37,6 +38,8 @@ export async function GET(
 ) {
   const params = await ctx.params;
   const { owner, name } = params;
+  const denied = await assertTrackedRepo(owner, name);
+  if (denied) return denied;
   const full = `${owner}/${name}`;
 
   // Refresh is the poller's job — calling it from per-request handlers caused
