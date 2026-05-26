@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import styles from '../page.module.css';
 import Avatar from './Avatar';
 import {
@@ -14,6 +15,7 @@ import {
   type RepoRow,
 } from '../_lib/incentives';
 import { squarify } from '../_lib/squarify';
+import type { RepoMiner, RepoMinersResponse } from '@/types/entities';
 
 export type SelectedSeg =
   | { kind: 'repo'; fullName: string }
@@ -475,6 +477,7 @@ export default function MarketSection({
             subnetTAO={subnetTAO}
             onOpenDrawer={onOpenDrawer}
           />
+
         </div>
       </div>
     </section>
@@ -823,6 +826,8 @@ function BarInspector({
         )}
       </div>
 
+      <TopEarnersRow owner={r.owner} name={r.name} />
+
       <button
         type="button"
         className={styles.inspectorOpenBtn}
@@ -838,7 +843,15 @@ function BarInspector({
   );
 }
 
-/* ============== Leaderboard ============== */
+/* ============== Trending leaderboard ============== */
+/** Trending score = PR + issue creates over the last 7 days. Uses the
+ *  same 30-bucket sparklines that drive the per-card "wow" indicator so
+ *  it stays consistent with what users see on the cards below. */
+function trendScore(r: RepoRow): number {
+  const last7 = (arr: number[]) => arr.slice(-7).reduce((s, v) => s + v, 0);
+  return last7(r.activity.spark) + last7(r.activity.sparkIssues);
+}
+
 function Leaderboard({
   sorted,
   subnetTAO,
@@ -850,10 +863,13 @@ function Leaderboard({
 }) {
   const realRepos = sorted.filter((r) => r.share > 0);
   const TOP_N = 6;
-  let topRepos = realRepos.slice(0, TOP_N);
+  // Re-sort by trending activity (7d) for this section; the bar above
+  // stays sorted by share since visual area there encodes emission.
+  const trendingSorted = [...realRepos].sort((a, b) => trendScore(b) - trendScore(a));
+  let topRepos = trendingSorted.slice(0, TOP_N);
   // If "self" exists but isn't in the top, swap it into the last slot so the
   // user can still find their own repo without scrolling.
-  const selfRepo = realRepos.find((r) => r.isSelf);
+  const selfRepo = trendingSorted.find((r) => r.isSelf);
   if (selfRepo && !topRepos.includes(selfRepo)) {
     topRepos = [...topRepos.slice(0, TOP_N - 1), selfRepo];
   }
@@ -873,9 +889,9 @@ function Leaderboard({
           justifyContent: 'space-between',
         }}
       >
-        <span>Top contributors · click any to inspect</span>
+        <span>Trending repos · click any to inspect</span>
         <span style={{ color: 'var(--border-strong)', textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-          Hover the bar for any other segment
+          Sorted by PR + issue activity · last 7 days
         </span>
       </div>
       <div className={styles.leaderGrid}>
@@ -888,7 +904,8 @@ function Leaderboard({
               : r.issue === 0
                 ? 'var(--color-stream-pr)'
                 : `color-mix(in srgb, var(--color-stream-pr) ${((1 - r.issue) * 100).toFixed(1)}%, var(--color-stream-issue))`;
-          const rank = realRepos.indexOf(r) + 1;
+          const rank = topRepos.indexOf(r) + 1;
+          const trend7d = trendScore(r);
           return (
             <button
               key={r.fullName}
@@ -913,6 +930,14 @@ function Leaderboard({
                     <span className={`${styles.mono} ${styles.textTao}`} style={{ fontSize: 10.5 }}>
                       {formatTAO(repoDailyTAO(r, subnetTAO))} τ/d
                     </span>
+                    <span className={styles.textFgFaint} style={{ fontSize: 10 }}>·</span>
+                    <span
+                      className={`${styles.mono} ${trend7d > 0 ? styles.textFg : styles.textFgFaint}`}
+                      style={{ fontSize: 10.5 }}
+                      title={`${trend7d} PR + issue create${trend7d === 1 ? '' : 's'} in the last 7 days`}
+                    >
+                      {trend7d > 0 ? `+${trend7d}` : '0'} 7d
+                    </span>
                   </div>
                 </div>
                 {r.isSelf ? <span className={`${styles.badge} ${styles.badgeSelf}`}>you</span> : null}
@@ -930,6 +955,97 @@ function Leaderboard({
             </div>
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ============== Per-repo top earners (inside BarInspector) ============== */
+/** Subtle metallic tints for ranks 1–3 (gold / silver / bronze). */
+const EARNER_TINTS = [
+  { fg: '#d4a857', glow: 'rgba(212, 168, 87, 0.14)' }, // gold
+  { fg: '#a8b3bd', glow: 'rgba(168, 179, 189, 0.12)' }, // silver
+  { fg: '#b08763', glow: 'rgba(176, 135, 99, 0.12)' }, // bronze
+] as const;
+
+
+/** Top OSS contributors for the selected repo (top 3 by score, eligible
+ *  only). Rendered as a second row inside the BarInspector when a repo
+ *  segment is in focus. Empty array → row is not rendered. */
+function TopEarnersRow({ owner, name }: { owner: string; name: string }) {
+  const { data: repoMiners } = useQuery<RepoMinersResponse>({
+    queryKey: ['gt-repo-miners', owner, name],
+    queryFn: async ({ signal }) => {
+      const r = await fetch(`/api/gt/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/miners`, { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<RepoMinersResponse>;
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const top = useMemo<RepoMiner[]>(() => {
+    /* Eligibility is computed by the route from the validator's per-repo
+     * RepoEvaluation.is_eligible flag (https://api.gittensor.io/repos/.../miners).
+     * Only surface contributors who currently meet the repo's thresholds. */
+    const list = repoMiners?.ossContributions ?? [];
+    return list
+      .filter((m) => m.isEligible === true)
+      .filter((m) => (m.score ?? 0) > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }, [repoMiners]);
+  // Distinguish "still loading" from "loaded, none eligible" — the loading
+  // case stays silent so the inspector doesn't flicker, but once the fetch
+  // resolves we surface an explicit empty state so the user can tell the
+  // repo simply has nobody eligible right now (vs. data not arriving).
+  if (!repoMiners) return null;
+  if (top.length === 0) {
+    return (
+      <div className={styles.inspectorEarners}>
+        <span className={styles.inspectorEarnersLabel}>Top earners</span>
+        <div className={styles.inspectorEarnersEmpty}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>No miners currently eligible on this repo</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={styles.inspectorEarners}>
+      <span className={styles.inspectorEarnersLabel}>Top earners</span>
+      <div className={styles.inspectorEarnersList}>
+        {top.map((m, i) => {
+          const tint = EARNER_TINTS[i] ?? EARNER_TINTS[2];
+          return (
+            <a
+              key={m.githubId || m.githubUsername}
+              href={`https://github.com/${encodeURIComponent(m.githubUsername)}`}
+              target="_blank"
+              rel="noreferrer"
+              className={styles.inspectorEarnerChip}
+              title={`@${m.githubUsername} · score ${m.score.toFixed(2)} · ${m.prCount} merged PR${m.prCount === 1 ? '' : 's'}`}
+            >
+              <span
+                aria-hidden
+                className={`mono tnum ${styles.inspectorEarnerRank}`}
+                style={{ background: tint.glow, color: tint.fg, borderColor: `${tint.fg}33` }}
+              >
+                {i + 1}
+              </span>
+              <Avatar fullName={m.githubUsername} size="sm" />
+              <span className={styles.inspectorEarnerName}>@{m.githubUsername}</span>
+              <span className={`mono tnum ${styles.inspectorEarnerScore}`} style={{ color: tint.fg }}>
+                {m.score.toFixed(1)}
+              </span>
+            </a>
+          );
+        })}
       </div>
     </div>
   );
