@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import { getReadDb } from '@/lib/db';
 import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
 
@@ -102,6 +103,8 @@ async function getShared(): Promise<CachedShared> {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const fullName = `${params.owner}/${params.name}`;
   const fullNameKey = fullName.toLowerCase();
   try {

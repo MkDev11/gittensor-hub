@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import type { GtRepoPr, GtRepoPrsResponse } from '@/types/entities';
 
 export const dynamic = 'force-dynamic';
@@ -91,6 +92,8 @@ async function getShared(): Promise<Cached> {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const fullName = `${params.owner}/${params.name}`;
   try {
     const shared = await getShared();
