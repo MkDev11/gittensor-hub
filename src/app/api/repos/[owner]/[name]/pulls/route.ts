@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import { getReadDb, PullRow } from '@/lib/db';
 import { refreshPullsIfStale } from '@/lib/refresh';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
@@ -27,6 +28,8 @@ export async function GET(
 ) {
   const params = await ctx.params;
   const { owner, name } = params;
+  const denied = await assertTrackedRepo(owner, name);
+  if (denied) return denied;
   const full = `${owner}/${name}`;
 
   // Poller handles refresh on its own cadence — see the same note in the

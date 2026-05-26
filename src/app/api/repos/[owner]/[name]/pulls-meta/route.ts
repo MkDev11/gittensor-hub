@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import { getReadDb } from '@/lib/db';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 
@@ -9,6 +10,8 @@ export async function GET(
   ctx: { params: Promise<{ owner: string; name: string }> }
 ) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const full = `${params.owner}/${params.name}`;
   const db = getReadDb();
   const url = new URL(req.url);

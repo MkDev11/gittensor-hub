@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 import { getReadDb, type PullRow } from '@/lib/db';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
 import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
@@ -14,6 +15,8 @@ export async function GET(
   ctx: { params: Promise<{ owner: string; name: string; login: string }> },
 ) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
   const full = `${params.owner}/${params.name}`;
   const login = params.login;
   const url = new URL(req.url);
