@@ -143,7 +143,6 @@ export interface IssuesMetaResponse {
 export interface PullsMetaResponse {
   repo: string;
   author_options: AuthorOption[];
-  mine_count?: number;
   total_authors: number;
 }
 

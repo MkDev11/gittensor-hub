@@ -10,7 +10,7 @@ Before contributing, please:
 
 ### Local Development
 
-1. Ensure you have Node 20+ and [pnpm](https://pnpm.io/) installed
+1. Ensure you have Node 20.19+ (or 22.13+ / 24+) and [pnpm](https://pnpm.io/) installed
 2. Clone the repo and run `pnpm install`
 3. Copy `.env.local.example` to `.env.local` and fill in the values (see the [Setup section in the README](./README.md#github-setup) for GitHub OAuth + PAT instructions)
 4. (Optional but recommended) Seed the local cache so you have realistic data without waiting for the poller to bootstrap:

@@ -30,7 +30,7 @@ cp .env.local.example .env.local   # then fill in the values (see below)
 pnpm dev                           # http://localhost:12074
 ```
 
-Requires Node 20+ and pnpm.
+Requires Node 20.19+ (or 22.13+ / 24+) and pnpm.
 
 ## Development checks
 

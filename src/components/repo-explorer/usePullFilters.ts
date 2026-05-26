@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SortDir } from './styles';
 
-export type PRState = 'all' | 'open' | 'draft' | 'merged' | 'closed' | 'mine';
+export type PRState = 'all' | 'open' | 'draft' | 'merged' | 'closed';
 export type PullSortKey = 'opened' | 'updated' | 'closed' | 'author' | 'state';
 
 export interface PullFilters {
@@ -10,8 +10,6 @@ export interface PullFilters {
   debouncedQuery: string;
   state: PRState;
   setState: (v: PRState) => void;
-  mineOnly: boolean;
-  setMineOnly: (v: boolean) => void;
   author: string;
   setAuthor: (v: string) => void;
   authorsRequested: boolean;
@@ -25,7 +23,6 @@ export interface PullFilters {
 export function usePullFilters(): PullFilters {
   const [query, setQuery] = useState('');
   const [state, setState] = useState<PRState>('all');
-  const [mineOnly, setMineOnly] = useState(false);
   const [author, setAuthor] = useState<string>('all');
   const [authorsRequested, setAuthorsRequested] = useState(false);
   const [sortKey, setSortKey] = useState<PullSortKey>('updated');
@@ -51,7 +48,6 @@ export function usePullFilters(): PullFilters {
     setState('all');
     setAuthor('all');
     setAuthorsRequested(false);
-    setMineOnly(false);
   }, []);
 
   return {
@@ -60,8 +56,6 @@ export function usePullFilters(): PullFilters {
     debouncedQuery,
     state,
     setState,
-    mineOnly,
-    setMineOnly,
     author,
     setAuthor,
     authorsRequested,
