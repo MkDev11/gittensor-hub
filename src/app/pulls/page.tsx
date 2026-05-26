@@ -59,6 +59,8 @@ type SortKey = 'updated' | 'opened' | 'closed' | 'repo' | 'weight' | 'number';
 type SortDir = 'asc' | 'desc';
 
 const PULLS_CONTENT_MAX_WIDTH = 1480;
+// RelatedIssuesCell chip needs ~72px+; 64px caused clipping in fixed table layout (#108).
+const ISSUES_COL_WIDTH = 88;
 const EMPTY_ISSUES: LinkedIssueReference[] = [];
 const pullRowCellSx = {
   px: 2,
@@ -356,7 +358,7 @@ function AllPullsPage() {
               '&::-webkit-scrollbar': { display: 'none' },
             }}
           >
-            <Box as="table" sx={{ width: '100%', minWidth: 1200, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 1 }}>
+            <Box as="table" sx={{ width: '100%', minWidth: 1200 + (ISSUES_COL_WIDTH - 64), tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 1 }}>
               <Box as="thead" sx={{ bg: 'var(--bg-subtle)', borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
                 <Box as="tr">
                   <Box as="th" sx={{ ...headerCellSx, width: 44, textAlign: 'center' }} aria-label="Tracked repository" />
@@ -381,7 +383,9 @@ function AllPullsPage() {
                   <HeaderCell label="Opened" onClick={() => toggleSort('opened')} active={sortKey === 'opened'} dir={sortDir} width={88} />
                   <HeaderCell label="Updated" onClick={() => toggleSort('updated')} active={sortKey === 'updated'} dir={sortDir} width={92} />
                   <HeaderCell label="Closed" onClick={() => toggleSort('closed')} active={sortKey === 'closed'} dir={sortDir} width={92} />
-                  <Box as="th" sx={{ ...headerCellSx, width: 64, textAlign: 'center' }}>Issues</Box>
+                  <Box as="th" sx={{ ...headerCellSx, width: ISSUES_COL_WIDTH, minWidth: ISSUES_COL_WIDTH, textAlign: 'center' }}>
+                    Issues
+                  </Box>
                 </Box>
               </Box>
               <Box as="tbody">
@@ -401,7 +405,7 @@ function AllPullsPage() {
                           { width: 60 },
                           { width: 60 },
                           { width: 60 },
-                          { width: 54 },
+                          { width: ISSUES_COL_WIDTH },
                         ]}
                       />
                     </Box>
@@ -907,7 +911,18 @@ function PullTableRow({
       <Box as="td" sx={{ ...pullRowCellSx, fontSize: 0, whiteSpace: 'nowrap' }} title={pr.merged_at ?? pr.closed_at ?? undefined}>
         <RecentTime iso={pr.merged_at ?? pr.closed_at} />
       </Box>
-      <Box as="td" sx={{ ...pullRowCellSx, textAlign: 'center', whiteSpace: 'nowrap' }} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+      <Box
+        as="td"
+        sx={{
+          ...pullRowCellSx,
+          width: ISSUES_COL_WIDTH,
+          minWidth: ISSUES_COL_WIDTH,
+          maxWidth: ISSUES_COL_WIDTH,
+          textAlign: 'center',
+          whiteSpace: 'nowrap',
+        }}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
         <RelatedIssuesCell issues={linkedIssues} onIssueClick={onIssueClick} />
       </Box>
     </Box>
