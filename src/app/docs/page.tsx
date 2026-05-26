@@ -325,9 +325,9 @@ reward share = PR share x effective repo PR reward pool`}</Pre>
                 view.
               </P>
               <P>
-                Use search, state, author, <strong>Tracked only</strong>, and <strong>My PRs only</strong> filters to
-                narrow the feed without loading the full cache into the browser. Star controls on each row update the
-                tracked repo set used by the filter.
+                Use search, state, author, and <strong>Tracked only</strong> filters to narrow the feed without loading
+                the full cache into the browser. Star controls on each row update the tracked repo set used by the
+                filter.
               </P>
               <Ul>
                 <Li><strong>Pagination</strong>: page controls at the table edge with configurable rows per page</Li>

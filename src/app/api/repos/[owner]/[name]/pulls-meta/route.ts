@@ -17,10 +17,9 @@ export async function GET(
   const lastFetch = (db
     .prepare('SELECT last_pulls_fetch FROM repo_meta WHERE full_name = ?')
     .get(full) as { last_pulls_fetch: string | null } | undefined)?.last_pulls_fetch;
-  const etag = buildEtag(['pulls-meta-v2', full, lastFetch, url.searchParams.get('q'), url.searchParams.get('mine_login'), summaryOnly ? 'summary' : 'full']);
+  const etag = buildEtag(['pulls-meta-v2', full, lastFetch, url.searchParams.get('q'), summaryOnly ? 'summary' : 'full']);
   const notModified = etagNotModified(req, etag);
   if (notModified) return notModified;
-  const mineLogin = (url.searchParams.get('mine_login') ?? '').trim();
 
   const q = (url.searchParams.get('q') ?? '').trim();
 
@@ -54,22 +53,11 @@ export async function GET(
           )
           .all(full) as Array<{ login: string; count: number }>);
 
-  let mine_count: number | undefined;
-  if (mineLogin) {
-    mine_count = (db
-      .prepare(
-        `SELECT COUNT(*) AS c FROM pulls
-         WHERE repo_full_name = ? AND LOWER(author_login) = ?`
-      )
-      .get(full, mineLogin.toLowerCase()) as { c: number }).c;
-  }
-
   return NextResponse.json(
     {
       repo: full,
       author_options: authorRows,
       total_authors,
-      ...(mine_count !== undefined ? { mine_count } : {}),
     },
     { headers: withEtagHeaders(etag) },
   );

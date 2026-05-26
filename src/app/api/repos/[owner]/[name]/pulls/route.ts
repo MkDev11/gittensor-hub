@@ -52,7 +52,6 @@ export async function GET(
     url.searchParams.get('q'),
     url.searchParams.get('state'),
     url.searchParams.get('author'),
-    url.searchParams.get('mine_login'),
     url.searchParams.get('sort'),
     url.searchParams.get('dir'),
     url.searchParams.get('since'),
@@ -64,7 +63,6 @@ export async function GET(
   const q = (url.searchParams.get('q') ?? '').trim();
   const state = url.searchParams.get('state') ?? 'all';
   const author = url.searchParams.get('author') ?? 'all';
-  const mineLogin = (url.searchParams.get('mine_login') ?? '').trim();
   const sort = (url.searchParams.get('sort') ?? 'updated') as SortKey;
   const dir = (url.searchParams.get('dir') ?? 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   const since = url.searchParams.get('since');
@@ -91,10 +89,6 @@ export async function GET(
     if (author !== 'all') {
       where.push('author_login = ?');
       args.push(author);
-    }
-    if (state === 'mine' && mineLogin) {
-      where.push('LOWER(author_login) = ?');
-      args.push(mineLogin.toLowerCase());
     }
     if (includeState) {
       if (state === 'open') where.push("state = 'open' AND draft = 0 AND merged = 0");
