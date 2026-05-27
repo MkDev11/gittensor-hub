@@ -1,4 +1,3 @@
-import { getReadDb } from '@/lib/db';
 import { getLiveReposAsyncServer } from '@/lib/repos-server';
 
 export function positiveInt(value: string | null, fallback: number): number {
@@ -29,16 +28,8 @@ export function chunk<T>(items: T[], size: number): T[][] {
 
 export async function resolveRepoScope(reqRepos: string[] | null): Promise<string[]> {
   const { repos: liveRepos } = await getLiveReposAsyncServer();
-  const db = getReadDb();
-  const userRows = db
-    .prepare('SELECT full_name FROM user_repos')
-    .all() as Array<{ full_name: string }>;
-
   const allowed = new Map<string, string>();
   for (const r of liveRepos) allowed.set(r.fullName.toLowerCase(), r.fullName);
-  for (const r of userRows) {
-    if (!allowed.has(r.full_name.toLowerCase())) allowed.set(r.full_name.toLowerCase(), r.full_name);
-  }
 
   if (reqRepos !== null) {
     const scoped: string[] = [];

@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useStorageValue } from './use-storage-value';
 
 const STORAGE_KEY = 'gittensor.trackedRepos';
+const EVENT_NAME = 'tracked-repos-changed';
+const EMPTY: Set<string> = new Set();
 
 function repoKey(fullName: string): string {
   return fullName.trim().toLowerCase();
@@ -20,51 +23,53 @@ function dedupe(names: string[]): Set<string> {
   return new Set(byKey.values());
 }
 
-function readStorage(): Set<string> {
+function parse(raw: string | null): Set<string> {
+  if (!raw) return new Set();
+  const arr = JSON.parse(raw);
+  return dedupe(Array.isArray(arr) ? arr : []);
+}
+
+function serialize(set: Set<string>): string {
+  return JSON.stringify(Array.from(set));
+}
+
+function readFresh(): Set<string> {
   if (typeof window === 'undefined') return new Set();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return dedupe(Array.isArray(arr) ? arr : []);
+    return parse(localStorage.getItem(STORAGE_KEY));
   } catch {
     return new Set();
   }
 }
 
-function writeStorage(set: Set<string>) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(set)));
-  window.dispatchEvent(new Event('tracked-repos-changed'));
-}
-
 export function useTrackedRepos() {
-  const [tracked, setTracked] = useState<Set<string>>(new Set());
+  const [tracked, setTracked] = useStorageValue<Set<string>>(
+    STORAGE_KEY,
+    parse,
+    serialize,
+    EMPTY,
+    EVENT_NAME,
+  );
 
-  useEffect(() => {
-    setTracked(readStorage());
-    const handler = () => setTracked(readStorage());
-    window.addEventListener('tracked-repos-changed', handler);
-    window.addEventListener('storage', handler);
-    return () => {
-      window.removeEventListener('tracked-repos-changed', handler);
-      window.removeEventListener('storage', handler);
-    };
-  }, []);
+  const toggle = useCallback(
+    (fullName: string) => {
+      const key = repoKey(fullName);
+      if (!key) return;
+      const next = readFresh();
+      const existing = Array.from(next).find((name) => repoKey(name) === key);
+      if (existing) next.delete(existing);
+      else next.add(fullName.trim());
+      setTracked(next);
+    },
+    [setTracked],
+  );
 
-  const toggle = useCallback((fullName: string) => {
-    const key = repoKey(fullName);
-    if (!key) return;
-    const next = readStorage();
-    const existing = Array.from(next).find((name) => repoKey(name) === key);
-    if (existing) next.delete(existing);
-    else next.add(fullName.trim());
-    writeStorage(next);
-  }, []);
+  const clear = useCallback(() => setTracked(new Set()), [setTracked]);
 
-  const clear = useCallback(() => writeStorage(new Set()), []);
-
-  const setMany = useCallback((names: string[]) => writeStorage(dedupe(names)), []);
+  const setMany = useCallback(
+    (names: string[]) => setTracked(dedupe(names)),
+    [setTracked],
+  );
 
   return { tracked, toggle, clear, setMany };
 }

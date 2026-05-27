@@ -411,7 +411,7 @@ export default function RepoExplorer() {
   // after `allRepos` is in scope.)
 
   // Effect B: tab + pending-open from URL. Runs only on URL change, not on
-  // allRepos updates, so a late user_repos resolution doesn't reopen issues
+  // allRepos updates, so a late live-repo resolution doesn't reopen issues
   // the user already dismissed.
   useEffect(() => {
     if (!searchParams) return;
@@ -524,25 +524,9 @@ export default function RepoExplorer() {
     setPullsPage(1);
   }, [prQuery, prState, prAuthor, pullSortKey, pullSortDir]);
 
-  const { data: userReposData, isSuccess: userReposReady } = useQuery<{
-    count: number;
-    repos: Array<{ full_name: string; weight: number; notes: string | null; added_at: string }>;
-  }>({
-    queryKey: ['user-repos'],
-    queryFn: async ({ signal }) => {
-      const r = await fetch('/api/user-repos', { signal });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    },
-    // 30s — user repos don't change often; aggressive polling caused the
-    // left-rail list to visibly re-render every few seconds.
-    refetchInterval: 30000,
-    staleTime: 20000,
-  });
-
-  // Server polls master_repositories.json every 5 min and persists any new
-  // repos at weight 0; nothing is ever removed. Client refetches on the same
-  // cadence so newly discovered repos appear without a page reload.
+  // Server polls master_repositories.json every 5 min and mirrors the live
+  // Gittensor repo list. Client refetches on the same cadence so added or
+  // removed repos appear without a page reload.
   const { data: sn74ReposData, isLoading: sn74ReposLoading, isSuccess: sn74ReposReady } = useQuery<{ repos: Sn74Repo[]; source: 'live' | 'empty'; count: number }>({
     queryKey: ['sn74-repos'],
     queryFn: async ({ signal }) => {
@@ -557,35 +541,18 @@ export default function RepoExplorer() {
 
   const sn74Repos: Sn74Repo[] = sn74ReposData?.repos ?? ALL_REPOS;
 
-  const allRepos = useMemo(() => {
-    const sn74Set = new Set(sn74Repos.map((r) => r.fullName));
-    const userExtras: Sn74Repo[] = (userReposData?.repos ?? [])
-      .filter((u) => !sn74Set.has(u.full_name))
-      .flatMap((u) => {
-        const parts = u.full_name.split('/');
-        if (parts.length !== 2 || !parts[0] || !parts[1]) return [];
-        const [owner, name] = parts;
-        return [{ ...createRepoEntry(u.full_name, u.weight), owner, name }];
-      });
-    return [...sn74Repos, ...userExtras];
-  }, [sn74Repos, userReposData]);
+  const allRepos = useMemo(() => sn74Repos, [sn74Repos]);
 
   const visibleRepoNamesByLc = useMemo(() => {
     const m = new Map<string, string>();
     for (const repo of allRepos) m.set(repo.fullName.toLowerCase(), repo.fullName);
     return m;
   }, [allRepos]);
-  const repoAllowlistReady = sn74ReposReady && userReposReady;
-
-  const userRepoNames = useMemo(
-    () => new Set((userReposData?.repos ?? []).map((u) => u.full_name)),
-    [userReposData]
-  );
+  const repoAllowlistReady = sn74ReposReady;
 
   // Effect A (declared here so `allRepos` is in scope): hydrate `selected`
-  // from `?repo=`. Re-runs when allRepos grows (e.g. user_repos query
-  // resolves) so notifications targeting custom repositories — which aren't
-  // in ALL_REPOS — still resolve once their entries arrive.
+  // from `?repo=`. Re-runs when allRepos grows after the live Gittensor
+  // repo list resolves so notifications/URLs only target current repos.
   //
   // Note `selected.fullName` is intentionally NOT a dependency. Including it
   // caused a feedback loop: a manual sidebar click would update `selected`,
@@ -596,18 +563,23 @@ export default function RepoExplorer() {
   useEffect(() => {
     const urlRepo = searchParams?.get('repo') ?? null;
     setSelected((prev) => {
+      const prevKey = prev.fullName.toLowerCase();
+      const prevStillLive = prevKey ? allRepos.some((repo) => repo.fullName.toLowerCase() === prevKey) : false;
+      const firstLive = allRepos[0];
+
       // Prefer the URL-specified repo when present.
       if (urlRepo) {
-        if (prev.fullName === urlRepo) return prev;
-        const found = allRepos.find((x) => x.fullName === urlRepo);
-        if (!found) return prev;
+        const urlRepoKey = urlRepo.toLowerCase();
+        const found = allRepos.find((repo) => repo.fullName.toLowerCase() === urlRepoKey);
+        if (!found) return prevStillLive ? prev : (firstLive ?? prev);
+        if (prev.fullName === found.fullName) return prev;
         selectedFromUrlRef.current = true;
         return found;
       }
       // No `?repo=` and we're still on the placeholder: promote the
       // first real repo from the live list so the page has something
       // to render once `/api/sn74-repos` lands.
-      if (!prev.fullName && allRepos.length > 0) return allRepos[0];
+      if ((!prev.fullName || !prevStillLive) && firstLive) return firstLive;
       return prev;
     });
   }, [searchParams, allRepos]);
@@ -1563,25 +1535,6 @@ export default function RepoExplorer() {
                         {newPulls}
                       </Box>
                     )}
-                  </Box>
-                )}
-                {userRepoNames.has(repo.fullName) && (
-                  <Box
-                    sx={{
-                      px: '5px',
-                      py: '1px',
-                      bg: 'var(--accent-subtle)',
-                      color: 'var(--accent-fg)',
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      borderRadius: 999,
-                      flexShrink: 0,
-                      letterSpacing: '0.4px',
-                      textTransform: 'uppercase',
-                    }}
-                    title="Added from Manage Repositories"
-                  >
-                    Custom
                   </Box>
                 )}
                 <Text

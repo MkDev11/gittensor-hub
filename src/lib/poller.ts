@@ -1,6 +1,5 @@
 import { getLiveReposServer as getLiveRepos } from '@/lib/repos-server';
 import { refreshIssuesIfStale, refreshPullsIfStale } from '@/lib/refresh';
-import { getDb } from '@/lib/db';
 
 interface RepoTuple {
   owner: string;
@@ -8,29 +7,11 @@ interface RepoTuple {
   weight: number;
 }
 
-function loadUserRepos(): RepoTuple[] {
-  try {
-    const db = getDb();
-    const rows = db
-      .prepare('SELECT full_name, weight FROM user_repos')
-      .all() as Array<{ full_name: string; weight: number }>;
-    return rows.map((r) => {
-      const [owner, name] = r.full_name.split('/');
-      return { owner, name, weight: r.weight };
-    });
-  } catch {
-    return [];
-  }
-}
-
 function getAllRepos(): RepoTuple[] {
   // `getLiveRepos()` returns the live-fetched master_repositories.json when
-  // available, falling back to the bundled snapshot. The async refresh runs
-  // out-of-band so this remains synchronous and cheap on every cycle.
-  const sn74 = getLiveRepos();
-  const sn74Names = new Set(sn74.map((r) => r.fullName));
-  const user = loadUserRepos().filter((u) => !sn74Names.has(`${u.owner}/${u.name}`));
-  return [...sn74.map((r) => ({ owner: r.owner, name: r.name, weight: r.weight })), ...user];
+  // available. User-added historical repos are intentionally excluded from
+  // issue/PR polling so the cache mirrors the current Gittensor repo set.
+  return getLiveRepos().map((r) => ({ owner: r.owner, name: r.name, weight: r.weight }));
 }
 
 const TIER1_INTERVAL_MS = 20_000;       // High-priority sweep (top-weight repos): every 20s
@@ -70,13 +51,7 @@ async function runTier1() {
       .slice()
       .sort((a, b) => b.weight - a.weight)
       .slice(0, TIER1_TOP_N);
-    // Always include user-added repos in the high-priority tier so they refresh quickly.
-    const userRepos = loadUserRepos();
-    const merged = [...top];
-    for (const u of userRepos) {
-      if (!merged.some((r) => r.owner === u.owner && r.name === u.name)) merged.push(u);
-    }
-    for (const r of merged) {
+    for (const r of top) {
       await refreshOne(r.owner, r.name);
       await sleep(REPO_PAUSE_MS);
     }
