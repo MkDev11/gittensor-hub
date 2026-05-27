@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useStorageValue } from './use-storage-value';
 
 const STORAGE_KEY = 'gittensor.settings';
+const EVENT_NAME = 'settings-changed';
 
 export type IssueDefaultState = 'all' | 'open' | 'completed' | 'not_planned' | 'closed_other';
 export type ContentDisplayMode = 'modal' | 'accordion' | 'side';
@@ -38,52 +40,53 @@ export const DEFAULT_SETTINGS: AppSettings = {
   layout: 'sidebar',
 };
 
-function readStorage(): AppSettings {
+function parse(raw: string | null): AppSettings {
+  if (!raw) return DEFAULT_SETTINGS;
+  const parsed = JSON.parse(raw) as Partial<AppSettings>;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...parsed,
+    layout: parsed.layout === 'top-nav' || parsed.layout === 'sidebar'
+      ? parsed.layout
+      : DEFAULT_SETTINGS.layout,
+  };
+}
+
+function serialize(s: AppSettings): string {
+  return JSON.stringify(s);
+}
+
+function readFresh(): AppSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      layout: parsed.layout === 'top-nav' || parsed.layout === 'sidebar'
-        ? parsed.layout
-        : DEFAULT_SETTINGS.layout,
-    };
+    return parse(localStorage.getItem(STORAGE_KEY));
   } catch {
     return DEFAULT_SETTINGS;
   }
 }
 
-function writeStorage(s: AppSettings) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  window.dispatchEvent(new Event('settings-changed'));
-}
-
 export function useSettings() {
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useStorageValue<AppSettings>(
+    STORAGE_KEY,
+    parse,
+    serialize,
+    DEFAULT_SETTINGS,
+    EVENT_NAME,
+  );
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setSettings(readStorage());
     setHydrated(true);
-    const handler = () => setSettings(readStorage());
-    window.addEventListener('settings-changed', handler);
-    window.addEventListener('storage', handler);
-    return () => {
-      window.removeEventListener('settings-changed', handler);
-      window.removeEventListener('storage', handler);
-    };
   }, []);
 
-  const update = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-    const next = { ...readStorage(), [key]: value };
-    writeStorage(next);
-  }, []);
+  const update = useCallback(
+    <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+      setSettings({ ...readFresh(), [key]: value });
+    },
+    [setSettings],
+  );
 
-  const reset = useCallback(() => writeStorage(DEFAULT_SETTINGS), []);
+  const reset = useCallback(() => setSettings(DEFAULT_SETTINGS), [setSettings]);
 
   return { settings, update, reset, hydrated };
 }
