@@ -48,11 +48,6 @@ interface PullsResp {
   linked_issues_by_pull?: Record<string, LinkedIssueReference[]>;
 }
 
-interface UserReposResp {
-  count: number;
-  repos: Array<{ full_name: string; weight: number }>;
-}
-
 type AuthorTarget = { owner: string; name: string; repoFullName: string; login: string; association: string | null };
 type StateFilter = 'all' | 'open' | 'draft' | 'merged' | 'closed';
 type SortKey = 'updated' | 'opened' | 'closed' | 'repo' | 'weight' | 'number';
@@ -100,43 +95,24 @@ function AllPullsPage() {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [authorTarget, setAuthorTarget] = useState<AuthorTarget | null>(null);
 
-  const { data: userReposData, isSuccess: userReposReady } = useQuery<UserReposResp>({
-    queryKey: ['user-repos'],
-    queryFn: async ({ signal }) => {
-      const r = await fetch('/api/user-repos', { signal });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    },
-    refetchInterval: 5 * 60 * 1000,
-    staleTime: 4 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
   const currentRepoNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const repo of sn74Repos) names.set(repo.fullName.toLowerCase(), repo.fullName);
-    for (const repo of userReposData?.repos ?? []) {
-      if (!names.has(repo.full_name.toLowerCase())) names.set(repo.full_name.toLowerCase(), repo.full_name);
-    }
     return names;
-  }, [sn74Repos, userReposData]);
+  }, [sn74Repos]);
 
   const scopedTracked = useMemo(() => {
     const trackedNames = Array.from(tracked);
-    if (!sn74ReposReady || !userReposReady) return trackedNames;
+    if (!sn74ReposReady) return trackedNames;
     return trackedNames.filter((name) => currentRepoNames.has(name.toLowerCase()));
-  }, [currentRepoNames, sn74ReposReady, tracked, userReposReady]);
+  }, [currentRepoNames, sn74ReposReady, tracked]);
 
   const scopedTrackedSet = useMemo(
     () => new Set(scopedTracked.map((name) => name.toLowerCase())),
     [scopedTracked],
   );
 
-  const displayWeights = useMemo(() => {
-    const weights = new Map(repoWeights);
-    for (const repo of userReposData?.repos ?? []) weights.set(repo.full_name.toLowerCase(), repo.weight);
-    return weights;
-  }, [repoWeights, userReposData]);
+  const displayWeights = repoWeights;
 
   const trackedRepoParam = useMemo(() => {
     if (!trackedOnly) return null;
@@ -159,7 +135,7 @@ function AllPullsPage() {
     return sp.toString();
   }, [authorFilter, page, pageSize, query, sortDir, sortKey, stateFilter, trackedRepoParam]);
 
-  const { data, isLoading, isFetching } = useQuery<PullsResp>({
+  const { data, isLoading, isFetching, isError, error } = useQuery<PullsResp>({
     queryKey: ['all-pulls', pullsParams],
     queryFn: async ({ signal }) => {
       const r = await fetch(`/api/pulls?${pullsParams}`, { signal });
@@ -168,6 +144,7 @@ function AllPullsPage() {
     },
     refetchInterval: 30000,
     placeholderData: keepPreviousData,
+    retry: 1,
   });
 
   const rows = data?.pulls ?? [];
@@ -253,7 +230,7 @@ function AllPullsPage() {
         <Box sx={{ width: '100%', maxWidth: PULLS_CONTENT_MAX_WIDTH, mx: 'auto' }}>
           <Heading sx={{ fontSize: 4, mb: 1 }}>Pull Requests</Heading>
           <Text sx={{ color: 'fg.muted' }}>
-            Live aggregated view across current SN74 and custom repositories. Star a repo to highlight its PRs; toggle{' '}
+            Live aggregated view across current Gittensor-listed repositories. Star a repo to highlight its PRs; toggle{' '}
             <strong>Tracked only</strong> to filter to your watchlist.
           </Text>
         </Box>
@@ -410,7 +387,9 @@ function AllPullsPage() {
                 {!isLoading && rows.length === 0 && (
                   <Box as="tr">
                     <Box as="td" colSpan={11} sx={{ p: 4, textAlign: 'center', color: 'var(--fg-muted)' }}>
-                      {data && data.count === 0
+                      {isError
+                        ? `Could not load pull requests (${error instanceof Error ? error.message : 'request failed'}).`
+                        : data && data.count === 0
                         ? hasActiveFilters
                           ? 'No PRs match these filters.'
                           : 'No pull requests cached for current repositories yet. Visit a repo page or run the poller to populate.'

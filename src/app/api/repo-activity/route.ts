@@ -50,23 +50,13 @@ function addAllowedRepo(map: Map<string, string>, fullName: string) {
   map.set(fullName.toLowerCase(), fullName);
 }
 
-async function loadAllowedRepos(db: ReturnType<typeof getDb>): Promise<Map<string, string>> {
+async function loadAllowedRepos(): Promise<Map<string, string>> {
   const allowedRepos = new Map<string, string>();
-  // Each source is independently failable — if the live-repo fetch dies
-  // or the user_repos table is missing on a stale DB, the other source
-  // still contributes. Empty map → route returns the empty-activity
-  // payload, never throws to the client.
   try {
     const { repos: liveRepos } = await getLiveReposAsyncServer();
     for (const repo of liveRepos) addAllowedRepo(allowedRepos, repo.fullName);
   } catch (err) {
     console.error('[repo-activity] live repo fetch failed:', err instanceof Error ? err.message : err);
-  }
-  try {
-    const userRepos = db.prepare('SELECT full_name FROM user_repos').all() as Array<{ full_name: string }>;
-    for (const repo of userRepos) addAllowedRepo(allowedRepos, repo.full_name);
-  } catch (err) {
-    console.error('[repo-activity] user_repos query failed:', err instanceof Error ? err.message : err);
   }
   return allowedRepos;
 }
@@ -115,7 +105,7 @@ async function activityResponse(sinceInput: unknown, viewedInput: unknown) {
   const since = parseIso(sinceInput) ?? defaultSince();
   const viewedAt = normalizeViewedAt(viewedInput);
   const db = getDb();
-  const allowedRepos = await loadAllowedRepos(db);
+  const allowedRepos = await loadAllowedRepos();
 
   if (allowedRepos.size === 0) {
     return NextResponse.json({ since, baselines: {}, activity: {} });
