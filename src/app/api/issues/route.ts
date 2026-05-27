@@ -152,7 +152,7 @@ function orderBy(sort: SortKey, dir: SortDir, since: string | null, activitySinc
       ? 'LOWER(i.repo_full_name)'
       : sort === 'number'
       ? 'i.number'
-      : 'COALESCE(rw.weight, ur.weight, 0)';
+      : 'COALESCE(rw.weight, 0)';
 
   return `ORDER BY ${col} ${direction}, LOWER(i.repo_full_name) ASC, i.number DESC`;
 }
@@ -201,7 +201,6 @@ export async function GET(req: NextRequest) {
   const fromSql = `
     FROM issues i
     LEFT JOIN repo_weights rw ON rw.full_name = i.repo_full_name
-    LEFT JOIN user_repos ur ON ur.full_name = i.repo_full_name
   `;
   const filteredWhere = buildWhere({
     repos,

@@ -117,10 +117,119 @@ function orderBy(sort: SortKey, dir: SortDir, sinceIso: string | null): string {
       : sort === 'number'
       ? 'p.number'
       : sort === 'weight'
-      ? 'COALESCE(rw.weight, ur.weight, 0)'
+      ? 'COALESCE(rw.weight, 0)'
       : "COALESCE(p.updated_at, '')";
 
   return `ORDER BY ${col} ${direction}, LOWER(p.repo_full_name) ASC, p.number DESC`;
+}
+
+const FAST_RECENT_MAX_PER_REPO = 5_000;
+
+const PULL_ROW_COLUMNS = `
+  p.id, p.repo_full_name, p.number, p.title, NULL as body, p.state, p.draft, p.merged,
+  p.author_login, p.author_association, p.created_at, p.updated_at, p.closed_at, p.merged_at,
+  p.html_url, p.fetched_at, p.first_seen_at
+`;
+
+interface PullTotals {
+  count: number;
+  repo_count: number;
+}
+
+interface PullAuthorRow {
+  login: string;
+  count: number;
+}
+
+function canUseFastRecentPath({
+  q,
+  state,
+  author,
+  sinceIso,
+  sort,
+  dir,
+  offset,
+  limit,
+}: {
+  q: string;
+  state: string | null;
+  author: string | null;
+  sinceIso: string | null;
+  sort: SortKey;
+  dir: SortDir;
+  offset: number;
+  limit: number;
+}): boolean {
+  return (
+    !q &&
+    (!state || state === 'all') &&
+    (!author || author === 'all') &&
+    !sinceIso &&
+    sort === 'updated' &&
+    dir === 'desc' &&
+    offset + limit <= FAST_RECENT_MAX_PER_REPO
+  );
+}
+
+function compareRecentPulls(a: PullRow, b: PullRow): number {
+  const updated = (b.updated_at ?? '').localeCompare(a.updated_at ?? '');
+  if (updated !== 0) return updated;
+  const repo = a.repo_full_name.toLowerCase().localeCompare(b.repo_full_name.toLowerCase());
+  if (repo !== 0) return repo;
+  return b.number - a.number;
+}
+
+function mergeAuthorRows(rows: PullAuthorRow[]): PullAuthorRow[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.login, (counts.get(row.login) ?? 0) + row.count);
+  return Array.from(counts, ([login, count]) => ({ login, count }))
+    .sort((a, b) => b.count - a.count || a.login.toLowerCase().localeCompare(b.login.toLowerCase()))
+    .slice(0, 2000);
+}
+
+function readFastRecentPullPage(
+  db: ReturnType<typeof getReadDb>,
+  repos: string[],
+  limit: number,
+  offset: number,
+): { totals: PullTotals; authorRows: PullAuthorRow[]; rows: PullRow[] } {
+  const countStmt = db.prepare('SELECT COUNT(*) as count FROM pulls WHERE repo_full_name = ?');
+  let totalCount = 0;
+  let repoCount = 0;
+  for (const repo of repos) {
+    const count = (countStmt.get(repo) as { count: number }).count;
+    if (count > 0) repoCount += 1;
+    totalCount += count;
+  }
+  const totals = { count: totalCount, repo_count: repoCount };
+
+  const perRepoLimit = offset + limit;
+  const rowStmt = db.prepare(
+    `SELECT ${PULL_ROW_COLUMNS}
+     FROM pulls p
+     WHERE p.repo_full_name = ?
+     ORDER BY p.updated_at DESC, p.number DESC
+     LIMIT ?`,
+  );
+  const authorStmt = db.prepare(
+    `SELECT author_login as login, COUNT(*) as count
+     FROM pulls
+     WHERE repo_full_name = ? AND author_login IS NOT NULL
+     GROUP BY author_login`,
+  );
+  const candidates: PullRow[] = [];
+  const authorCandidates: PullAuthorRow[] = [];
+  for (const repo of repos) {
+    candidates.push(...(rowStmt.all(repo, perRepoLimit) as PullRow[]));
+    authorCandidates.push(...(authorStmt.all(repo) as PullAuthorRow[]));
+  }
+  candidates.sort(compareRecentPulls);
+
+  return {
+    totals,
+    authorRows: mergeAuthorRows(authorCandidates),
+    rows: candidates.slice(offset, offset + limit),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -161,59 +270,64 @@ export async function GET(req: NextRequest) {
   }
 
   const db = getReadDb();
-  const fromSql = `
-    FROM pulls p
-    LEFT JOIN repo_weights rw ON rw.full_name = p.repo_full_name
-    LEFT JOIN user_repos ur ON ur.full_name = p.repo_full_name
-  `;
-  const filteredWhere = buildWhere({
-    repos,
-    q,
-    state,
-    author,
-    includeAuthor: true,
-    sinceIso,
-  });
-  const authorWhere = buildWhere({
-    repos,
-    q,
-    state,
-    author,
-    includeAuthor: false,
-    sinceIso,
-  });
+  let totals: PullTotals;
+  let authorRows: PullAuthorRow[];
+  let rows: PullRow[];
 
-  const totals = db
-    .prepare(
-      `SELECT COUNT(*) as count, COUNT(DISTINCT p.repo_full_name) as repo_count
-       ${fromSql}
-       ${filteredWhere.sql}`,
-    )
-    .get(...filteredWhere.args) as { count: number; repo_count: number };
+  if (canUseFastRecentPath({ q, state, author, sinceIso, sort, dir, offset, limit })) {
+    ({ totals, authorRows, rows } = readFastRecentPullPage(db, repos, limit, offset));
+  } else {
+    const fromSql = `
+      FROM pulls p
+      LEFT JOIN repo_weights rw ON rw.full_name = p.repo_full_name
+    `;
+    const filteredWhere = buildWhere({
+      repos,
+      q,
+      state,
+      author,
+      includeAuthor: true,
+      sinceIso,
+    });
+    const authorWhere = buildWhere({
+      repos,
+      q,
+      state,
+      author,
+      includeAuthor: false,
+      sinceIso,
+    });
 
-  const authorRows = db
-    .prepare(
-      `SELECT p.author_login as login, COUNT(*) as count
-       ${fromSql}
-       ${authorWhere.sql}
-       AND p.author_login IS NOT NULL
-       GROUP BY p.author_login
-       ORDER BY count DESC, LOWER(p.author_login) ASC
-       LIMIT 2000`,
-    )
-    .all(...authorWhere.args) as Array<{ login: string; count: number }>;
+    totals = db
+      .prepare(
+        `SELECT COUNT(*) as count, COUNT(DISTINCT p.repo_full_name) as repo_count
+         ${fromSql}
+         ${filteredWhere.sql}`,
+      )
+      .get(...filteredWhere.args) as PullTotals;
 
-  const rows = db
-    .prepare(
-      `SELECT p.id, p.repo_full_name, p.number, p.title, NULL as body, p.state, p.draft, p.merged,
-              p.author_login, p.author_association, p.created_at, p.updated_at, p.closed_at, p.merged_at,
-              p.html_url, p.fetched_at, p.first_seen_at
-       ${fromSql}
-       ${filteredWhere.sql}
-       ${orderBy(sort, dir, sinceIso)}
-       LIMIT ? OFFSET ?`,
-    )
-    .all(...filteredWhere.args, limit, offset) as PullRow[];
+    authorRows = db
+      .prepare(
+        `SELECT p.author_login as login, COUNT(*) as count
+         ${fromSql}
+         ${authorWhere.sql}
+         AND p.author_login IS NOT NULL
+         GROUP BY p.author_login
+         ORDER BY count DESC, LOWER(p.author_login) ASC
+         LIMIT 2000`,
+      )
+      .all(...authorWhere.args) as PullAuthorRow[];
+
+    rows = db
+      .prepare(
+        `SELECT ${PULL_ROW_COLUMNS}
+         ${fromSql}
+         ${filteredWhere.sql}
+         ${orderBy(sort, dir, sinceIso)}
+         LIMIT ? OFFSET ?`,
+      )
+      .all(...filteredWhere.args, limit, offset) as PullRow[];
+  }
 
   const rowRepoNames = rows.map((r) => r.repo_full_name);
   const [scoreMap, credibilityIndex, issueDiscoveryDisabledRepos] = rows.length > 0

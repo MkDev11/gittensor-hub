@@ -3,7 +3,7 @@ import { getReadDb, PullRow } from '@/lib/db';
 import { refreshPullsIfStale } from '@/lib/refresh';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
-import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
+import { getIssueDiscoveryDisabledReposAsyncServer, isTrackedRepoServer } from '@/lib/repos-server';
 import { GITTENSOR_PR_SCORE_TTL_MS, getGittensorPrScoreMap, pullScoreKey } from '@/lib/gittensor-pr-scores';
 
 export const dynamic = 'force-dynamic';
@@ -58,6 +58,7 @@ export async function GET(
 }
 
 async function getPullsImpl(req: NextRequest, full: string) {
+  if (!(await isTrackedRepoServer(full))) return emptyPullsResponse(full);
 
   // Poller handles refresh on its own cadence — see the same note in the
   // /issues route for why we don't call refresh from request handlers.

@@ -263,7 +263,7 @@ reward share = PR share x effective repo PR reward pool`}</Pre>
               </P>
               <Ul>
                 <Li>
-                  <strong>Left rail</strong> — searchable list of all SN74 + custom repos, sorted by weight, with star
+                  <strong>Left rail</strong> — searchable list of live Gittensor-listed repos, sorted by weight, with star
                   toggle, activity badges, and a <em>Mark all read</em> button. Click a repo to load its content into
                   the middle pane.
                 </Li>
@@ -307,7 +307,7 @@ reward share = PR share x effective repo PR reward pool`}</Pre>
 
             <Article id="issues" title="Issues page">
               <P>
-                <Code>/issues</Code> — global server-backed issue feed across current SN74 and custom repositories.
+                <Code>/issues</Code> — global server-backed issue feed across current Gittensor-listed repositories.
                 Results are fetched a page at a time, with compact pagination and configurable rows per page.
               </P>
               <Ul>
@@ -323,7 +323,7 @@ reward share = PR share x effective repo PR reward pool`}</Pre>
 
             <Article id="pulls" title="Pull Requests page">
               <P>
-                <Code>/pulls</Code> — global server-backed PR feed across current SN74 and custom repositories. Results
+                <Code>/pulls</Code> — global server-backed PR feed across current Gittensor-listed repositories. Results
                 are fetched a page at a time, with the same compact pagination and row-count controls used by the Issues
                 view.
               </P>
@@ -343,12 +343,12 @@ reward share = PR share x effective repo PR reward pool`}</Pre>
 
             <Article id="manage" title="Manage Repositories">
               <P>
-                <Code>/manage-repos</Code> (also accessible from the user menu). Add custom repositories that aren't on
-                the SN74 whitelist — useful for tracking your own projects or non-SN74 repos you contribute to.
+                <Code>/manage-repos</Code> (also accessible from the user menu) is now a legacy/admin custom-repo list.
+                Issue and PR polling only follows the live Gittensor repository list.
               </P>
               <Ul>
                 <Li>Form: <Code>owner/name</Code> + weight (0–1) + optional notes</Li>
-                <Li>Custom repos are polled by the same background worker and show up everywhere — Explorer left rail, Repositories table, Issues, Pulls — with a <Pill>CUSTOM</Pill> pill</Li>
+                <Li>Custom repos are stored for reference, but they do not feed the SN74 poller, Explorer, Issues, or Pull Requests pages unless they are also listed by Gittensor.</Li>
                 <Li>Edit weight or notes inline; remove with the trash icon (confirmation prompt)</Li>
               </Ul>
               <P>Stored in SQLite (<Code>user_repos</Code> table) so they persist across server restarts.</P>
@@ -480,28 +480,6 @@ function Pre({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <Box
-      as="span"
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        px: '6px',
-        py: '1px',
-        bg: 'var(--accent-subtle)',
-        color: 'accent.fg',
-        fontSize: 0,
-        fontWeight: 700,
-        borderRadius: 999,
-        letterSpacing: '0.4px',
-        textTransform: 'uppercase',
-      }}
-    >
-      {children}
-    </Box>
-  );
-}
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (

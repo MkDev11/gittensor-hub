@@ -4,7 +4,7 @@ import { refreshIssuesIfStale, backfillPrIssueLinksIfNeeded } from '@/lib/refres
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { getSessionFromCookies } from '@/lib/auth';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
-import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
+import { getIssueDiscoveryDisabledReposAsyncServer, isTrackedRepoServer } from '@/lib/repos-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,6 +73,7 @@ export async function GET(
 }
 
 async function getIssuesImpl(req: NextRequest, full: string) {
+  if (!(await isTrackedRepoServer(full))) return emptyIssuesResponse(full);
 
   // Refresh is the poller's job — calling it from per-request handlers caused
   // a stampede when GitHub's response times spiked (each user poll spawned
