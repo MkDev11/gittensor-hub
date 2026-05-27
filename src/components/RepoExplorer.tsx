@@ -563,18 +563,23 @@ export default function RepoExplorer() {
   useEffect(() => {
     const urlRepo = searchParams?.get('repo') ?? null;
     setSelected((prev) => {
+      const prevKey = prev.fullName.toLowerCase();
+      const prevStillLive = prevKey ? allRepos.some((repo) => repo.fullName.toLowerCase() === prevKey) : false;
+      const firstLive = allRepos[0];
+
       // Prefer the URL-specified repo when present.
       if (urlRepo) {
-        if (prev.fullName === urlRepo) return prev;
-        const found = allRepos.find((x) => x.fullName === urlRepo);
-        if (!found) return prev;
+        const urlRepoKey = urlRepo.toLowerCase();
+        const found = allRepos.find((repo) => repo.fullName.toLowerCase() === urlRepoKey);
+        if (!found) return prevStillLive ? prev : (firstLive ?? prev);
+        if (prev.fullName === found.fullName) return prev;
         selectedFromUrlRef.current = true;
         return found;
       }
       // No `?repo=` and we're still on the placeholder: promote the
       // first real repo from the live list so the page has something
       // to render once `/api/sn74-repos` lands.
-      if (!prev.fullName && allRepos.length > 0) return allRepos[0];
+      if ((!prev.fullName || !prevStillLive) && firstLive) return firstLive;
       return prev;
     });
   }, [searchParams, allRepos]);
