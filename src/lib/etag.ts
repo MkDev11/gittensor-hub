@@ -10,6 +10,22 @@ export function buildEtag(parts: Array<string | number | null | undefined>): str
   return `"${createHash('sha1').update(raw).digest('base64url').slice(0, 16)}"`;
 }
 
+/** Normalize ETag tokens for comparison (strip weak prefix and whitespace). */
+function normalizeEtagToken(token: string): string {
+  return token.trim().replace(/^W\//i, '');
+}
+
+function ifNoneMatchIncludes(etag: string, header: string): boolean {
+  const normalized = normalizeEtagToken(etag);
+  for (const part of header.split(',')) {
+    const candidate = part.trim();
+    if (!candidate) continue;
+    if (candidate === '*') return true;
+    if (normalizeEtagToken(candidate) === normalized) return true;
+  }
+  return false;
+}
+
 /**
  * If the inbound If-None-Match matches the freshly-computed ETag, return a
  * 304 response with the ETag echoed back. Otherwise return null and the
@@ -17,7 +33,7 @@ export function buildEtag(parts: Array<string | number | null | undefined>): str
  */
 export function etagNotModified(req: Request, etag: string): NextResponse | null {
   const ifNoneMatch = req.headers.get('if-none-match');
-  if (ifNoneMatch && ifNoneMatch === etag) {
+  if (ifNoneMatch && ifNoneMatchIncludes(etag, ifNoneMatch)) {
     return new NextResponse(null, {
       status: 304,
       headers: { ETag: etag, 'Cache-Control': 'private, must-revalidate' },
