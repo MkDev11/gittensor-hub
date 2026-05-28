@@ -48,6 +48,15 @@ interface CacheEntry {
 let cache: CacheEntry | null = null;
 let inflight: Promise<CacheEntry> | null = null;
 
+function emptyMeta(): RepoMeta {
+  return {
+    description: '',
+    langs: [],
+    openPrCount: -1,
+    dailyIssues30d: new Array(30).fill(0),
+  };
+}
+
 /** Run an async task list with bounded concurrency. */
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<Array<PromiseSettledResult<R>>> {
   const results: Array<PromiseSettledResult<R>> = new Array(items.length);
@@ -105,7 +114,7 @@ async function fetchIssueCreates30d(
   for (let page = 1; page <= 10; page++) {
     const resp = await withRotation(
       (o) =>
-        o.search.issuesAndPullRequests({
+        o.request('GET /search/issues', {
           q,
           sort: 'created',
           order: 'desc',
@@ -175,6 +184,7 @@ async function refresh(): Promise<CacheEntry> {
   // helpful when GitHub rate-limits one endpoint but not others.
   let okRepo = 0, okLang = 0, okPulls = 0, okIssues = 0;
   let failRepo = 0, failLang = 0, failPulls = 0, failIssues = 0;
+  let timedOutRepos = 0;
 
   // Day-bin helpers shared by every per-repo issues binning below.
   const DAY_MS = 24 * 60 * 60 * 1000;
@@ -288,11 +298,13 @@ async function refresh(): Promise<CacheEntry> {
       // Only path here is withTimeout firing (the per-sub-call rejections
       // are already swallowed by allSettled). Prior cache entry, if any,
       // is preserved via the initial map spread.
+      timedOutRepos++;
       console.warn('[repos/metadata] per-repo timeout:', errMsg(result.reason));
     }
   }
   console.warn(
     `[repos/metadata] refresh done in ${Date.now() - t0}ms — ` +
+      `repos ${results.length - timedOutRepos}/${repos.length} (${timedOutRepos} timed out) · ` +
       `repo ${okRepo}/${okRepo + failRepo} · langs ${okLang}/${okLang + failLang} · ` +
       `pulls ${okPulls}/${okPulls + failPulls} · issues ${okIssues}/${okIssues + failIssues}`,
   );
@@ -425,11 +437,26 @@ async function getCached(): Promise<CacheEntry> {
     void refreshMissing();
     return cache;
   }
+  if (cache) {
+    if (!inflight) {
+      console.warn(`[repos/metadata] serving stale cache while refresh runs — age=${now - cache.fetchedAt}ms`);
+      inflight = refresh().finally(() => {
+        inflight = null;
+      });
+    }
+    void refreshMissing();
+    return cache;
+  }
   if (inflight) return inflight;
+  const { repos } = await getLiveReposAsyncServer();
+  const seeded: Record<string, RepoMeta> = {};
+  for (const repo of repos) seeded[repo.fullName.toLowerCase()] = emptyMeta();
+  cache = { fetchedAt: 0, data: seeded };
+  console.warn(`[repos/metadata] serving cold fallback for ${repos.length} repo(s) while refresh runs`);
   inflight = refresh().finally(() => {
     inflight = null;
   });
-  return inflight;
+  return cache;
 }
 
 export async function GET() {
