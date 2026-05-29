@@ -21,7 +21,7 @@ import { TableRowsSkeleton } from '@/components/Skeleton';
 import Dropdown from '@/components/Dropdown';
 import SearchInput from '@/components/SearchInput';
 import AuthorFilter from '@/components/AuthorFilter';
-import AuthorActivitySidebar from '@/components/AuthorActivitySidebar';
+import { AuthorSidebarModal } from '@/components/AuthorSidebarModal';
 import AuthorCredibilityNote from '@/components/AuthorCredibilityNote';
 import PullScoreCell from '@/components/PullScoreCell';
 import RelatedIssuesCell from '@/components/RelatedIssuesCell';
@@ -464,48 +464,12 @@ function AllPullsPage() {
         );
       })()}
 
-      {authorTarget && (
-        <>
-          <Box
-            onMouseDown={() => setAuthorTarget(null)}
-            sx={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 219,
-              bg: 'rgba(1, 4, 9, 0.28)',
-            }}
-          />
-          <Box
-            sx={{
-              position: 'fixed',
-              top: 'var(--header-height)',
-              right: 0,
-              bottom: 0,
-              width: ['100vw', null, 'min(760px, 52vw)'],
-              maxWidth: ['100vw', null, 'calc(100vw - 24px)'],
-              borderLeft: '1px solid',
-              borderColor: 'var(--border-default)',
-              bg: 'var(--bg-canvas)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              boxShadow: '-18px 0 36px rgba(1, 4, 9, 0.36)',
-              zIndex: 220,
-            }}
-          >
-            <AuthorActivitySidebar
-              owner={authorTarget.owner}
-              name={authorTarget.name}
-              repoFullName={authorTarget.repoFullName}
-              login={authorTarget.login}
-              initialAssociation={authorTarget.association}
-              onClose={() => setAuthorTarget(null)}
-              onPullClick={openPullFromAuthor}
-              onIssueClick={openIssueFromAuthor}
-            />
-          </Box>
-        </>
-      )}
+      <AuthorSidebarModal
+        target={authorTarget}
+        onClose={() => setAuthorTarget(null)}
+        onPullClick={openPullFromAuthor}
+        onIssueClick={openIssueFromAuthor}
+      />
 
       {openPull && settings.contentDisplay === 'side' && (() => {
         const [o, n] = openPull.repo_full_name.split('/');

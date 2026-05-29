@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import Database from 'better-sqlite3';
+import { ISSUE_BODY_CAP, PULL_BODY_CAP } from './body-cap';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -113,6 +114,7 @@ export function getDb(): Database.Database {
       number             INTEGER NOT NULL,
       title              TEXT NOT NULL,
       body               TEXT,
+      body_truncated     INTEGER NOT NULL DEFAULT 0,
       state              TEXT NOT NULL,
       state_reason       TEXT,
       author_login       TEXT,
@@ -145,6 +147,7 @@ export function getDb(): Database.Database {
       number             INTEGER NOT NULL,
       title              TEXT NOT NULL,
       body               TEXT,
+      body_truncated     INTEGER NOT NULL DEFAULT 0,
       state              TEXT NOT NULL,
       draft              INTEGER DEFAULT 0,
       merged             INTEGER DEFAULT 0,
@@ -311,6 +314,33 @@ export function getDb(): Database.Database {
     db.exec('ALTER TABLE pulls ADD COLUMN author_association TEXT');
   }
 
+  // `body_truncated` (issue #165) records whether a stored body was capped by
+  // the poller, replacing the old "stored length == cap" inference in the
+  // detail routes. When the column is first added we backfill it: a poller-
+  // capped body lands at exactly the cap length, so flag those rows truncated.
+  // Erring toward `1` is the safe direction — a false truncated flag costs one
+  // detail re-fetch that then re-stores the full body and self-heals the flag,
+  // whereas a false complete flag would serve a clipped body as if whole.
+  // The ADD COLUMN and its backfill must commit together: if a crash landed
+  // between them, the next boot would see the column present, skip this block,
+  // and leave capped rows defaulted to 0 (complete) — the unsafe direction.
+  // Wrapping in a transaction rolls the ALTER back too, so the migration re-runs.
+  const issuesCols = db.prepare("PRAGMA table_info(issues)").all() as Array<{ name: string }>;
+  if (!issuesCols.some((c) => c.name === 'body_truncated')) {
+    db.transaction(() => {
+      db.exec('ALTER TABLE issues ADD COLUMN body_truncated INTEGER NOT NULL DEFAULT 0');
+      db.prepare('UPDATE issues SET body_truncated = 1 WHERE body IS NOT NULL AND length(body) = ?')
+        .run(ISSUE_BODY_CAP);
+    })();
+  }
+  if (!pullsCols.some((c) => c.name === 'body_truncated')) {
+    db.transaction(() => {
+      db.exec('ALTER TABLE pulls ADD COLUMN body_truncated INTEGER NOT NULL DEFAULT 0');
+      db.prepare('UPDATE pulls SET body_truncated = 1 WHERE body IS NOT NULL AND length(body) = ?')
+        .run(PULL_BODY_CAP);
+    })();
+  }
+
   // One-shot purge of false-positive pr_issue_links (issue #137). Guarded by
   // PRAGMA user_version so it runs exactly once per database file.
   const schemaVersion = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
@@ -332,6 +362,7 @@ export interface IssueRow {
   number: number;
   title: string;
   body: string | null;
+  body_truncated: number;
   state: string;
   state_reason: string | null;
   author_login: string | null;
@@ -352,6 +383,7 @@ export interface PullRow {
   number: number;
   title: string;
   body: string | null;
+  body_truncated: number;
   state: string;
   draft: number;
   merged: number;

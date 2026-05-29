@@ -247,6 +247,20 @@ const FETCH_TIMEOUT_MS = 10_000;
 const liveByLc = new Map<string, RepoEntry>();
 const liveConfigJsonByLc = new Map<string, string>();
 
+// Validation for the untrusted upstream body (see refreshLiveIfStale). A live
+// refresh that fails these is rejected wholesale, so a malformed HTTP-200
+// response can never clear the snapshot or zero persisted weights.
+//   * REPO_FULL_NAME_RE: a GitHub `owner/name` key — exactly one slash, no
+//     whitespace. Rejects array indices ("0"), error keys ("message"), etc.
+//   * MIN_LIVE_RETAIN_FRACTION: a refresh that would shrink the known-good
+//     live universe below this fraction is treated as a suspect collapse.
+const REPO_FULL_NAME_RE = /^[^/\s]+\/[^/\s]+$/;
+const MIN_LIVE_RETAIN_FRACTION = 0.5;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function deleteRowsOutsideLive(
   db: ReturnType<typeof getDb>,
   table: string,
@@ -284,14 +298,34 @@ async function refreshLiveIfStale(): Promise<void> {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data = (await r.json()) as Record<string, MasterRepoEntry>;
 
-      liveByLc.clear();
-      liveConfigJsonByLc.clear();
-      for (const [fn, ent] of Object.entries(data)) {
+      // The body is an untrusted third-party file. Validate its shape and size
+      // into local maps *before* touching the live snapshot, so a malformed,
+      // empty, or garbage HTTP-200 response — an upstream deploy serving `{}`, a
+      // GitHub `{"message":"Not Found"}` error object, a truncated file, or a
+      // schema change to an array — is rejected wholesale and handled like any
+      // other failed fetch. The last known-good snapshot and the persisted
+      // weights are left untouched on rejection.
+      const parsed: unknown = await r.json();
+      if (!isPlainObject(parsed)) {
+        const kind = parsed === null ? 'null' : Array.isArray(parsed) ? 'array' : typeof parsed;
+        throw new Error(`unexpected payload shape: ${kind}`);
+      }
+
+      const nextByLc = new Map<string, RepoEntry>();
+      const nextConfigJsonByLc = new Map<string, string>();
+      let skipped = 0;
+      for (const [fn, ent] of Object.entries(parsed)) {
+        if (!REPO_FULL_NAME_RE.test(fn) || !isPlainObject(ent)) {
+          skipped += 1;
+          continue;
+        }
         const key = fn.toLowerCase();
-        liveByLc.set(key, buildRepoEntry(fn, ent));
-        liveConfigJsonByLc.set(key, JSON.stringify(ent));
+        nextByLc.set(key, buildRepoEntry(fn, ent as MasterRepoEntry));
+        nextConfigJsonByLc.set(key, JSON.stringify(ent));
+      }
+      if (nextByLc.size === 0) {
+        throw new Error(`no valid "owner/name" entries (${Object.keys(parsed).length} keys, ${skipped} skipped)`);
       }
 
       const db = getDb();
@@ -299,6 +333,17 @@ async function refreshLiveIfStale(): Promise<void> {
         .prepare('SELECT full_name, weight, config_json FROM repo_weights')
         .all() as Array<{ full_name: string; weight: number; config_json: string | null }>;
       const existingLc = new Set(existing.map((r) => r.full_name.toLowerCase()));
+
+      // Sanity floor: refuse a snapshot that would collapse the known-good live
+      // universe below MIN_LIVE_RETAIN_FRACTION of its size. `prev` is the warm
+      // in-memory size once a good fetch has landed, else the persisted DB
+      // floor on cold start. A genuine >50% upstream drop is extraordinary
+      // enough to warrant failing loud (logged + throttled) while we keep
+      // serving the previous good set, rather than silently zeroing repos.
+      const prev = lastFetchedAt > 0 ? liveByLc.size : existing.length;
+      if (prev > 0 && nextByLc.size < Math.ceil(prev * MIN_LIVE_RETAIN_FRACTION)) {
+        throw new Error(`snapshot shrank past sanity floor: ${nextByLc.size} < ${prev} known-good`);
+      }
 
       const upsert = db.prepare(
         `INSERT INTO repo_weights (full_name, weight, updated_at, config_json) VALUES (?, ?, ?, ?)
@@ -313,29 +358,36 @@ async function refreshLiveIfStale(): Promise<void> {
       let updated = 0;
       let added = 0;
       let prunedCacheRows = 0;
-      const liveKeys = Array.from(liveByLc.keys());
+      const nextKeys = Array.from(nextByLc.keys());
       const tx = db.transaction(() => {
         for (const e of existing) {
           const key = e.full_name.toLowerCase();
-          const live = liveByLc.get(key);
-          const liveConfigJson = liveConfigJsonByLc.get(key) ?? null;
-          if (live) {
-            if (e.weight !== live.weight || (e.config_json ?? null) !== liveConfigJson) {
-              upsert.run(e.full_name, live.weight, now, liveConfigJson);
+          const next = nextByLc.get(key);
+          const nextConfigJson = nextConfigJsonByLc.get(key) ?? null;
+          if (next) {
+            if (e.weight !== next.weight || (e.config_json ?? null) !== nextConfigJson) {
+              upsert.run(e.full_name, next.weight, now, nextConfigJson);
               updated += 1;
             }
           } else {
             removedRepos += deleteWeight.run(e.full_name).changes;
           }
         }
-        for (const [key, live] of liveByLc.entries()) {
+        for (const [key, next] of nextByLc.entries()) {
           if (existingLc.has(key)) continue;
-          upsert.run(live.fullName, live.weight, now, liveConfigJsonByLc.get(key) ?? null);
+          upsert.run(next.fullName, next.weight, now, nextConfigJsonByLc.get(key) ?? null);
           added += 1;
         }
-        prunedCacheRows = pruneCachedDataToLiveRepos(db, liveKeys);
+        prunedCacheRows = pruneCachedDataToLiveRepos(db, nextKeys);
       });
       tx();
+      // Swap validated snapshot into live maps only after the DB transaction
+      // commits successfully — prevents readers from observing a memory-ahead-of-DB
+      // state if tx() throws.
+      liveByLc.clear();
+      liveConfigJsonByLc.clear();
+      for (const [key, entry] of nextByLc) liveByLc.set(key, entry);
+      for (const [key, json] of nextConfigJsonByLc) liveConfigJsonByLc.set(key, json);
       lastFetchedAt = Date.now();
       console.log(
         `[repos] live sync: ${liveByLc.size} upstream | ${added} added, ${updated} re-weighted/configured, ${removedRepos} removed, ${prunedCacheRows} stale cache rows pruned`,
