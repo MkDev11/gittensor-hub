@@ -345,14 +345,6 @@ async function refreshLiveIfStale(): Promise<void> {
         throw new Error(`snapshot shrank past sanity floor: ${nextByLc.size} < ${prev} known-good`);
       }
 
-      // Validated — swap the candidate in as the authoritative live snapshot.
-      // This runs synchronously through the DB transaction below (no awaits),
-      // so readers never observe a half-applied snapshot.
-      liveByLc.clear();
-      liveConfigJsonByLc.clear();
-      for (const [key, entry] of nextByLc) liveByLc.set(key, entry);
-      for (const [key, json] of nextConfigJsonByLc) liveConfigJsonByLc.set(key, json);
-
       const upsert = db.prepare(
         `INSERT INTO repo_weights (full_name, weight, updated_at, config_json) VALUES (?, ?, ?, ?)
          ON CONFLICT(full_name) DO UPDATE SET
@@ -366,29 +358,36 @@ async function refreshLiveIfStale(): Promise<void> {
       let updated = 0;
       let added = 0;
       let prunedCacheRows = 0;
-      const liveKeys = Array.from(liveByLc.keys());
+      const nextKeys = Array.from(nextByLc.keys());
       const tx = db.transaction(() => {
         for (const e of existing) {
           const key = e.full_name.toLowerCase();
-          const live = liveByLc.get(key);
-          const liveConfigJson = liveConfigJsonByLc.get(key) ?? null;
-          if (live) {
-            if (e.weight !== live.weight || (e.config_json ?? null) !== liveConfigJson) {
-              upsert.run(e.full_name, live.weight, now, liveConfigJson);
+          const next = nextByLc.get(key);
+          const nextConfigJson = nextConfigJsonByLc.get(key) ?? null;
+          if (next) {
+            if (e.weight !== next.weight || (e.config_json ?? null) !== nextConfigJson) {
+              upsert.run(e.full_name, next.weight, now, nextConfigJson);
               updated += 1;
             }
           } else {
             removedRepos += deleteWeight.run(e.full_name).changes;
           }
         }
-        for (const [key, live] of liveByLc.entries()) {
+        for (const [key, next] of nextByLc.entries()) {
           if (existingLc.has(key)) continue;
-          upsert.run(live.fullName, live.weight, now, liveConfigJsonByLc.get(key) ?? null);
+          upsert.run(next.fullName, next.weight, now, nextConfigJsonByLc.get(key) ?? null);
           added += 1;
         }
-        prunedCacheRows = pruneCachedDataToLiveRepos(db, liveKeys);
+        prunedCacheRows = pruneCachedDataToLiveRepos(db, nextKeys);
       });
       tx();
+      // Swap validated snapshot into live maps only after the DB transaction
+      // commits successfully — prevents readers from observing a memory-ahead-of-DB
+      // state if tx() throws.
+      liveByLc.clear();
+      liveConfigJsonByLc.clear();
+      for (const [key, entry] of nextByLc) liveByLc.set(key, entry);
+      for (const [key, json] of nextConfigJsonByLc) liveConfigJsonByLc.set(key, json);
       lastFetchedAt = Date.now();
       console.log(
         `[repos] live sync: ${liveByLc.size} upstream | ${added} added, ${updated} re-weighted/configured, ${removedRepos} removed, ${prunedCacheRows} stale cache rows pruned`,
