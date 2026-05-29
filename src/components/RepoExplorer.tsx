@@ -160,6 +160,24 @@ function keepPreviousDataForRepo<T>(owner: string, name: string) {
   };
 }
 
+function canonicalizeViewedAt(
+  viewedAt: Record<string, string>,
+  allowedRepoNamesByLc: Map<string, string>,
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [repo, viewed] of Object.entries(viewedAt)) {
+    const canonicalRepo = allowedRepoNamesByLc.get(repo.toLowerCase());
+    if (canonicalRepo && viewed) next[canonicalRepo] = viewed;
+  }
+  return next;
+}
+
+function sameRecord(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aEntries = Object.entries(a);
+  if (aEntries.length !== Object.keys(b).length) return false;
+  return aEntries.every(([key, value]) => b[key] === value);
+}
+
 function RepoPolicyPanel({ repo }: { repo: Sn74Repo }) {
   if (!repo.fullName) return null;
   const excessivePrThreshold = repo.excessivePrPenaltyThreshold ?? DEFAULT_EXCESSIVE_PR_PENALTY_THRESHOLD;
@@ -799,12 +817,10 @@ export default function RepoExplorer() {
   }>({
     queryKey: ['repo-activity', appBaseline],
     queryFn: async ({ signal }) => {
-      const r = await fetch('/api/repo-activity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ since: appBaseline, viewed_at: viewedAtRef.current }),
-        signal,
-      });
+      const params = new URLSearchParams({ since: appBaseline });
+      const viewed = canonicalizeViewedAt(viewedAtRef.current, visibleRepoNamesByLc);
+      if (Object.keys(viewed).length > 0) params.set('viewed_at', JSON.stringify(viewed));
+      const r = await fetch(`/api/repo-activity?${params}`, { signal, cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
@@ -860,6 +876,14 @@ export default function RepoExplorer() {
 
   useEffect(() => {
     if (!hydrated || !repoAllowlistReady) return;
+    setViewedAt((prev) => {
+      const next = canonicalizeViewedAt(prev, visibleRepoNamesByLc);
+      if (sameRecord(prev, next)) return prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gittensor.viewedAt', JSON.stringify(next));
+      }
+      return next;
+    });
     setStickyBadges((prev) => {
       let changed = false;
       const next: Record<string, StickyBadge> = {};

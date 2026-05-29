@@ -156,19 +156,14 @@ async function safeActivityResponse(sinceInput: unknown, viewedInput: unknown) {
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  return safeActivityResponse(url.searchParams.get('since'), null);
-}
-
-export async function POST(req: NextRequest) {
-  let body: { since?: unknown; viewed_at?: unknown };
-  try {
-    const parsed = await req.json();
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  let viewedAt: unknown = null;
+  const viewedRaw = url.searchParams.get('viewed_at');
+  if (viewedRaw) {
+    try {
+      viewedAt = JSON.parse(viewedRaw);
+    } catch {
+      viewedAt = null;
     }
-    body = parsed as { since?: unknown; viewed_at?: unknown };
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  return safeActivityResponse(body.since, body.viewed_at);
+  return safeActivityResponse(url.searchParams.get('since'), viewedAt);
 }
