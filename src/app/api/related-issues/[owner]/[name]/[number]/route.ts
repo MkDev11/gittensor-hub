@@ -53,7 +53,7 @@ function selectPull(repoFullName: string, prNumber: number): PullRow | null {
   return (
     (getDb()
       .prepare(
-        `SELECT id, repo_full_name, number, title, body, state, draft, merged,
+        `SELECT id, repo_full_name, number, title, body, body_truncated, state, draft, merged,
                 author_login, author_association, created_at, updated_at, closed_at, merged_at,
                 html_url, fetched_at, first_seen_at
          FROM pulls WHERE repo_full_name = ? AND number = ?`
@@ -80,6 +80,7 @@ async function fetchPull(owner: string, repo: string, prNumber: number): Promise
       number: data.number,
       title: data.title,
       body: data.body ?? null,
+      body_truncated: 0,
       state: data.state,
       draft: data.draft ? 1 : 0,
       merged: data.merged ? 1 : 0,
@@ -122,13 +123,16 @@ async function fetchAndCacheIssue(owner: string, repo: string, issueNumber: numb
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO issues
-     (repo_full_name, number, title, body, state, state_reason, author_login, author_association,
+     (repo_full_name, number, title, body, body_truncated, state, state_reason, author_login, author_association,
       labels, comments, created_at, updated_at, closed_at, html_url, raw_json, fetched_at, first_seen_at)
-     VALUES (@repo_full_name, @number, @title, @body, @state, @state_reason, @author_login, @author_association,
+     VALUES (@repo_full_name, @number, @title, @body, 0, @state, @state_reason, @author_login, @author_association,
              @labels, @comments, @created_at, @updated_at, @closed_at, @html_url, NULL, @fetched_at, @first_seen_at)
      ON CONFLICT(repo_full_name, number) DO UPDATE SET
        title              = excluded.title,
+       -- Full, uncapped body from issues.get — store it and clear the truncated
+       -- flag so the poller won't re-clip it (issue #165).
        body               = excluded.body,
+       body_truncated     = 0,
        state              = excluded.state,
        state_reason       = excluded.state_reason,
        author_login       = excluded.author_login,
@@ -162,7 +166,7 @@ async function fetchAndCacheIssue(owner: string, repo: string, issueNumber: numb
 function selectLinkedIssues(repoFullName: string, prNumber: number): IssueRow[] {
   return getDb()
     .prepare(
-      `SELECT i.id, i.repo_full_name, i.number, i.title, i.body, i.state, i.state_reason,
+      `SELECT i.id, i.repo_full_name, i.number, i.title, i.body, i.body_truncated, i.state, i.state_reason,
               i.author_login, i.author_association, i.labels, i.comments,
               i.created_at, i.updated_at, i.closed_at, i.html_url, i.fetched_at, i.first_seen_at
        FROM pr_issue_links l
@@ -176,7 +180,7 @@ function selectLinkedIssues(repoFullName: string, prNumber: number): IssueRow[] 
 function selectRelatedPulls(repoFullName: string, issueNumber: number): PullRow[] {
   return getDb()
     .prepare(
-      `SELECT p.id, p.repo_full_name, p.number, p.title, p.body, p.state, p.draft, p.merged,
+      `SELECT p.id, p.repo_full_name, p.number, p.title, p.body, p.body_truncated, p.state, p.draft, p.merged,
               p.author_login, p.author_association, p.created_at, p.updated_at, p.closed_at, p.merged_at,
               p.html_url, p.fetched_at, p.first_seen_at
        FROM pr_issue_links l

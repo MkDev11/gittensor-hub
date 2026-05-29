@@ -35,14 +35,16 @@ export async function GET(
   const db = getDb();
   const cached = db
     .prepare(
-      `SELECT id, repo_full_name, number, title, body, state, draft, merged,
+      `SELECT id, repo_full_name, number, title, body, body_truncated, state, draft, merged,
               author_login, author_association, created_at, updated_at, closed_at, merged_at,
               html_url, fetched_at, first_seen_at
        FROM pulls WHERE repo_full_name = ? AND number = ?`
     )
     .get(repoFullName, num) as PullRow | undefined;
 
-  if (cached && cached.body !== null && cached.body.length !== 4000) {
+  // Serve from cache only when the stored body is complete, read from the
+  // explicit poller-set flag rather than inferred from length (issue #165).
+  if (cached && cached.body !== null && !cached.body_truncated) {
     return NextResponse.json({ ...cached, source: 'cache' }, { headers: NO_STORE_HEADERS });
   }
 
@@ -60,13 +62,16 @@ export async function GET(
 
     db.prepare(
       `INSERT INTO pulls
-       (repo_full_name, number, title, body, state, draft, merged, author_login, author_association,
+       (repo_full_name, number, title, body, body_truncated, state, draft, merged, author_login, author_association,
         created_at, updated_at, closed_at, merged_at, html_url, raw_json, fetched_at, first_seen_at)
-       VALUES (@repo_full_name, @number, @title, @body, @state, @draft, @merged, @author_login, @author_association,
+       VALUES (@repo_full_name, @number, @title, @body, 0, @state, @draft, @merged, @author_login, @author_association,
                @created_at, @updated_at, @closed_at, @merged_at, @html_url, NULL, @fetched_at, @first_seen_at)
        ON CONFLICT(repo_full_name, number) DO UPDATE SET
          title              = excluded.title,
+         -- Detail fetch returns the full, uncapped body — store it verbatim and
+         -- clear the truncated flag so the poller won't clobber it (issue #165).
          body               = excluded.body,
+         body_truncated     = 0,
          state              = excluded.state,
          draft              = excluded.draft,
          merged             = excluded.merged,
@@ -103,6 +108,7 @@ export async function GET(
       number: data.number,
       title: data.title,
       body: data.body ?? null,
+      body_truncated: 0,
       state: data.state,
       draft: data.draft ? 1 : 0,
       merged: data.merged ? 1 : 0,

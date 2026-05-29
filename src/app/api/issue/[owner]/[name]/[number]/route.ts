@@ -72,14 +72,19 @@ export async function GET(
   const db = getDb();
   const cached = db
     .prepare(
-      `SELECT id, repo_full_name, number, title, body, state, state_reason,
+      `SELECT id, repo_full_name, number, title, body, body_truncated, state, state_reason,
               author_login, author_association, labels, comments,
               created_at, updated_at, closed_at, html_url, fetched_at, first_seen_at
        FROM issues WHERE repo_full_name = ? AND number = ?`
     )
     .get(repoFullName, num) as IssueRow | undefined;
 
-  if (cached && cached.body !== null && cached.body.length !== 8000) {
+  // Serve from cache only when the stored body is complete. Truncation is read
+  // from the explicit flag the poller sets, not inferred from the body length
+  // (issue #165) — so a body that happens to equal the cap is no longer
+  // re-fetched forever, and a full body stored by an earlier detail open keeps
+  // being served instead of triggering a fresh GitHub call every poll cycle.
+  if (cached && cached.body !== null && !cached.body_truncated) {
     return NextResponse.json(
       issueRowPayload(cached, 'cache', mergedPullCountForIssue(db, repoFullName, num)),
       { headers: NO_STORE_HEADERS },
@@ -106,13 +111,16 @@ export async function GET(
 
     db.prepare(
       `INSERT INTO issues
-       (repo_full_name, number, title, body, state, state_reason, author_login, author_association,
+       (repo_full_name, number, title, body, body_truncated, state, state_reason, author_login, author_association,
         labels, comments, created_at, updated_at, closed_at, html_url, raw_json, fetched_at, first_seen_at)
-       VALUES (@repo_full_name, @number, @title, @body, @state, @state_reason, @author_login, @author_association,
+       VALUES (@repo_full_name, @number, @title, @body, 0, @state, @state_reason, @author_login, @author_association,
                @labels, @comments, @created_at, @updated_at, @closed_at, @html_url, NULL, @fetched_at, @first_seen_at)
        ON CONFLICT(repo_full_name, number) DO UPDATE SET
          title              = excluded.title,
+         -- Detail fetch returns the full, uncapped body — store it verbatim and
+         -- clear the truncated flag so the poller won't clobber it (issue #165).
          body               = excluded.body,
+         body_truncated     = 0,
          state              = excluded.state,
          state_reason       = excluded.state_reason,
          author_login       = excluded.author_login,
@@ -149,6 +157,7 @@ export async function GET(
       number: data.number,
       title: data.title,
       body: data.body ?? null,
+      body_truncated: 0,
       state: data.state,
       state_reason: data.state_reason ?? null,
       author_login: data.user?.login ?? null,
