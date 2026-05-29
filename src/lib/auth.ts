@@ -2,12 +2,14 @@ import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { cookies, headers } from 'next/headers';
+import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import {
   encodeSession,
   verifySessionToken,
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SEC,
+  type SessionPayload,
   type SessionStatus,
 } from '@/lib/session-token';
 
@@ -94,6 +96,21 @@ export async function getSessionFromCookies() {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE_NAME)?.value;
   return verifySessionToken(token);
+}
+
+/**
+ * Admin auth gate for API routes. On success returns the verified session and
+ * the corresponding fresh user row. On failure returns a 401/403 NextResponse
+ * the caller can return as-is.
+ */
+export async function requireAdmin(): Promise<
+  { session: SessionPayload; user: UserRow } | NextResponse
+> {
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = getUserById(session.uid);
+  if (!user || !user.is_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  return { session, user };
 }
 
 export { SESSION_COOKIE_NAME };

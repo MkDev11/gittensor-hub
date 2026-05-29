@@ -282,17 +282,33 @@ export interface GhPull {
 // re-bootstrap with the new cap.
 const MAX_BOOTSTRAP_PAGES = 500;
 
+/**
+ * Optional per-page sink. Invoked with each page's rows as soon as they're
+ * fetched, BEFORE the next page request. Callers use this to persist progress
+ * incrementally so a mid-pagination failure doesn't discard the pages already
+ * retrieved — the upserts are idempotent, so the cache's union grows toward
+ * completeness even across failed runs (see refresh.ts bootstrap handling).
+ *
+ * If `onPage` rejects, the error propagates out of the fetch (the page is
+ * treated as not durably persisted).
+ */
+export type PageSink<T> = (page: T[]) => void | Promise<void>;
+
 export async function fetchIssuesFromGithub(
   owner: string,
   repo: string,
   sinceIso?: string,
   perPage = 100,
+  onPage?: PageSink<GhIssue>,
 ): Promise<GhIssue[]> {
-  return withRotation(async (octokit) => {
-    const out: GhIssue[] = [];
-    const maxPages = sinceIso ? 200 : MAX_BOOTSTRAP_PAGES;
-    for (let page = 1; page <= maxPages; page++) {
-      const resp = await octokit.issues.listForRepo({
+  const out: GhIssue[] = [];
+  const maxPages = sinceIso ? 200 : MAX_BOOTSTRAP_PAGES;
+  // Each page request rotates independently: a transient error or rate-limit
+  // on one page retries / switches PATs without restarting the whole run, and
+  // pages already handed to `onPage` survive a later page's failure.
+  for (let page = 1; page <= maxPages; page++) {
+    const resp = await withRotation((octokit) =>
+      octokit.issues.listForRepo({
         owner,
         repo,
         state: 'all',
@@ -301,17 +317,16 @@ export async function fetchIssuesFromGithub(
         direction: 'desc',
         page,
         ...(sinceIso ? { since: sinceIso } : {}),
-      });
-      const items = resp.data as unknown as Array<GhIssue & { pull_request?: unknown }>;
-      if (items.length === 0) break;
-      for (const raw of items) {
-        if (raw.pull_request) continue;
-        out.push(raw);
-      }
-      if (items.length < perPage) break;
-    }
-    return out;
-  });
+      }),
+    );
+    const items = resp.data as unknown as Array<GhIssue & { pull_request?: unknown }>;
+    if (items.length === 0) break;
+    const issues = items.filter((raw) => !raw.pull_request);
+    if (onPage) await onPage(issues);
+    out.push(...issues);
+    if (items.length < perPage) break;
+  }
+  return out;
 }
 
 export async function fetchPullsFromGithub(
@@ -319,13 +334,14 @@ export async function fetchPullsFromGithub(
   repo: string,
   sinceIso?: string,
   perPage = 100,
+  onPage?: PageSink<GhPull>,
 ): Promise<GhPull[]> {
-  return withRotation(async (octokit) => {
-    const out: GhPull[] = [];
-    const sinceMs = sinceIso ? new Date(sinceIso).getTime() : 0;
-    const maxPages = sinceIso ? 200 : MAX_BOOTSTRAP_PAGES;
-    for (let page = 1; page <= maxPages; page++) {
-      const resp = await octokit.pulls.list({
+  const out: GhPull[] = [];
+  const sinceMs = sinceIso ? new Date(sinceIso).getTime() : 0;
+  const maxPages = sinceIso ? 200 : MAX_BOOTSTRAP_PAGES;
+  for (let page = 1; page <= maxPages; page++) {
+    const resp = await withRotation((octokit) =>
+      octokit.pulls.list({
         owner,
         repo,
         state: 'all',
@@ -333,21 +349,24 @@ export async function fetchPullsFromGithub(
         sort: 'updated',
         direction: 'desc',
         page,
-      });
-      const items = resp.data as unknown as GhPull[];
-      if (items.length === 0) break;
-      let stop = false;
-      for (const pr of items) {
-        if (sinceMs && new Date(pr.updated_at).getTime() < sinceMs) {
-          stop = true;
-          break;
-        }
-        out.push(pr);
+      }),
+    );
+    const items = resp.data as unknown as GhPull[];
+    if (items.length === 0) break;
+    let stop = false;
+    const fresh: GhPull[] = [];
+    for (const pr of items) {
+      if (sinceMs && new Date(pr.updated_at).getTime() < sinceMs) {
+        stop = true;
+        break;
       }
-      if (stop || items.length < perPage) break;
+      fresh.push(pr);
     }
-    return out;
-  });
+    if (onPage) await onPage(fresh);
+    out.push(...fresh);
+    if (stop || items.length < perPage) break;
+  }
+  return out;
 }
 
 /**
@@ -502,12 +521,13 @@ export async function fetchIssueCommentsFromGithub(
   repo: string,
   sinceIso?: string,
   perPage = 100,
+  onPage?: PageSink<GhComment>,
 ): Promise<GhComment[]> {
-  return withRotation(async (octokit) => {
-    const out: GhComment[] = [];
-    const maxPages = sinceIso ? 200 : MAX_BOOTSTRAP_PAGES;
-    for (let page = 1; page <= maxPages; page++) {
-      const resp = await octokit.issues.listCommentsForRepo({
+  const out: GhComment[] = [];
+  const maxPages = sinceIso ? 200 : MAX_BOOTSTRAP_PAGES;
+  for (let page = 1; page <= maxPages; page++) {
+    const resp = await withRotation((octokit) =>
+      octokit.issues.listCommentsForRepo({
         owner,
         repo,
         per_page: perPage,
@@ -515,14 +535,15 @@ export async function fetchIssueCommentsFromGithub(
         direction: 'desc',
         page,
         ...(sinceIso ? { since: sinceIso } : {}),
-      });
-      const items = resp.data as unknown as GhComment[];
-      if (items.length === 0) break;
-      out.push(...items);
-      if (items.length < perPage) break;
-    }
-    return out;
-  });
+      }),
+    );
+    const items = resp.data as unknown as GhComment[];
+    if (items.length === 0) break;
+    if (onPage) await onPage(items);
+    out.push(...items);
+    if (items.length < perPage) break;
+  }
+  return out;
 }
 
 export interface RateLimitStatus {

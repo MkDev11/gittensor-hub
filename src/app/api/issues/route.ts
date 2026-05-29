@@ -3,7 +3,7 @@ import { getReadDb, IssueRow } from '@/lib/db';
 import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
 import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
-import { chunk, normalizeRepoList, positiveInt, resolveRepoScope } from '@/lib/api-utils';
+import { chunk, createRequestTimer, normalizeRepoList, positiveInt, resolveRepoScope } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +42,16 @@ function parseLabels(labels: string | null): unknown[] {
   } catch {
     return [];
   }
+}
+
+function groupIssueNumbersByRepo(rows: IssueRow[]): Map<string, number[]> {
+  const grouped = new Map<string, number[]>();
+  for (const row of rows) {
+    const nums = grouped.get(row.repo_full_name) ?? [];
+    nums.push(row.number);
+    grouped.set(row.repo_full_name, nums);
+  }
+  return grouped;
 }
 
 function addStateFilter(where: string[], state: string | null) {
@@ -182,9 +192,23 @@ export async function GET(req: NextRequest) {
   const offset = windowMode ? 0 : (page - 1) * pageSize;
   const responsePage = windowMode ? 1 : page;
   const responsePageSize = windowMode ? limit : pageSize;
+  const timer = createRequestTimer('api/issues', {
+    page: responsePage,
+    pageSize: responsePageSize,
+    sort,
+    dir,
+    state: state ?? 'all',
+    closed: close ?? 'all',
+    author: author && author !== 'all' ? 'selected' : 'all',
+    q: q ? 'yes' : 'no',
+    since: Boolean(since),
+    activitySince: Boolean(activitySince),
+    requestedRepos: reqRepos?.length ?? 'all',
+  });
 
-  const repos = await resolveRepoScope(reqRepos);
+  const repos = await timer.time('resolveRepos', () => resolveRepoScope(reqRepos));
   if (repos.length === 0) {
+    timer.done({ repos: 0, rows: 0, count: 0 });
     return NextResponse.json({
       count: 0,
       repo_count: 0,
@@ -223,81 +247,115 @@ export async function GET(req: NextRequest) {
     includeAuthor: false,
   });
 
-  const totals = db
-    .prepare(
-      `SELECT COUNT(*) as count, COUNT(DISTINCT i.repo_full_name) as repo_count
-       ${fromSql}
-       ${filteredWhere.sql}`,
-    )
-    .get(...filteredWhere.args) as { count: number; repo_count: number };
+  const totals = timer.timeSync(
+    'db.issueTotals',
+    () =>
+      db
+        .prepare(
+          `SELECT COUNT(*) as count, COUNT(DISTINCT i.repo_full_name) as repo_count
+           ${fromSql}
+           ${filteredWhere.sql}`,
+        )
+        .get(...filteredWhere.args) as { count: number; repo_count: number },
+    { repos: repos.length },
+  );
 
-  const authorRows = db
-    .prepare(
-      `SELECT i.author_login as login, COUNT(*) as count
-       ${fromSql}
-       ${authorWhere.sql}
-       AND i.author_login IS NOT NULL
-       GROUP BY i.author_login
-       ORDER BY count DESC, LOWER(i.author_login) ASC
-       LIMIT 2000`,
-    )
-    .all(...authorWhere.args) as Array<{ login: string; count: number }>;
+  const authorRows = timer.timeSync(
+    'db.issueAuthors',
+    () =>
+      db
+        .prepare(
+          `SELECT i.author_login as login, COUNT(*) as count
+           ${fromSql}
+           ${authorWhere.sql}
+           AND i.author_login IS NOT NULL
+           GROUP BY i.author_login
+           ORDER BY count DESC, LOWER(i.author_login) ASC
+           LIMIT 2000`,
+        )
+        .all(...authorWhere.args) as Array<{ login: string; count: number }>,
+    { repos: repos.length },
+  );
 
-  const rows = db
-    .prepare(
-      `SELECT i.id, i.repo_full_name, i.number, i.title, NULL as body, i.state, i.state_reason,
-              i.author_login, i.author_association, i.labels, i.comments,
-              i.created_at, i.updated_at, i.closed_at, i.html_url, i.fetched_at, i.first_seen_at
-       ${fromSql}
-       ${filteredWhere.sql}
-       ${orderBy(sort, dir, since, activitySince)}
-       LIMIT ? OFFSET ?`,
-    )
-    .all(...filteredWhere.args, limit, offset) as IssueRow[];
+  const rows = timer.timeSync(
+    'db.issueRows',
+    () =>
+      db
+        .prepare(
+          `SELECT i.id, i.repo_full_name, i.number, i.title, NULL as body, i.state, i.state_reason,
+                  i.author_login, i.author_association, i.labels, i.comments,
+                  i.created_at, i.updated_at, i.closed_at, i.html_url, i.fetched_at, i.first_seen_at
+           ${fromSql}
+           ${filteredWhere.sql}
+           ${orderBy(sort, dir, since, activitySince)}
+           LIMIT ? OFFSET ?`,
+        )
+        .all(...filteredWhere.args, limit, offset) as IssueRow[],
+    { repos: repos.length, limit, offset },
+  );
 
   const linkedPrsByIssue = new Map<string, LinkedPullRow[]>();
   if (rows.length > 0) {
     const repoNames = Array.from(new Set(rows.map((r) => r.repo_full_name)));
-    for (const repoFullName of repoNames) {
-      try {
-        backfillPrIssueLinksIfNeeded(repoFullName);
-      } catch (err) {
-        console.warn(`[issues] skipped PR-link backfill for ${repoFullName}:`, err);
-      }
-    }
+    timer.timeSync(
+      'db.backfillGate',
+      () => {
+        for (const repoFullName of repoNames) {
+          try {
+            backfillPrIssueLinksIfNeeded(repoFullName);
+          } catch (err) {
+            console.warn(`[issues] skipped PR-link backfill for ${repoFullName}:`, err);
+          }
+        }
+      },
+      { repos: repoNames.length },
+    );
 
-    const wanted = new Set(rows.map((r) => `${r.repo_full_name.toLowerCase()}#${r.number}`));
-    for (const batch of chunk(repoNames, 200)) {
-      const placeholders = batch.map(() => '?').join(',');
-      const linkRows = db
-        .prepare(
-          `SELECT l.repo_full_name, l.issue_number, p.number, p.title, p.state, p.draft, p.merged,
-                  p.author_login, p.closed_at, p.merged_at, p.html_url
-           FROM pr_issue_links l
-           JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
-           WHERE l.repo_full_name IN (${placeholders})
-           ORDER BY l.repo_full_name ASC, l.issue_number ASC, p.number ASC`,
-        )
-        .all(...batch) as LinkedPullRow[];
-      for (const row of linkRows) {
-        const key = `${row.repo_full_name.toLowerCase()}#${row.issue_number}`;
-        if (!wanted.has(key)) continue;
-        const list = linkedPrsByIssue.get(key) ?? [];
-        list.push(row);
-        linkedPrsByIssue.set(key, list);
-      }
-    }
+    const issuesByRepo = groupIssueNumbersByRepo(rows);
+    timer.timeSync(
+      'db.linkedPrs',
+      () => {
+        try {
+          for (const [repoFullName, issueNumbers] of issuesByRepo) {
+            for (const batch of chunk(issueNumbers, 200)) {
+              const placeholders = batch.map(() => '?').join(',');
+              const linkRows = db
+                .prepare(
+                  `SELECT l.repo_full_name, l.issue_number, p.number, p.title, p.state, p.draft, p.merged,
+                          p.author_login, p.closed_at, p.merged_at, p.html_url
+                   FROM pr_issue_links l
+                   JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
+                   WHERE l.repo_full_name = ? AND l.issue_number IN (${placeholders})
+                   ORDER BY l.issue_number ASC, p.number ASC`,
+                )
+                .all(repoFullName, ...batch) as LinkedPullRow[];
+              for (const row of linkRows) {
+                const key = `${row.repo_full_name.toLowerCase()}#${row.issue_number}`;
+                const list = linkedPrsByIssue.get(key) ?? [];
+                list.push(row);
+                linkedPrsByIssue.set(key, list);
+              }
+            }
+          }
+        } catch (err) {
+          console.error(`[issues] linked-PRs join failed: ${err instanceof Error ? err.message : err}`);
+        }
+      },
+      { rows: rows.length, repos: issuesByRepo.size },
+    );
   }
 
   const rowRepoNames = rows.map((r) => r.repo_full_name);
+  const rowRepoCount = new Set(rowRepoNames.map((r) => r.toLowerCase())).size;
   const [credibilityIndex, issueDiscoveryDisabledRepos] = rows.length > 0
     ? await Promise.all([
-        getGittensorCredibilityIndex(rowRepoNames),
-        getIssueDiscoveryDisabledReposAsyncServer(rowRepoNames),
+        timer.time('enrich.credibility', () => getGittensorCredibilityIndex(rowRepoNames), { repos: rowRepoCount }),
+        timer.time('enrich.issueDiscovery', () => getIssueDiscoveryDisabledReposAsyncServer(rowRepoNames), { repos: rowRepoCount }),
       ])
     : [null, new Set<string>()];
   const totalPages = windowMode ? 1 : Math.max(1, Math.ceil(totals.count / pageSize));
 
+  timer.done({ repos: repos.length, rows: rows.length, count: totals.count });
   return NextResponse.json({
     count: totals.count,
     repo_count: totals.repo_count,
