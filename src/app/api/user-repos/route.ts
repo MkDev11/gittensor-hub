@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { getSessionFromCookies, getUserById } from '@/lib/auth';
+import { requireAdmin } from '@/lib/auth';
 import type { UserRepo } from '@/types/entities';
 
 export const dynamic = 'force-dynamic';
-
-async function requireAdmin() {
-  const sess = await getSessionFromCookies();
-  if (!sess) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  const me = getUserById(sess.uid);
-  if (!me || !me.is_admin) return { error: NextResponse.json({ error: 'Forbidden — admin only' }, { status: 403 }) };
-  return { error: null as null };
-}
 
 export async function GET() {
   const db = getDb();
@@ -23,7 +15,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const gate = await requireAdmin();
-  if (gate.error) return gate.error;
+  if (gate instanceof NextResponse) return gate;
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body.full_name !== 'string') {
@@ -47,7 +39,7 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const gate = await requireAdmin();
-  if (gate.error) return gate.error;
+  if (gate instanceof NextResponse) return gate;
 
   const url = new URL(req.url);
   const fullName = url.searchParams.get('full_name');
