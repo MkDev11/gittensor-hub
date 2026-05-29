@@ -430,6 +430,17 @@ const PULL_STALE_MS = 10_000;
 // behind a giant upsert. Tuned so each chunk's commit is ~50–150ms.
 const UPSERT_CHUNK = 50;
 const yieldEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+// Upsert one fetched page in chunked sync transactions, yielding the event
+// loop between chunks so foreground requests can interleave instead of
+// waiting the full upsert duration. Used as the per-page sink for the
+// paginated GitHub fetchers so progress is persisted as each page arrives.
+async function persistInChunks<T>(rows: T[], txFn: (batch: T[]) => void): Promise<void> {
+  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
+    txFn(rows.slice(i, i + UPSERT_CHUNK));
+    if (i + UPSERT_CHUNK < rows.length) await yieldEventLoop();
+  }
+}
 // Comments are 10× more numerous than issues; let them age longer between
 // refreshes since the dashboard only consults them when the user opens the
 // Owner-comments tab.
@@ -651,14 +662,12 @@ export async function refreshCommentsIfStale(owner: string, name: string, force 
 
   const p = (async () => {
     try {
-      const items = await fetchIssueCommentsFromGithub(owner, name, since);
       const txFn = db.transaction((batch: GhComment[]) => {
         for (const c of batch) upsertComment(full, c);
       });
-      for (let i = 0; i < items.length; i += UPSERT_CHUNK) {
-        txFn(items.slice(i, i + UPSERT_CHUNK));
-        if (i + UPSERT_CHUNK < items.length) await yieldEventLoop();
-      }
+      await fetchIssueCommentsFromGithub(owner, name, since, undefined, (items) =>
+        persistInChunks(items, txFn),
+      );
       lastCommentsFetch.set(full, Date.now());
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -700,16 +709,17 @@ export async function refreshIssuesIfStale(owner: string, name: string, force = 
 
   const p = (async () => {
     try {
-      const issues = await fetchIssuesFromGithub(owner, name, since);
-      // Chunked transactions so foreground requests can interleave instead
-      // of waiting the full upsert duration on the JS event loop.
+      // Persist each page as it arrives (idempotent upserts) so a mid-
+      // pagination failure keeps its partial progress instead of discarding
+      // every page fetched so far. markBootstrapDone still fires only on a
+      // fully-clean run, but the cache's union now grows across cycles toward
+      // completeness rather than restarting from empty.
       const txFn = getDb().transaction((batch: GhIssue[]) => {
         for (const i of batch) upsertIssue(full, i);
       });
-      for (let i = 0; i < issues.length; i += UPSERT_CHUNK) {
-        txFn(issues.slice(i, i + UPSERT_CHUNK));
-        if (i + UPSERT_CHUNK < issues.length) await yieldEventLoop();
-      }
+      await fetchIssuesFromGithub(owner, name, since, undefined, (issues) =>
+        persistInChunks(issues, txFn),
+      );
       touchRepoMeta(full, 'last_issues_fetch');
       if (!bootstrapDone) markBootstrapDone(full, 'issues_bootstrap_done_at');
     } catch (err) {
@@ -747,14 +757,14 @@ export async function refreshPullsIfStale(owner: string, name: string, force = f
 
   const p = (async () => {
     try {
-      const pulls = await fetchPullsFromGithub(owner, name, since);
+      // See refreshIssuesIfStale: persist per page so partial progress on a
+      // large repo survives a mid-pagination failure.
       const txFn = getDb().transaction((batch: GhPull[]) => {
         for (const pr of batch) upsertPull(full, pr);
       });
-      for (let i = 0; i < pulls.length; i += UPSERT_CHUNK) {
-        txFn(pulls.slice(i, i + UPSERT_CHUNK));
-        if (i + UPSERT_CHUNK < pulls.length) await yieldEventLoop();
-      }
+      await fetchPullsFromGithub(owner, name, since, undefined, (pulls) =>
+        persistInChunks(pulls, txFn),
+      );
       touchRepoMeta(full, 'last_pulls_fetch');
       if (!bootstrapDone) markBootstrapDone(full, 'pulls_bootstrap_done_at');
     } catch (err) {
