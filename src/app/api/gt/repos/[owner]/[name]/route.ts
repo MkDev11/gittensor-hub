@@ -152,7 +152,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
       // safely split completed vs other closed without local PR links.
       try {
         const search = await withRotation(
-          (octokit) => octokit.rest.search.issuesAndPullRequests({
+          (octokit) => octokit.request('GET /search/issues', {
             q: `repo:${fullName} is:issue is:closed`,
             per_page: 1,
           }),

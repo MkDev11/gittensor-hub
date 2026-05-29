@@ -9,7 +9,7 @@ export interface AllReposEntry {
   owner: string;
   name: string;
   weight: number;
-  source: 'sn74' | 'user';
+  source: 'sn74';
   notes?: string | null;
   added_at?: string | null;
   issues_total: number;
@@ -100,32 +100,11 @@ export async function GET() {
     return { full_name: fullName, owner, name, weight, source: 'sn74', ...enrich(fullName) };
   });
 
-  const userRows = db
-    .prepare('SELECT full_name, weight, notes, added_at FROM user_repos')
-    .all() as Array<{ full_name: string; weight: number; notes: string | null; added_at: string }>;
-
-  const sn74Set = new Set(sn74Entries.map((e) => e.full_name));
-  const userEntries: AllReposEntry[] = userRows
-    .filter((u) => !sn74Set.has(u.full_name))
-    .map((u) => {
-      const [owner, name] = u.full_name.split('/');
-      return {
-        full_name: u.full_name,
-        owner,
-        name,
-        weight: u.weight,
-        source: 'user' as const,
-        notes: u.notes,
-        added_at: u.added_at,
-        ...enrich(u.full_name),
-      };
-    });
-
-  const all = [...sn74Entries, ...userEntries].sort((a, b) => b.weight - a.weight);
+  const all = sn74Entries.sort((a, b) => b.weight - a.weight);
 
   return NextResponse.json({
     sn74_count: sn74Entries.length,
-    user_count: userEntries.length,
+    user_count: 0,
     sn74_fetched_at: sn74FetchedAtMs > 0 ? new Date(sn74FetchedAtMs).toISOString() : null,
     sn74_source: sn74Source === 'live' ? 'github' : 'pending',
     repos: all,

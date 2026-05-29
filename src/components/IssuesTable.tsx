@@ -64,11 +64,6 @@ interface IssuesResp {
   issues: AggIssue[];
 }
 
-interface UserReposResp {
-  count: number;
-  repos: Array<{ full_name: string; weight: number }>;
-}
-
 const ISSUES_CONTENT_MAX_WIDTH = 1480;
 const issueRowCellSx = {
   px: 2,
@@ -99,43 +94,24 @@ export default function IssuesTable() {
   const { tracked, toggle: toggleTrackedRepo } = useTrackedRepos();
   const pageSize = settings.pageSize > 0 ? settings.pageSize : 50;
 
-  const { data: userReposData, isSuccess: userReposReady } = useQuery<UserReposResp>({
-    queryKey: ['user-repos'],
-    queryFn: async ({ signal }) => {
-      const r = await fetch('/api/user-repos', { signal });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    },
-    refetchInterval: 5 * 60 * 1000,
-    staleTime: 4 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
   const currentRepoNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const repo of sn74Repos) names.set(repo.fullName.toLowerCase(), repo.fullName);
-    for (const repo of userReposData?.repos ?? []) {
-      if (!names.has(repo.full_name.toLowerCase())) names.set(repo.full_name.toLowerCase(), repo.full_name);
-    }
     return names;
-  }, [sn74Repos, userReposData]);
+  }, [sn74Repos]);
 
   const scopedTracked = useMemo(() => {
     const trackedNames = Array.from(tracked);
-    if (!sn74ReposReady || !userReposReady) return trackedNames;
+    if (!sn74ReposReady) return trackedNames;
     return trackedNames.filter((name) => currentRepoNames.has(name.toLowerCase()));
-  }, [currentRepoNames, sn74ReposReady, tracked, userReposReady]);
+  }, [currentRepoNames, sn74ReposReady, tracked]);
 
   const scopedTrackedSet = useMemo(
     () => new Set(scopedTracked.map((name) => name.toLowerCase())),
     [scopedTracked],
   );
 
-  const displayWeights = useMemo(() => {
-    const weights = new Map(repoWeights);
-    for (const repo of userReposData?.repos ?? []) weights.set(repo.full_name.toLowerCase(), repo.weight);
-    return weights;
-  }, [repoWeights, userReposData]);
+  const displayWeights = repoWeights;
 
   const trackedRepoParam = useMemo(() => {
     if (!trackedOnly) return null;

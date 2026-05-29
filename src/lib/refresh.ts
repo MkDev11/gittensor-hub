@@ -321,6 +321,9 @@ const inFlightLinksBackfill = new Set<string>();
  *     transaction to commit in smaller batches with setImmediate
  *     yields between batches. */
 export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
+  const normalizedRepo = repoFullName.trim().toLowerCase();
+  if (!normalizedRepo) return 0;
+
   // Hot-path gate uses the read connection so it doesn't queue behind any
   // ongoing writer transactions in the poller. Two-part check:
   //   - existingCount > 0   → links exist, fast hot path
@@ -332,30 +335,32 @@ export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
   //                            single request.
   const readDb = getReadDb();
   const existingCount = (readDb
-    .prepare(`SELECT COUNT(*) AS c FROM pr_issue_links WHERE repo_full_name = ?`)
-    .get(repoFullName) as { c: number }).c;
+    .prepare(`SELECT COUNT(*) AS c FROM pr_issue_links WHERE LOWER(repo_full_name) = ?`)
+    .get(normalizedRepo) as { c: number }).c;
   if (existingCount > 0) return existingCount;
   const completedAt = (readDb
-    .prepare('SELECT pr_issue_links_backfilled_at FROM repo_meta WHERE full_name = ?')
-    .get(repoFullName) as { pr_issue_links_backfilled_at: string | null } | undefined)
+    .prepare('SELECT pr_issue_links_backfilled_at FROM repo_meta WHERE LOWER(full_name) = ?')
+    .get(normalizedRepo) as { pr_issue_links_backfilled_at: string | null } | undefined)
     ?.pr_issue_links_backfilled_at;
   if (completedAt) return 0;
 
   // Cold path: schedule the backfill OFF the request path.
-  if (!inFlightLinksBackfill.has(repoFullName)) {
-    inFlightLinksBackfill.add(repoFullName);
+  if (!inFlightLinksBackfill.has(normalizedRepo)) {
+    inFlightLinksBackfill.add(normalizedRepo);
     setImmediate(() => {
       try {
-        runPrIssueLinksBackfill(repoFullName);
+        const writeDb = getDb();
+        const markerRepoFullName = resolveCachedRepoFullName(writeDb, normalizedRepo, repoFullName);
+        runPrIssueLinksBackfill(markerRepoFullName);
         // Persistent marker so subsequent requests don't re-schedule
         // when the repo legitimately has zero linked issues.
-        getDb()
+        writeDb
           .prepare(
             `INSERT INTO repo_meta (full_name, pr_issue_links_backfilled_at)
              VALUES (?, ?)
              ON CONFLICT(full_name) DO UPDATE SET pr_issue_links_backfilled_at = excluded.pr_issue_links_backfilled_at`,
           )
-          .run(repoFullName, new Date().toISOString());
+          .run(markerRepoFullName, new Date().toISOString());
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[refresh] backfillPrIssueLinks(${repoFullName}) failed:`, msg);
@@ -363,11 +368,23 @@ export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
         // — the next request should retry rather than treat a failed
         // backfill as "ran, found nothing".
       } finally {
-        inFlightLinksBackfill.delete(repoFullName);
+        inFlightLinksBackfill.delete(normalizedRepo);
       }
     });
   }
   return 0;
+}
+
+function resolveCachedRepoFullName(db: ReturnType<typeof getDb>, normalizedRepo: string, fallback: string): string {
+  const pullRow = db
+    .prepare('SELECT repo_full_name AS full_name FROM pulls WHERE LOWER(repo_full_name) = ? LIMIT 1')
+    .get(normalizedRepo) as { full_name: string } | undefined;
+  if (pullRow?.full_name) return pullRow.full_name;
+
+  const metaRow = db
+    .prepare('SELECT full_name FROM repo_meta WHERE LOWER(full_name) = ? LIMIT 1')
+    .get(normalizedRepo) as { full_name: string } | undefined;
+  return metaRow?.full_name ?? fallback.trim();
 }
 
 /** The actual blocking backfill body — separated so it can be invoked
@@ -376,9 +393,10 @@ export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
  *  migrations, tests). */
 function runPrIssueLinksBackfill(repoFullName: string): number {
   const db = getDb();
+  const normalizedRepo = repoFullName.trim().toLowerCase();
   const pulls = db
-    .prepare(`SELECT number, title, body FROM pulls WHERE repo_full_name = ?`)
-    .all(repoFullName) as Array<{ number: number; title: string; body: string | null }>;
+    .prepare(`SELECT repo_full_name, number, title, body FROM pulls WHERE LOWER(repo_full_name) = ?`)
+    .all(normalizedRepo) as Array<{ repo_full_name: string; number: number; title: string; body: string | null }>;
   if (pulls.length === 0) return 0;
 
   const insert = db.prepare(
@@ -391,11 +409,11 @@ function runPrIssueLinksBackfill(repoFullName: string): number {
       const links = extractLinkedIssues({
         title: pr.title,
         body: pr.body,
-        repo_full_name: repoFullName,
+        repo_full_name: pr.repo_full_name,
       });
       for (const l of links) {
-        if (l.repo && l.repo !== repoFullName) continue;
-        const r = insert.run(repoFullName, pr.number, l.number);
+        if (l.repo && l.repo.toLowerCase() !== normalizedRepo) continue;
+        const r = insert.run(pr.repo_full_name, pr.number, l.number);
         if (r.changes > 0) inserted += 1;
       }
     }

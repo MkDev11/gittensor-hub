@@ -18,9 +18,9 @@ interface Sn74ReposResp {
  * stale the moment upstream master_repositories.json is edited (e.g. the
  * newly added `entrius/das-github-mirror` wasn't in the build snapshot).
  *
- * Server polls master_repositories.json every 5 min and persists any new
- * repos at weight 0; nothing is ever removed. Client refetches on the same
- * cadence so newly discovered repos appear without a page reload.
+ * Server polls master_repositories.json every 5 min and mirrors the live
+ * Gittensor repo list. Client refetches on the same cadence so added or
+ * removed repos appear without a page reload.
  */
 export function useSn74Repos(): {
   repos: Sn74Repo[];

@@ -19,14 +19,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
     try {
       const [gfi, hw] = await Promise.all([
         withRotation(
-          (octokit) => octokit.rest.search.issuesAndPullRequests({
+          (octokit) => octokit.request('GET /search/issues', {
             q: `repo:${params.owner}/${params.name} is:issue is:open label:"good first issue"`,
             per_page: 1,
           }),
           { kind: 'search' },
         ).catch(() => ({ data: { total_count: 0 } })),
         withRotation(
-          (octokit) => octokit.rest.search.issuesAndPullRequests({
+          (octokit) => octokit.request('GET /search/issues', {
             q: `repo:${params.owner}/${params.name} is:issue is:open label:"help wanted"`,
             per_page: 1,
           }),

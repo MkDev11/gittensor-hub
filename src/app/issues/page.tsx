@@ -15,7 +15,7 @@ export default function IssuesPage() {
         <Box sx={{ width: '100%', maxWidth: ISSUES_CONTENT_MAX_WIDTH, mx: 'auto' }}>
           <Heading sx={{ fontSize: 4, mb: 1 }}>Issues</Heading>
           <Text sx={{ color: 'fg.muted' }}>
-            Live aggregated view across current SN74 and custom repositories. Star a repo to highlight its issues; toggle{' '}
+            Live aggregated view across current Gittensor-listed repositories. Star a repo to highlight its issues; toggle{' '}
             <strong>Tracked only</strong> to filter to your watchlist.
           </Text>
         </Box>
