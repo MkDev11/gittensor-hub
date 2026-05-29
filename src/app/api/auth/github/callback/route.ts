@@ -27,8 +27,8 @@ function err(req: NextRequest, code: string): NextResponse {
 }
 
 export async function GET(req: NextRequest) {
-  const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
+  const clientId = process.env.GITHUB_OAUTH_CLIENT_ID?.trim();
+  const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) return err(req, 'oauth_not_configured');
 
   const code = req.nextUrl.searchParams.get('code');

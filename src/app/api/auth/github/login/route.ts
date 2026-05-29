@@ -11,7 +11,7 @@ const NEXT_COOKIE = 'gh_oauth_next';
 const STATE_MAX_AGE_SEC = 600; // 10 min — plenty for the round-trip
 
 export async function GET(req: NextRequest) {
-  const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
+  const clientId = process.env.GITHUB_OAUTH_CLIENT_ID?.trim();
   if (!clientId) {
     return NextResponse.json({ error: 'GITHUB_OAUTH_CLIENT_ID not set' }, { status: 500 });
   }
