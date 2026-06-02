@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { PageLayout, Heading, Text, Box, TextInput, Label } from '@primer/react';
 import {
   SearchIcon,
@@ -684,9 +685,11 @@ function MinerCard({
         />
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-            <Text sx={{ fontWeight: 700, fontSize: 2, color: 'fg.default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {miner.githubUsername}
-            </Text>
+            <Link href={`/miners/${miner.githubUsername}`} style={{ textDecoration: 'none', color: 'inherit', overflow: 'hidden' }}>
+              <Text sx={{ fontWeight: 700, fontSize: 2, color: 'fg.default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { color: 'accent.fg' } }}>
+                {miner.githubUsername}
+              </Text>
+            </Link>
             <Text sx={{ color: 'fg.muted', fontSize: 1 }}>#{rank}</Text>
             {isMe && (
               <Label variant="accent" sx={{ ml: 1, fontSize: '10px' }}>
@@ -839,7 +842,9 @@ function MinerListView({
                       loading="lazy"
                       style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
                     />
-                    <Text sx={{ fontWeight: 600, color: isMe ? 'accent.fg' : 'fg.default' }}>{m.githubUsername}</Text>
+                    <Link href={`/miners/${m.githubUsername}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                      <Text sx={{ fontWeight: 600, color: isMe ? 'accent.fg' : 'fg.default', '&:hover': { color: 'accent.fg' } }}>{m.githubUsername}</Text>
+                    </Link>
                     {isMe && <Label variant="accent" sx={{ fontSize: '10px' }}>you</Label>}
                   </Box>
                 </Box>
