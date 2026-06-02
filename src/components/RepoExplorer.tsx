@@ -817,12 +817,24 @@ export default function RepoExplorer() {
   }>({
     queryKey: ['repo-activity', appBaseline],
     queryFn: async ({ signal }) => {
-      const params = new URLSearchParams({ since: appBaseline });
       const viewed = canonicalizeViewedAt(viewedAtRef.current, visibleRepoNamesByLc);
+      const payload = { since: appBaseline, viewed_at: viewed };
+      const post = await fetch('/api/repo-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+        cache: 'no-store',
+      });
+      if (post.ok) return post.json();
+
+      // Backward-compatibility fallback for older server builds that only
+      // support GET. Keep this path only as a rollout guard.
+      const params = new URLSearchParams({ since: appBaseline });
       if (Object.keys(viewed).length > 0) params.set('viewed_at', JSON.stringify(viewed));
-      const r = await fetch(`/api/repo-activity?${params}`, { signal, cache: 'no-store' });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
+      const get = await fetch(`/api/repo-activity?${params}`, { signal, cache: 'no-store' });
+      if (!get.ok) throw new Error(`HTTP ${get.status}`);
+      return get.json();
     },
     refetchInterval: 15000,
     staleTime: 10000,
