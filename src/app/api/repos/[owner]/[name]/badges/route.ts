@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDb, getReadDb } from '@/lib/db';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
+import { isTrackedRepoServer } from '@/lib/repos-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,12 @@ export async function GET(
 ) {
   const params = await ctx.params;
   const full = `${params.owner}/${params.name}`;
-  const db = getDb();
+
+  if (!(await isTrackedRepoServer(full))) {
+    return NextResponse.json({ repo: full, issues_count: 0, pulls_count: 0, owner_comments_count: 0, updated_at: null });
+  }
+
+  const db = getReadDb();
 
   const source = db
     .prepare(
@@ -74,7 +80,8 @@ export async function GET(
     .get(full) as { c: number }).c;
 
   const updatedAt = new Date().toISOString();
-  db.prepare(
+  const writer = getDb();
+  writer.prepare(
     `INSERT INTO repo_badges
        (full_name, issues_count, pulls_count, owner_comments_count,
         issues_source, pulls_source, comments_source, updated_at)

@@ -77,6 +77,11 @@ function countOpenRows(db: ReturnType<typeof getDb>, baselines: BaselineRow[], k
   const openFilter = kind === 'issues'
     ? "i.state = 'open'"
     : "p.state = 'open' AND p.draft = 0 AND p.merged = 0";
+  // Activity should reflect work that became relevant after baseline, not only
+  // rows created after baseline. Prefer `updated_at` (reopen/title/body edits),
+  // then fall back to `created_at`, then `first_seen_at` for legacy rows.
+  const activityAtExpr =
+    `COALESCE(NULLIF(${alias}.updated_at, ''), NULLIF(${alias}.created_at, ''), NULLIF(${alias}.first_seen_at, ''), '')`;
 
   try {
     return db
@@ -86,8 +91,7 @@ function countOpenRows(db: ReturnType<typeof getDb>, baselines: BaselineRow[], k
          FROM ${table} ${alias}
          JOIN baselines b ON b.repo = ${alias}.repo_full_name
          WHERE ${openFilter}
-           AND COALESCE(${alias}.created_at, '') > b.since
-           AND ${alias}.first_seen_at > b.since
+           AND julianday(${activityAtExpr}) > julianday(b.since)
          GROUP BY ${alias}.repo_full_name`,
       )
       .all(...params) as RepoCountRow[];

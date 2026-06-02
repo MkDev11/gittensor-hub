@@ -3,6 +3,7 @@ import { getReadDb, type PullRow } from '@/lib/db';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
 import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
 import { positiveInt } from '@/lib/api-utils';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,10 @@ export async function GET(
   ctx: { params: Promise<{ owner: string; name: string; login: string }> },
 ) {
   const params = await ctx.params;
-  const full = `${params.owner}/${params.name}`;
+  const { owner, name } = params;
+  const denied = await assertTrackedRepo(owner, name);
+  if (denied) return denied;
+  const full = `${owner}/${name}`;
   const login = params.login;
   const url = new URL(req.url);
   const page = positiveInt(url.searchParams.get('page'), 1);
