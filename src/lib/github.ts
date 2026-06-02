@@ -413,19 +413,20 @@ async function collectClosedByPrNumbers(
   issueNumber: number,
   into: Set<number>,
 ): Promise<void> {
+  interface ClosedByPrConnection {
+    nodes: Array<{ number?: number } | null> | null;
+    pageInfo: GraphqlPageInfo;
+  }
   interface Shape {
     repository?: {
       issue?: {
-        closedByPullRequestsReferences?: {
-          nodes: Array<{ number?: number } | null> | null;
-          pageInfo: GraphqlPageInfo;
-        } | null;
+        closedByPullRequestsReferences?: ClosedByPrConnection | null;
       } | null;
     } | null;
   }
   let cursor: string | null = null;
   for (let page = 0; page < MAX_LINK_CONNECTION_PAGES; page++) {
-    const data = await octokit.graphql<Shape>(
+    const data: Shape = await octokit.graphql<Shape>(
       `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
         repository(owner: $owner, name: $repo) {
           issue(number: $number) {
@@ -438,7 +439,7 @@ async function collectClosedByPrNumbers(
       }`,
       { owner, repo, number: issueNumber, cursor },
     );
-    const connection = data.repository?.issue?.closedByPullRequestsReferences;
+    const connection: ClosedByPrConnection | null | undefined = data.repository?.issue?.closedByPullRequestsReferences;
     if (!connection) return;
     for (const node of connection.nodes ?? []) {
       if (node?.number) into.add(node.number);
@@ -457,23 +458,32 @@ async function collectTimelinePrNumbers(
   issueNumber: number,
   into: Set<number>,
 ): Promise<void> {
+  type TimelineNode =
+    | {
+        __typename: 'ConnectedEvent';
+        isCrossRepository: boolean;
+        subject: { number?: number; __typename?: string } | null;
+      }
+    | {
+        __typename: 'CrossReferencedEvent';
+        isCrossRepository: boolean;
+        source: { number?: number; __typename?: string } | null;
+      }
+    | null;
+  interface TimelineConnection {
+    nodes: TimelineNode[] | null;
+    pageInfo: GraphqlPageInfo;
+  }
   interface Shape {
     repository?: {
       issue?: {
-        timelineItems?: {
-          nodes: Array<
-            | { __typename: 'ConnectedEvent'; subject: { number?: number; __typename?: string } | null }
-            | { __typename: 'CrossReferencedEvent'; isCrossRepository: boolean; source: { number?: number; __typename?: string } | null }
-            | null
-          > | null;
-          pageInfo: GraphqlPageInfo;
-        } | null;
+        timelineItems?: TimelineConnection | null;
       } | null;
     } | null;
   }
   let cursor: string | null = null;
   for (let page = 0; page < MAX_LINK_CONNECTION_PAGES; page++) {
-    const data = await octokit.graphql<Shape>(
+    const data: Shape = await octokit.graphql<Shape>(
       `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
         repository(owner: $owner, name: $repo) {
           issue(number: $number) {
@@ -481,6 +491,7 @@ async function collectTimelinePrNumbers(
               nodes {
                 __typename
                 ... on ConnectedEvent {
+                  isCrossRepository
                   subject { __typename ... on PullRequest { number } }
                 }
                 ... on CrossReferencedEvent {
@@ -495,11 +506,15 @@ async function collectTimelinePrNumbers(
       }`,
       { owner, repo, number: issueNumber, cursor },
     );
-    const connection = data.repository?.issue?.timelineItems;
+    const connection: TimelineConnection | null | undefined = data.repository?.issue?.timelineItems;
     if (!connection) return;
     for (const item of connection.nodes ?? []) {
       if (!item) continue;
-      if (item.__typename === 'ConnectedEvent' && item.subject?.__typename === 'PullRequest') {
+      if (
+        item.__typename === 'ConnectedEvent' &&
+        !item.isCrossRepository &&
+        item.subject?.__typename === 'PullRequest'
+      ) {
         if (item.subject.number) into.add(item.subject.number);
       } else if (
         item.__typename === 'CrossReferencedEvent' &&
@@ -552,20 +567,21 @@ async function paginatePrClosingIssues(
   prNumber: number,
   fullName: string,
 ): Promise<number[]> {
+  interface ClosingIssuesConnection {
+    nodes: Array<ClosingIssueRefNode | null> | null;
+    pageInfo: GraphqlPageInfo;
+  }
   interface Shape {
     repository?: {
       pullRequest?: {
-        closingIssuesReferences?: {
-          nodes: Array<ClosingIssueRefNode | null> | null;
-          pageInfo: GraphqlPageInfo;
-        } | null;
+        closingIssuesReferences?: ClosingIssuesConnection | null;
       } | null;
     } | null;
   }
   const issueNums: number[] = [];
   let cursor: string | null = null;
   for (let page = 0; page < MAX_LINK_CONNECTION_PAGES; page++) {
-    const data = await octokit.graphql<Shape>(
+    const data: Shape = await octokit.graphql<Shape>(
       `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
         repository(owner: $owner, name: $repo) {
           pullRequest(number: $number) {
@@ -578,7 +594,7 @@ async function paginatePrClosingIssues(
       }`,
       { owner, repo, number: prNumber, cursor },
     );
-    const connection = data.repository?.pullRequest?.closingIssuesReferences;
+    const connection: ClosingIssuesConnection | null | undefined = data.repository?.pullRequest?.closingIssuesReferences;
     if (!connection) break;
     for (const node of connection.nodes ?? []) {
       if (!node) continue;
