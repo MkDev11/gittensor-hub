@@ -22,6 +22,11 @@ type BaselineRow = {
   since: string;
 };
 
+type ActivityRequestPayload = {
+  since?: unknown;
+  viewed_at?: unknown;
+};
+
 function defaultSince(): string {
   return new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 }
@@ -158,16 +163,33 @@ async function safeActivityResponse(sinceInput: unknown, viewedInput: unknown) {
   }
 }
 
+function parseViewedFromQuery(url: URL): unknown {
+  const viewedRaw = url.searchParams.get('viewed_at');
+  if (!viewedRaw) return null;
+  try {
+    return JSON.parse(viewedRaw);
+  } catch {
+    return null;
+  }
+}
+
+async function parseViewedFromBody(req: NextRequest): Promise<ActivityRequestPayload> {
+  try {
+    const payload = (await req.json()) as ActivityRequestPayload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
+    return payload;
+  } catch {
+    return {};
+  }
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  let viewedAt: unknown = null;
-  const viewedRaw = url.searchParams.get('viewed_at');
-  if (viewedRaw) {
-    try {
-      viewedAt = JSON.parse(viewedRaw);
-    } catch {
-      viewedAt = null;
-    }
-  }
+  const viewedAt = parseViewedFromQuery(url);
   return safeActivityResponse(url.searchParams.get('since'), viewedAt);
+}
+
+export async function POST(req: NextRequest) {
+  const payload = await parseViewedFromBody(req);
+  return safeActivityResponse(payload.since, payload.viewed_at);
 }
