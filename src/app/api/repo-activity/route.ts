@@ -22,6 +22,11 @@ type BaselineRow = {
   since: string;
 };
 
+type ActivityRequestPayload = {
+  since?: unknown;
+  viewed_at?: unknown;
+};
+
 function defaultSince(): string {
   return new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 }
@@ -77,6 +82,11 @@ function countOpenRows(db: ReturnType<typeof getReadDb>, baselines: BaselineRow[
   const openFilter = kind === 'issues'
     ? "i.state = 'open'"
     : "p.state = 'open' AND p.draft = 0 AND p.merged = 0";
+  // Activity should reflect work that became relevant after baseline, not only
+  // rows created after baseline. Prefer `updated_at` (reopen/title/body edits),
+  // then fall back to `created_at`, then `first_seen_at` for legacy rows.
+  const activityAtExpr =
+    `COALESCE(NULLIF(${alias}.updated_at, ''), NULLIF(${alias}.created_at, ''), NULLIF(${alias}.first_seen_at, ''), '')`;
 
   try {
     return db
@@ -86,8 +96,7 @@ function countOpenRows(db: ReturnType<typeof getReadDb>, baselines: BaselineRow[
          FROM ${table} ${alias}
          JOIN baselines b ON b.repo = ${alias}.repo_full_name
          WHERE ${openFilter}
-           AND COALESCE(${alias}.created_at, '') > b.since
-           AND ${alias}.first_seen_at > b.since
+           AND julianday(${activityAtExpr}) > julianday(b.since)
          GROUP BY ${alias}.repo_full_name`,
       )
       .all(...params) as RepoCountRow[];
@@ -154,16 +163,33 @@ async function safeActivityResponse(sinceInput: unknown, viewedInput: unknown) {
   }
 }
 
+function parseViewedFromQuery(url: URL): unknown {
+  const viewedRaw = url.searchParams.get('viewed_at');
+  if (!viewedRaw) return null;
+  try {
+    return JSON.parse(viewedRaw);
+  } catch {
+    return null;
+  }
+}
+
+async function parseViewedFromBody(req: NextRequest): Promise<ActivityRequestPayload> {
+  try {
+    const payload = (await req.json()) as ActivityRequestPayload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
+    return payload;
+  } catch {
+    return {};
+  }
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  let viewedAt: unknown = null;
-  const viewedRaw = url.searchParams.get('viewed_at');
-  if (viewedRaw) {
-    try {
-      viewedAt = JSON.parse(viewedRaw);
-    } catch {
-      viewedAt = null;
-    }
-  }
+  const viewedAt = parseViewedFromQuery(url);
   return safeActivityResponse(url.searchParams.get('since'), viewedAt);
+}
+
+export async function POST(req: NextRequest) {
+  const payload = await parseViewedFromBody(req);
+  return safeActivityResponse(payload.since, payload.viewed_at);
 }

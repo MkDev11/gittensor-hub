@@ -141,6 +141,23 @@ interface RotationOptions {
   maxAttempts?: number;
 }
 
+// Minimum back-off applied when a reset timestamp is missing or already in the
+// past, so a stale reset can never produce a cooldown that expires immediately.
+const PRIMARY_RATE_LIMIT_MIN_COOLDOWN_MS = 60_000;
+
+// Cooldown (epoch ms) to apply after a primary rate limit, using the reset for
+// the budget that was actually exhausted (search vs core). The result is always
+// in the future: GitHub's core window resets hourly and the search window every
+// minute, so a previously-recorded reset for the other budget — or a stale reset
+// for this one — can be in the past, which would otherwise make `cooldownUntil`
+// a no-op and let `pickClient` immediately re-select the exhausted client.
+function primaryRateLimitCooldown(client: PatClient, kind: 'core' | 'search'): number {
+  const now = Date.now();
+  const resetAt = kind === 'search' ? client.searchResetAt : client.coreResetAt;
+  if (Number.isFinite(resetAt) && resetAt > now) return resetAt;
+  return now + PRIMARY_RATE_LIMIT_MIN_COOLDOWN_MS;
+}
+
 export async function withRotation<T>(
   fn: (octokit: Octokit) => Promise<T>,
   opts: RotationOptions = {},
@@ -175,8 +192,8 @@ export async function withRotation<T>(
         continue;
       }
       if (isPrimary) {
-        client.cooldownUntil = client.coreResetAt || Date.now() + 60_000;
-        client.lastError = 'primary rate limit (waiting for reset)';
+        client.cooldownUntil = primaryRateLimitCooldown(client, kind);
+        client.lastError = `primary ${kind} rate limit (waiting for reset)`;
         continue;
       }
       // Non-rate-limit errors: bubble up immediately
@@ -377,38 +394,104 @@ export async function fetchPullsFromGithub(
  * Returns an array of PR numbers in the same repo. Cross-repo references are
  * dropped (the dashboard's per-repo views can't render them anyway).
  */
-export async function fetchIssueLinkedPrs(
+// GraphQL connection pagination: page size and a hard cap on pages, so a
+// pathological connection can't drive an unbounded number of requests.
+const LINK_CONNECTION_PAGE_SIZE = 100;
+const MAX_LINK_CONNECTION_PAGES = 10;
+
+interface GraphqlPageInfo {
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+
+// Walk an issue's `closedByPullRequestsReferences` connection to completion,
+// adding every referenced PR number into `into`.
+async function collectClosedByPrNumbers(
+  octokit: Octokit,
   owner: string,
   repo: string,
   issueNumber: number,
-): Promise<number[]> {
-  return withRotation(async (octokit) => {
-    interface PRRef { number: number; }
-    interface QueryShape {
-      repository?: {
-        issue?: {
-          closedByPullRequestsReferences?: { nodes: Array<PRRef | null> | null } | null;
-          timelineItems?: {
-            nodes: Array<
-              | { __typename: 'ConnectedEvent'; subject: { number?: number; __typename?: string } | null }
-              | { __typename: 'CrossReferencedEvent'; isCrossRepository: boolean; source: { number?: number; __typename?: string } | null }
-              | null
-            > | null;
-          } | null;
-        } | null;
+  into: Set<number>,
+): Promise<void> {
+  interface ClosedByPrConnection {
+    nodes: Array<{ number?: number } | null> | null;
+    pageInfo: GraphqlPageInfo;
+  }
+  interface Shape {
+    repository?: {
+      issue?: {
+        closedByPullRequestsReferences?: ClosedByPrConnection | null;
       } | null;
-    }
-    const data = await octokit.graphql<QueryShape>(
-      `query($owner: String!, $repo: String!, $number: Int!) {
+    } | null;
+  }
+  let cursor: string | null = null;
+  for (let page = 0; page < MAX_LINK_CONNECTION_PAGES; page++) {
+    const data: Shape = await octokit.graphql<Shape>(
+      `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
         repository(owner: $owner, name: $repo) {
           issue(number: $number) {
-            closedByPullRequestsReferences(first: 50, includeClosedPrs: true) {
+            closedByPullRequestsReferences(first: ${LINK_CONNECTION_PAGE_SIZE}, after: $cursor, includeClosedPrs: true) {
               nodes { number }
+              pageInfo { hasNextPage endCursor }
             }
-            timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT], first: 50) {
+          }
+        }
+      }`,
+      { owner, repo, number: issueNumber, cursor },
+    );
+    const connection: ClosedByPrConnection | null | undefined = data.repository?.issue?.closedByPullRequestsReferences;
+    if (!connection) return;
+    for (const node of connection.nodes ?? []) {
+      if (node?.number) into.add(node.number);
+    }
+    if (!connection.pageInfo?.hasNextPage || !connection.pageInfo.endCursor) return;
+    cursor = connection.pageInfo.endCursor;
+  }
+}
+
+// Walk an issue's CONNECTED/CROSS_REFERENCED timeline to completion, adding
+// every same-repo PR that references/closes the issue into `into`.
+async function collectTimelinePrNumbers(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  into: Set<number>,
+): Promise<void> {
+  type TimelineNode =
+    | {
+        __typename: 'ConnectedEvent';
+        isCrossRepository: boolean;
+        subject: { number?: number; __typename?: string } | null;
+      }
+    | {
+        __typename: 'CrossReferencedEvent';
+        isCrossRepository: boolean;
+        source: { number?: number; __typename?: string } | null;
+      }
+    | null;
+  interface TimelineConnection {
+    nodes: TimelineNode[] | null;
+    pageInfo: GraphqlPageInfo;
+  }
+  interface Shape {
+    repository?: {
+      issue?: {
+        timelineItems?: TimelineConnection | null;
+      } | null;
+    } | null;
+  }
+  let cursor: string | null = null;
+  for (let page = 0; page < MAX_LINK_CONNECTION_PAGES; page++) {
+    const data: Shape = await octokit.graphql<Shape>(
+      `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          issue(number: $number) {
+            timelineItems(itemTypes: [CONNECTED_EVENT, CROSS_REFERENCED_EVENT], first: ${LINK_CONNECTION_PAGE_SIZE}, after: $cursor) {
               nodes {
                 __typename
                 ... on ConnectedEvent {
+                  isCrossRepository
                   subject { __typename ... on PullRequest { number } }
                 }
                 ... on CrossReferencedEvent {
@@ -416,30 +499,49 @@ export async function fetchIssueLinkedPrs(
                   source { __typename ... on PullRequest { number } }
                 }
               }
+              pageInfo { hasNextPage endCursor }
             }
           }
         }
       }`,
-      { owner, repo, number: issueNumber },
+      { owner, repo, number: issueNumber, cursor },
     );
-    const nums = new Set<number>();
-    const issue = data.repository?.issue;
-    for (const n of issue?.closedByPullRequestsReferences?.nodes ?? []) {
-      if (n?.number) nums.add(n.number);
-    }
-    for (const item of issue?.timelineItems?.nodes ?? []) {
+    const connection: TimelineConnection | null | undefined = data.repository?.issue?.timelineItems;
+    if (!connection) return;
+    for (const item of connection.nodes ?? []) {
       if (!item) continue;
-      if (item.__typename === 'ConnectedEvent' && item.subject?.__typename === 'PullRequest') {
-        if (item.subject.number) nums.add(item.subject.number);
-      }
       if (
+        item.__typename === 'ConnectedEvent' &&
+        !item.isCrossRepository &&
+        item.subject?.__typename === 'PullRequest'
+      ) {
+        if (item.subject.number) into.add(item.subject.number);
+      } else if (
         item.__typename === 'CrossReferencedEvent' &&
         !item.isCrossRepository &&
         item.source?.__typename === 'PullRequest'
       ) {
-        if (item.source.number) nums.add(item.source.number);
+        if (item.source.number) into.add(item.source.number);
       }
     }
+    if (!connection.pageInfo?.hasNextPage || !connection.pageInfo.endCursor) return;
+    cursor = connection.pageInfo.endCursor;
+  }
+}
+
+export async function fetchIssueLinkedPrs(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<number[]> {
+  return withRotation(async (octokit) => {
+    const nums = new Set<number>();
+    // Two independent connections on the same issue: the explicit
+    // closed-by-PR references and the CONNECTED/CROSS_REFERENCED timeline.
+    // Each is paginated to completion so that linked PRs past the first page
+    // (common on widely-referenced issues) are not silently dropped.
+    await collectClosedByPrNumbers(octokit, owner, repo, issueNumber, nums);
+    await collectTimelinePrNumbers(octokit, owner, repo, issueNumber, nums);
     return [...nums];
   });
 }
@@ -450,6 +552,61 @@ export async function fetchIssueLinkedPrs(
  * `closes #N` AND manual Development-sidebar links). Same-repo references
  * only — cross-repo closes aren't tracked by the per-repo dashboard.
  */
+interface ClosingIssueRefNode {
+  number: number;
+  repository: { nameWithOwner: string };
+}
+
+// Paginate a single PR's `closingIssuesReferences` to completion, returning the
+// same-repo issue numbers. Used to recover overflow when a PR links more issues
+// than fit in one batched page.
+async function paginatePrClosingIssues(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  fullName: string,
+): Promise<number[]> {
+  interface ClosingIssuesConnection {
+    nodes: Array<ClosingIssueRefNode | null> | null;
+    pageInfo: GraphqlPageInfo;
+  }
+  interface Shape {
+    repository?: {
+      pullRequest?: {
+        closingIssuesReferences?: ClosingIssuesConnection | null;
+      } | null;
+    } | null;
+  }
+  const issueNums: number[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < MAX_LINK_CONNECTION_PAGES; page++) {
+    const data: Shape = await octokit.graphql<Shape>(
+      `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            closingIssuesReferences(first: ${LINK_CONNECTION_PAGE_SIZE}, after: $cursor, userLinkedOnly: false) {
+              nodes { number repository { nameWithOwner } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }`,
+      { owner, repo, number: prNumber, cursor },
+    );
+    const connection: ClosingIssuesConnection | null | undefined = data.repository?.pullRequest?.closingIssuesReferences;
+    if (!connection) break;
+    for (const node of connection.nodes ?? []) {
+      if (!node) continue;
+      if (node.repository?.nameWithOwner?.toLowerCase() !== fullName) continue;
+      if (Number.isFinite(node.number)) issueNums.push(node.number);
+    }
+    if (!connection.pageInfo?.hasNextPage || !connection.pageInfo.endCursor) break;
+    cursor = connection.pageInfo.endCursor;
+  }
+  return issueNums;
+}
+
 export async function fetchPrsClosingIssuesBatch(
   owner: string,
   repo: string,
@@ -460,10 +617,8 @@ export async function fetchPrsClosingIssuesBatch(
   return withRotation(async (octokit) => {
     interface PrNode {
       closingIssuesReferences?: {
-        nodes: Array<{
-          number: number;
-          repository: { nameWithOwner: string };
-        } | null> | null;
+        nodes: Array<ClosingIssueRefNode | null> | null;
+        pageInfo: GraphqlPageInfo;
       } | null;
     }
     const fields = prNumbers
@@ -472,6 +627,7 @@ export async function fetchPrsClosingIssuesBatch(
           `p${n}: pullRequest(number: ${n}) {
              closingIssuesReferences(first: 20, userLinkedOnly: false) {
                nodes { number repository { nameWithOwner } }
+               pageInfo { hasNextPage endCursor }
              }
            }`,
       )
@@ -485,16 +641,24 @@ export async function fetchPrsClosingIssuesBatch(
       repository?: Record<string, PrNode | null>;
     }>(query, { owner, repo });
     const fullName = `${owner}/${repo}`.toLowerCase();
+    // PRs whose first page hit the cap; their remaining references are fetched
+    // with a follow-up per-PR cursor loop so links past the first page survive.
+    const overflow: number[] = [];
     for (const n of prNumbers) {
       const pr = data.repository?.[`p${n}`];
-      const refs = pr?.closingIssuesReferences?.nodes ?? [];
+      const connection = pr?.closingIssuesReferences;
       const issueNums: number[] = [];
-      for (const r of refs) {
+      for (const r of connection?.nodes ?? []) {
         if (!r) continue;
         if (r.repository?.nameWithOwner?.toLowerCase() !== fullName) continue;
         if (Number.isFinite(r.number)) issueNums.push(r.number);
       }
       out.set(n, issueNums);
+      if (connection?.pageInfo?.hasNextPage) overflow.push(n);
+    }
+    for (const n of overflow) {
+      const full = await paginatePrClosingIssues(octokit, owner, repo, n, fullName);
+      out.set(n, [...new Set(full)]);
     }
     return out;
   });
