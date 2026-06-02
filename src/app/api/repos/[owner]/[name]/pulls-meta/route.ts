@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb } from '@/lib/db';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
+import { isTrackedRepoServer } from '@/lib/repos-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +11,10 @@ export async function GET(
 ) {
   const params = await ctx.params;
   const full = `${params.owner}/${params.name}`;
+
+  if (!(await isTrackedRepoServer(full))) {
+    return NextResponse.json({ repo: full, author_options: [], total_authors: 0 });
+  }
   const db = getReadDb();
   const url = new URL(req.url);
   const summaryOnly = url.searchParams.get('summary') === '1';
