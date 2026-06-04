@@ -788,24 +788,16 @@ export async function cachedWithRotation<T>(
   fn: () => Promise<T>,
   ttlMs = PASSTHROUGH_TTL_MS,
 ): Promise<T> {
-  // Cache hit — return immediately without touching Octokit.
-  if (passthroughTtl.has(cacheKey)) {
-    return passthroughCache.get(cacheKey) as T;
-  }
-
-  // Another handler already started this fetch; wait for it to finish.
-  if (passthroughTtl.isInFlight(cacheKey)) {
-    // Poll at 50 ms intervals until the in-flight fetch completes (or the
-    // cache is populated by whoever holds the lock). Cap at 30 s to avoid
-    // an infinite loop if the fetch crashes without clearing the flag.
+  // Loop until we either get a cache hit or successfully acquire the in-flight
+  // lock ourselves. Re-checking after each poll prevents multiple waiters from
+  // all racing to call fn() when the previous in-flight fetch fails.
+  while (true) {
+    if (passthroughTtl.has(cacheKey)) return passthroughCache.get(cacheKey) as T;
+    if (!passthroughTtl.isInFlight(cacheKey)) break;
     const deadline = Date.now() + 30_000;
     while (passthroughTtl.isInFlight(cacheKey) && Date.now() < deadline) {
       await new Promise<void>((r) => setTimeout(r, 50));
     }
-    if (passthroughTtl.has(cacheKey)) {
-      return passthroughCache.get(cacheKey) as T;
-    }
-    // If the in-flight fetch failed, fall through and try again ourselves.
   }
 
   passthroughTtl.markInFlight(cacheKey);

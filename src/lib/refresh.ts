@@ -700,10 +700,6 @@ export async function refreshCommentsIfStale(owner: string, name: string, force 
   const existing = inFlightComments.get(full);
   if (existing) return existing;
 
-  // Mark in-flight BEFORE the first await so concurrent HTTP handlers that
-  // enter this function before the promise is stored also see the guard.
-  refreshTtl.markInFlight(ttlKey);
-
   const db = getDb();
   const lastUpdated = (db
     .prepare(`SELECT MAX(updated_at) AS u FROM issue_comments WHERE repo_full_name = ?`)
@@ -711,6 +707,10 @@ export async function refreshCommentsIfStale(owner: string, name: string, force 
   // Same clock-drift buffer + 24h hard floor as issues/pulls — see
   // incrementalSince() for the rationale.
   const since = incrementalSince(lastUpdated);
+
+  // Mark in-flight after all synchronous setup so a thrown DB/setup error
+  // doesn't leave the key permanently stuck in _inFlight.
+  refreshTtl.markInFlight(ttlKey);
 
   const p = (async () => {
     try {
@@ -761,10 +761,10 @@ export async function refreshIssuesIfStale(owner: string, name: string, force = 
   const existing = inFlightIssues.get(full);
   if (existing) return existing;
 
-  // Mark in-flight before the first await so concurrent HTTP handlers that
-  // enter before the Promise is stored in inFlightIssues also see the guard.
-  refreshTtl.markInFlight(ttlKey);
   const since = bootstrapDone ? incrementalSince(meta?.last_issues_fetch ?? null) : undefined;
+  // Mark in-flight after all synchronous setup so a thrown setup error doesn't
+  // leave the key permanently stuck in _inFlight.
+  refreshTtl.markInFlight(ttlKey);
 
   const p = (async () => {
     try {
@@ -816,10 +816,10 @@ export async function refreshPullsIfStale(owner: string, name: string, force = f
   const existing = inFlightPulls.get(full);
   if (existing) return existing;
 
-  // Mark in-flight before the first await so concurrent HTTP handlers that
-  // enter before the Promise is stored in inFlightPulls also see the guard.
-  refreshTtl.markInFlight(ttlKey);
   const since = bootstrapDone ? incrementalSince(meta?.last_pulls_fetch ?? null) : undefined;
+  // Mark in-flight after all synchronous setup so a thrown setup error doesn't
+  // leave the key permanently stuck in _inFlight.
+  refreshTtl.markInFlight(ttlKey);
 
   const p = (async () => {
     try {

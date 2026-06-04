@@ -45,6 +45,10 @@ async function loadAllowedReposCached(): Promise<Map<string, string>> {
       liveReposCache = map;
       liveReposTtl.set(LIVE_REPOS_CACHE_KEY, LIVE_REPOS_TTL_MS);
       return map;
+    } catch (err) {
+      console.error('[repo-activity] live repo fetch failed:', err instanceof Error ? err.message : err);
+      // Return stale cache rather than caching an empty failure result for the full TTL.
+      return liveReposCache ?? new Map<string, string>();
     } finally {
       liveReposInFlight = null;
     }
@@ -82,12 +86,8 @@ function addAllowedRepo(map: Map<string, string>, fullName: string) {
 
 async function loadAllowedRepos(): Promise<Map<string, string>> {
   const allowedRepos = new Map<string, string>();
-  try {
-    const { repos: liveRepos } = await getLiveReposAsyncServer();
-    for (const repo of liveRepos) addAllowedRepo(allowedRepos, repo.fullName);
-  } catch (err) {
-    console.error('[repo-activity] live repo fetch failed:', err instanceof Error ? err.message : err);
-  }
+  const { repos: liveRepos } = await getLiveReposAsyncServer();
+  for (const repo of liveRepos) addAllowedRepo(allowedRepos, repo.fullName);
   return allowedRepos;
 }
 
