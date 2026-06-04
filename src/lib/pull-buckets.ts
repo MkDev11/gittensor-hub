@@ -3,21 +3,23 @@
 // filter, the `state_counts` aggregation, and the `sort=state` ordering all
 // derive from here so they can never drift apart.
 //
-// The buckets follow PullStatusBadge's precedence (merged → draft → open →
-// closed): a PR is classified by the FIRST matching rule, so a draft that was
-// closed without ever merging is a `draft`, never a `closed`.
+// The buckets follow `pullStatus()`'s precedence (merged → closed → draft →
+// open): a PR is classified by the FIRST matching rule. A draft that was closed
+// without ever merging counts as `closed` (it has state='closed'; users expect
+// it under the Closed filter/count), NOT draft.
 //
 //   merged = merged = 1
-//   draft  = not merged AND draft = 1                  (open OR closed drafts)
-//   open   = not merged AND not draft AND state = 'open'
-//   closed = not merged AND not draft AND state = 'closed'
+//   closed = not merged AND state = 'closed'              (incl. closed drafts)
+//   draft  = not merged AND state = 'open' AND draft = 1  (open drafts only)
+//   open   = not merged AND state = 'open' AND draft = 0
 //
 // Because the predicates are disjoint and cover every PR (GitHub PR state is
-// only 'open' or 'closed', and a merged PR is never still a draft), the four
-// counts always sum to the total. Previously `closed` was written as just
-// `state = 'closed' AND merged = 0`, which ALSO matched closed drafts — so a
-// closed draft was double-counted against `draft`, inflated `state_counts`, and
-// surfaced under the Closed filter even though its badge read "Draft".
+// only 'open' or 'closed'), the four counts always sum to the total. Previously
+// `closed` was `state = 'closed' AND merged = 0` while `draft` was
+// `draft = 1 AND merged = 0`, so a closed unmerged draft matched BOTH — it was
+// double-counted and inflated `state_counts`. Pinning every PR to exactly one
+// bucket here, with `closed` taking precedence over `draft`, fixes that and
+// keeps the badge / filter / counts in agreement.
 
 export type PullBucket = 'open' | 'draft' | 'merged' | 'closed';
 
@@ -33,12 +35,12 @@ export function pullBucketPredicate(bucket: PullBucket): string {
   switch (bucket) {
     case 'merged':
       return 'merged = 1';
-    case 'draft':
-      return 'merged = 0 AND draft = 1';
-    case 'open':
-      return "merged = 0 AND draft = 0 AND state = 'open'";
     case 'closed':
-      return "merged = 0 AND draft = 0 AND state = 'closed'";
+      return "merged = 0 AND state = 'closed'";
+    case 'draft':
+      return "merged = 0 AND state = 'open' AND draft = 1";
+    case 'open':
+      return "merged = 0 AND state = 'open' AND draft = 0";
   }
 }
 
@@ -54,13 +56,14 @@ export function pullBucketSums(): string {
 
 /**
  * `CASE … END` expression ranking rows by bucket precedence
- * (merged 0 → draft 1 → open 2 → closed 3) for `ORDER BY state`. Matches the
- * partition above so the sort, the filter, and the counts agree.
+ * (merged 0 → closed 1 → draft 2 → open 3) for `ORDER BY state`. Mirrors
+ * `pullStatus()` so a closed draft sorts with Closed, matching its badge,
+ * the filter, and the counts.
  */
 export function pullBucketRankSql(): string {
   return `CASE
       WHEN ${pullBucketPredicate('merged')} THEN 0
-      WHEN ${pullBucketPredicate('draft')} THEN 1
-      WHEN ${pullBucketPredicate('open')} THEN 2
+      WHEN ${pullBucketPredicate('closed')} THEN 1
+      WHEN ${pullBucketPredicate('draft')} THEN 2
       ELSE 3 END`;
 }
