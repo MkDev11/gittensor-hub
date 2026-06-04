@@ -304,7 +304,7 @@ export function promoteUser(id: number, byId: number): UserRow {
  */
 export function demoteUser(id: number, byId: number): UserRow {
   const db = getDb();
-  return db.transaction((): UserRow => {
+  const demote = db.transaction((): UserRow => {
     const target = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
     if (!target) throw new RoleError('not_found', 'User not found');
     if (id === byId) throw new RoleError('self_demote', 'You cannot demote yourself');
@@ -315,5 +315,6 @@ export function demoteUser(id: number, byId: number): UserRow {
 
     db.prepare('UPDATE users SET is_admin = 0 WHERE id = ?').run(id);
     return db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow;
-  })();
+  });
+  return demote.immediate();
 }

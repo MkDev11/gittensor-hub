@@ -76,6 +76,7 @@ export function getReadDb(): Database.Database {
   getDb();
   const db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
   db.pragma('query_only = ON');
   _readDb = db;
   return db;
@@ -86,6 +87,7 @@ export function getDb(): Database.Database {
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
+  db.pragma('busy_timeout = 5000');
   db.pragma('foreign_keys = ON');
 
   // One-time migration off the legacy username/password schema. Must run
