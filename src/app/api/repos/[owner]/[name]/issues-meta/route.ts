@@ -84,6 +84,7 @@ export async function GET(
   // The full author list can be very large on monster repos. Let the initial
   // page load ask for just the count; the dropdown fetches the full list on
   // first open, preserving filtering capability without blocking the table.
+  const AUTHOR_ROWS_MAX = 500;
   const buildAuthorRowsSql = (extraWhere: string) => `
     SELECT i.author_login AS login,
            COUNT(*) AS count,
@@ -104,7 +105,8 @@ export async function GET(
     WHERE i.repo_full_name = ? AND i.author_login IS NOT NULL
       ${extraWhere}
     GROUP BY i.author_login
-    ORDER BY count DESC`;
+    ORDER BY count DESC
+    LIMIT ${AUTHOR_ROWS_MAX}`;
 
   type AuthorRow = {
     login: string;
