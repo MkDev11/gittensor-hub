@@ -12,6 +12,7 @@ import {
 } from './github';
 import { extractLinkedIssues } from './pr-linking';
 import { ISSUE_BODY_CAP, PULL_BODY_CAP, capBody } from './body-cap';
+import { TtlMap } from "./lru-ttl";
 
 /**
  * Add this PR's `pr_issue_links` rows from the body+title regex. Only
@@ -200,8 +201,8 @@ export async function runClosingBackfillSweep(): Promise<void> {
 // Per-issue linked-PR refresh throttle — GraphQL is expensive, so we cache
 // the success of a fetch in memory and only re-query after this window.
 const LINKED_PRS_STALE_MS = 6 * 60 * 60_000;
-const lastLinkedPrsFetch = new Map<string, number>();
-const inFlightLinkedPrs = new Map<string, Promise<void>>();
+const lastLinkedPrsFetch = new TtlMap<string, number>(500, LINKED_PRS_STALE_MS);
+const inFlightLinkedPrs = new TtlMap<string, Promise<void>>(500, 5 * 60_000);
 
 async function hydrateMissingLinkedPulls(owner: string, repo: string, prNums: number[]): Promise<void> {
   if (prNums.length === 0) return;
@@ -447,10 +448,10 @@ async function persistInChunks<T>(rows: T[], txFn: (batch: T[]) => void): Promis
 // Owner-comments tab.
 const COMMENT_STALE_MS = 5 * 60_000;
 
-const inFlightIssues = new Map<string, Promise<void>>();
-const inFlightPulls = new Map<string, Promise<void>>();
-const inFlightComments = new Map<string, Promise<void>>();
-const lastCommentsFetch = new Map<string, number>();
+const inFlightIssues = new TtlMap<string, Promise<void>>(200, 60_000);
+const inFlightPulls = new TtlMap<string, Promise<void>>(200, 60_000);
+const inFlightComments = new TtlMap<string, Promise<void>>(200, 5 * 60_000);
+const lastCommentsFetch = new TtlMap<string, number>(200, COMMENT_STALE_MS);
 
 function nowIso(): string {
   return new Date().toISOString();

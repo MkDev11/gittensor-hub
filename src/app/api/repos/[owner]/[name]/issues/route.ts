@@ -450,6 +450,6 @@ async function getIssuesImpl(req: NextRequest, full: string) {
       page_author_stats,
       user_validations,
     },
-    { headers: withEtagHeaders(etag) },
+    { headers: { ...withEtagHeaders(etag), "X-Total-Count": String(total), "X-Page": String(page), "X-Per-Page": String(pageSize) } },
   );
 }

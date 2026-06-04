@@ -259,6 +259,6 @@ async function getPullsImpl(req: NextRequest, full: string) {
       })),
       linked_issues_by_pull,
     },
-    { headers: withEtagHeaders(etag) },
+    { headers: { ...withEtagHeaders(etag), "X-Total-Count": String(total), "X-Page": String(page), "X-Per-Page": String(pageSize) } },
   );
 }

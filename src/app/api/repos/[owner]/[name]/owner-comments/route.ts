@@ -74,6 +74,6 @@ export async function GET(
       count: total,
       comments: rows,
     },
-    { headers: withEtagHeaders(etag) },
+    { headers: { ...withEtagHeaders(etag), "X-Total-Count": String(total), "X-Page": String(page), "X-Per-Page": String(pageSize) } },
   );
 }

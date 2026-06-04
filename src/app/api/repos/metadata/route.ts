@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server';
 import { withRotation } from '@/lib/github';
 import { getLiveReposAsyncServer } from '@/lib/repos-server';
+import { TtlMap } from '@/lib/lru-ttl';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,7 +161,7 @@ async function retrySubcall<T>(fn: () => Promise<T>): Promise<T> {
 /** Track per-repo when we last attempted a fill. Stops the empty-langs
  *  retry from hammering GitHub when a repo genuinely has no langs (e.g.
  *  docs-only repo) — we wait EMPTY_LANGS_RETRY_MS between retries. */
-const lastAttemptAt = new Map<string, number>();
+const lastAttemptAt = new TtlMap<string, number>(500, EMPTY_LANGS_RETRY_MS);
 
 /** Per-repo "search issues succeeded since process start". Lets the
  *  partial-refresh helper distinguish "fetched and genuinely empty"

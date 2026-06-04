@@ -6,6 +6,9 @@ import { isTrackedRepoServer } from '@/lib/repos-server';
 
 export const dynamic = 'force-dynamic';
 
+const AUTHOR_PAGE_SIZE_MAX = 500;
+const AUTHOR_PAGE_SIZE_DEFAULT = 100;
+
 // Repo-wide aggregates that change infrequently (compared to the per-page
 // listing). The client caches this with a longer staleTime so the dropdown +
 // per-author OPEN/DONE/NP badges stay populated as the user paginates.
@@ -30,6 +33,12 @@ export async function GET(
   const q = (url.searchParams.get('q') ?? '').trim();
   const summaryOnly = url.searchParams.get('summary') === '1';
 
+  // Pagination for author rows
+  const authorPage = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
+  const requestedAuthorPerPage = parseInt(url.searchParams.get('per_page') ?? `${AUTHOR_PAGE_SIZE_DEFAULT}`, 10) || AUTHOR_PAGE_SIZE_DEFAULT;
+  const authorPerPage = Math.min(AUTHOR_PAGE_SIZE_MAX, Math.max(1, requestedAuthorPerPage));
+  const authorOffset = (authorPage - 1) * authorPerPage;
+
   const lastFetch = (db
     .prepare('SELECT last_issues_fetch FROM repo_meta WHERE full_name = ?')
     .get(full) as { last_issues_fetch: string | null } | undefined)?.last_issues_fetch;
@@ -38,7 +47,7 @@ export async function GET(
   const linkCount = (db
     .prepare('SELECT COUNT(*) AS c FROM pr_issue_links WHERE repo_full_name = ?')
     .get(full) as { c: number }).c;
-  const etag = buildEtag(['issues-meta-v5', full, lastFetch, linkCount, q, summaryOnly ? 'summary' : 'full']);
+  const etag = buildEtag(['issues-meta-v6', full, lastFetch, linkCount, q, summaryOnly ? 'summary' : 'full', authorPage, authorPerPage]);
   const notModified = etagNotModified(req, etag);
   if (notModified) return notModified;
 
@@ -81,10 +90,9 @@ export async function GET(
              JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
              WHERE l.repo_full_name = i.repo_full_name AND l.issue_number = i.number AND p.merged = 1)`;
 
-  // The full author list can be very large on monster repos. Let the initial
-  // page load ask for just the count; the dropdown fetches the full list on
-  // first open, preserving filtering capability without blocking the table.
-  const buildAuthorRowsSql = (extraWhere: string) => `
+  // The full author list can be very large on monster repos. Paginated with
+  // page + per_page params. Default per_page=100, max=500.
+  const buildAuthorRowsSql = (extraWhere: string, withLimit: boolean) => `
     SELECT i.author_login AS login,
            COUNT(*) AS count,
            SUM(CASE WHEN i.state = 'open' THEN 1 ELSE 0 END) AS open,
@@ -104,7 +112,8 @@ export async function GET(
     WHERE i.repo_full_name = ? AND i.author_login IS NOT NULL
       ${extraWhere}
     GROUP BY i.author_login
-    ORDER BY count DESC`;
+    ORDER BY count DESC
+    ${withLimit ? 'LIMIT ? OFFSET ?' : ''}`;
 
   type AuthorRow = {
     login: string;
@@ -115,13 +124,29 @@ export async function GET(
     closed: number;
   };
 
-  const authorRows: AuthorRow[] = summaryOnly
-    ? []
-    : q
-      ? (db
-          .prepare(buildAuthorRowsSql('AND LOWER(i.author_login) LIKE ?'))
-          .all(full, `%${q.toLowerCase()}%`) as AuthorRow[])
-      : (db.prepare(buildAuthorRowsSql('')).all(full) as AuthorRow[]);
+  let authorRows: AuthorRow[] = [];
+  let authorRowTotal = total_authors;
+  if (!summaryOnly) {
+    if (q) {
+      const likeParam = `%${q.toLowerCase()}%`;
+      // Count matching authors for pagination metadata
+      authorRowTotal = (db
+        .prepare(
+          `SELECT COUNT(DISTINCT i.author_login) AS c
+           FROM issues i
+           WHERE i.repo_full_name = ? AND i.author_login IS NOT NULL
+             AND LOWER(i.author_login) LIKE ?`
+        )
+        .get(full, likeParam) as { c: number }).c;
+      authorRows = db
+        .prepare(buildAuthorRowsSql('AND LOWER(i.author_login) LIKE ?', true))
+        .all(full, likeParam, authorPerPage, authorOffset) as AuthorRow[];
+    } else {
+      authorRows = db
+        .prepare(buildAuthorRowsSql('', true))
+        .all(full, authorPerPage, authorOffset) as AuthorRow[];
+    }
+  }
 
   // Per-author stats moved to the per-page /api/issues response so this
   // endpoint stays fast on monster repos. Returning an empty object here
@@ -130,7 +155,21 @@ export async function GET(
   const author_stats: Record<string, { open: number; completed: number; not_planned: number; closed: number }> = {};
 
   return NextResponse.json(
-    { repo: full, author_options: authorRows, author_stats, total_authors, assoc_counts },
-    { headers: withEtagHeaders(etag) },
+    {
+      repo: full,
+      author_options: authorRows,
+      author_stats,
+      total_authors,
+      author_row_total: authorRowTotal,
+      assoc_counts,
+    },
+    {
+      headers: {
+        ...withEtagHeaders(etag),
+        'X-Total-Count': String(authorRowTotal),
+        'X-Page': String(authorPage),
+        'X-Per-Page': String(authorPerPage),
+      },
+    },
   );
 }
