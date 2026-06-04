@@ -1265,7 +1265,7 @@ export default function RepoExplorer() {
   // Per-author stats now come from the page response — only contains stats
   // for the ~50 authors visible on the current page rather than all 15k.
   const issueAuthorStats = useMemo(() => {
-    const map = new Map<string, { open: number; completed: number; not_planned: number; closed: number }>();
+    const map = new Map<string, { open: number; completed: number; not_planned: number; duplicate: number; closed: number }>();
     const stats = (issuesData as IssuesResponse | undefined)?.page_author_stats;
     if (!stats) return map;
     for (const [login, s] of Object.entries(stats)) {
@@ -1762,7 +1762,7 @@ export default function RepoExplorer() {
                   </Box>
                 )
               ) : (
-                <Box as="table" sx={{ width: '100%', minWidth: 1180, borderCollapse: 'collapse', fontSize: 1 }}>
+                <Box as="table" sx={{ width: '100%', minWidth: 1220, borderCollapse: 'collapse', fontSize: 1 }}>
                   <Box as="thead" sx={{ position: 'sticky', top: 0, bg: 'var(--bg-subtle)', zIndex: 1 }}>
                     <Box as="tr" sx={{ borderBottom: '1px solid', borderColor: 'var(--border-default)' }}>
                       <Box as="th" sx={{ ...tableHeaderSx, width: 28 }}></Box>
@@ -1772,6 +1772,7 @@ export default function RepoExplorer() {
                       <SortHeader label="Open" sortKey="author_open" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
                       <SortHeader label="Done" sortKey="author_completed" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
                       <SortHeader label="NP" sortKey="author_not_planned" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
+                      <SortHeader label="DUP" sortKey="author_duplicate" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
                       <SortHeader label="CL" sortKey="author_closed" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} align="center" />
                       <SortHeader label="Opened" sortKey="opened" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
                       <SortHeader label="Updated" sortKey="updated" current={issueSortKey} dir={issueSortDir} onClick={toggleIssueSort} />
@@ -1817,7 +1818,7 @@ export default function RepoExplorer() {
                           />
                           {expanded && settings.contentDisplay === 'accordion' && (
                             <Box as="tr">
-                              <Box as="td" colSpan={13} sx={{ p: 0 }}>
+                              <Box as="td" colSpan={14} sx={{ p: 0 }}>
                                 <ContentViewer
                                   target={{
                                     kind: 'issue',
@@ -2497,7 +2498,7 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
   issue: Issue;
   expanded: boolean;
   onView: () => void;
-  authorStats: { open: number; completed: number; not_planned: number; closed: number } | null;
+  authorStats: { open: number; completed: number; not_planned: number; duplicate: number; closed: number } | null;
   relatedPRs: Array<{ number: number; title: string; state: string; merged: number; draft: number; author_login?: string | null }>;
   mergedPRCount: number | null;
   validationStatus: 'valid' | 'invalid' | null;
@@ -2586,6 +2587,7 @@ const ExplorerIssueRow = React.memo(function ExplorerIssueRow({
       <AuthorStatCell value={authorStats?.open ?? null} fg="var(--success-fg)" bg="var(--success-subtle)" />
       <AuthorStatCell value={authorStats?.completed ?? null} fg="var(--done-fg)" bg="var(--done-subtle)" />
       <AuthorStatCell value={authorStats?.not_planned ?? null} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
+      <AuthorStatCell value={authorStats?.duplicate ?? null} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
       <AuthorStatCell value={authorStats?.closed ?? null} fg="var(--danger-fg)" bg="var(--danger-subtle)" />
       <Box as="td" sx={tableTimeSx} title={issue.created_at ?? undefined}>
         <RecentTime iso={issue.created_at} />

@@ -54,6 +54,7 @@ interface AuthorIssuesResponse {
     open: number;
     completed: number;
     not_planned: number;
+    duplicate: number;
     closed: number;
     last_updated_at: string | null;
   };
@@ -243,11 +244,12 @@ export default function AuthorActivitySidebar({
         ) : activeTab === 'issues' && issuesError ? (
           <Text sx={{ color: 'var(--danger-fg)', fontSize: 0 }}>Could not load author issues.</Text>
         ) : activeTab === 'issues' ? (
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 2, textAlign: 'center' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 2, textAlign: 'center' }}>
             <Metric label="Total" value={issueStats?.total ?? issues.length} fg="var(--fg-default)" bg="var(--bg-emphasis)" />
             <Metric label="Open" value={issueStats?.open ?? 0} fg="var(--success-fg)" bg="var(--success-subtle)" />
             <Metric label="Done" value={issueStats?.completed ?? 0} fg="var(--done-fg)" bg="var(--done-subtle)" />
             <Metric label="NP" value={issueStats?.not_planned ?? 0} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
+            <Metric label="DUP" value={issueStats?.duplicate ?? 0} fg="var(--fg-muted)" bg="var(--bg-emphasis)" />
             <Metric label="CL" value={issueStats?.closed ?? 0} fg="var(--danger-fg)" bg="var(--danger-subtle)" />
           </Box>
         ) : (

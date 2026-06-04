@@ -119,6 +119,9 @@ export interface AuthorOption {
   open?: number;
   completed?: number;
   not_planned?: number;
+  /** Closed + state_reason='duplicate'. Its own bucket — never folded into
+   * `closed` — so author badges match the repo-wide `IssueStateCounts`. */
+  duplicate?: number;
   closed?: number;
 }
 
@@ -126,6 +129,8 @@ export interface AuthorIssueStats {
   open: number;
   completed: number;
   not_planned: number;
+  /** Closed + state_reason='duplicate'. See `AuthorOption.duplicate`. */
+  duplicate: number;
   closed: number;
 }
 

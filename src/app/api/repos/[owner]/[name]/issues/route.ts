@@ -5,6 +5,7 @@ import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { getSessionFromCookies } from '@/lib/auth';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
 import { getIssueDiscoveryDisabledReposAsyncServer, isTrackedRepoServer } from '@/lib/repos-server';
+import { hasMergedLinkedPrSql, issueBucketSums } from '@/lib/issue-buckets';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ type SortKey =
   | 'author_open'
   | 'author_completed'
   | 'author_not_planned'
+  | 'author_duplicate'
   | 'author_closed';
 
 const SORT_COLUMN: Partial<Record<SortKey, string>> = {
@@ -173,10 +175,7 @@ async function getIssuesImpl(req: NextRequest, full: string) {
   //   duplicate   = closed + reason='duplicate'
   //   closed      = everything else closed, including completed-without-
   //                 merged-PR (the Gittensor "risky" bucket)
-  const HAS_MERGED_PR_SQL =
-    `EXISTS (SELECT 1 FROM pr_issue_links l
-             JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
-             WHERE l.repo_full_name = i.repo_full_name AND l.issue_number = i.number AND p.merged = 1)`;
+  const HAS_MERGED_PR_SQL = hasMergedLinkedPrSql('i');
   if (state === 'open') where.push("i.state = 'open'");
   else if (state === 'completed')
     where.push(`i.state = 'closed' AND UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED' AND ${HAS_MERGED_PR_SQL}`);
@@ -198,29 +197,15 @@ async function getIssuesImpl(req: NextRequest, full: string) {
     sort === 'author_open' ||
     sort === 'author_completed' ||
     sort === 'author_not_planned' ||
+    sort === 'author_duplicate' ||
     sort === 'author_closed';
   // EXISTS subquery for "this issue has at least one merged linked PR".
   // Used by every place that classifies an issue as truly Completed.
-  const HAS_MERGED_PR_FOR_S =
-    `EXISTS (SELECT 1 FROM pr_issue_links l
-             JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
-             WHERE l.repo_full_name = s.repo_full_name AND l.issue_number = s.number AND p.merged = 1)`;
+  const HAS_MERGED_PR_FOR_S = hasMergedLinkedPrSql('s');
   const ctePrefix = needsAuthorStats
     ? `WITH author_stats AS (
          SELECT s.author_login,
-           SUM(CASE WHEN s.state = 'open' THEN 1 ELSE 0 END) AS author_open,
-           SUM(CASE WHEN s.state = 'closed'
-                     AND UPPER(COALESCE(s.state_reason,'')) = 'COMPLETED'
-                     AND ${HAS_MERGED_PR_FOR_S}
-               THEN 1 ELSE 0 END) AS author_completed,
-           SUM(CASE WHEN s.state = 'closed'
-                     AND UPPER(COALESCE(s.state_reason,'')) = 'NOT_PLANNED'
-               THEN 1 ELSE 0 END) AS author_not_planned,
-           SUM(CASE WHEN s.state = 'closed'
-                     AND UPPER(COALESCE(s.state_reason,'')) <> 'NOT_PLANNED'
-                     AND NOT (UPPER(COALESCE(s.state_reason,'')) = 'COMPLETED'
-                              AND ${HAS_MERGED_PR_FOR_S})
-               THEN 1 ELSE 0 END) AS author_closed
+           ${issueBucketSums('s', HAS_MERGED_PR_FOR_S, 'author_')}
          FROM issues s
          WHERE s.repo_full_name = ?
          GROUP BY s.author_login
@@ -245,6 +230,8 @@ async function getIssuesImpl(req: NextRequest, full: string) {
     orderSql = `COALESCE(s.author_completed, 0) ${dir}, i.updated_at DESC`;
   } else if (sort === 'author_not_planned') {
     orderSql = `COALESCE(s.author_not_planned, 0) ${dir}, i.updated_at DESC`;
+  } else if (sort === 'author_duplicate') {
+    orderSql = `COALESCE(s.author_duplicate, 0) ${dir}, i.updated_at DESC`;
   } else if (sort === 'author_closed') {
     orderSql = `COALESCE(s.author_closed, 0) ${dir}, i.updated_at DESC`;
   } else {
@@ -291,22 +278,7 @@ async function getIssuesImpl(req: NextRequest, full: string) {
   }
   const stateCountsRow = db
     .prepare(
-      `SELECT
-         SUM(CASE WHEN i.state = 'open' THEN 1 ELSE 0 END) AS open,
-         SUM(CASE WHEN i.state = 'closed'
-                  AND UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED'
-                  AND ${HAS_MERGED_PR_SQL}
-             THEN 1 ELSE 0 END) AS completed,
-         SUM(CASE WHEN i.state = 'closed'
-                  AND UPPER(COALESCE(i.state_reason,'')) = 'NOT_PLANNED'
-             THEN 1 ELSE 0 END) AS not_planned,
-         SUM(CASE WHEN i.state = 'closed'
-                  AND UPPER(COALESCE(i.state_reason,'')) = 'DUPLICATE'
-             THEN 1 ELSE 0 END) AS duplicate,
-         SUM(CASE WHEN i.state = 'closed'
-                  AND UPPER(COALESCE(i.state_reason,'')) NOT IN ('NOT_PLANNED','DUPLICATE')
-                  AND NOT (UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED' AND ${HAS_MERGED_PR_SQL})
-             THEN 1 ELSE 0 END) AS closed
+      `SELECT ${issueBucketSums('i', HAS_MERGED_PR_SQL)}
        FROM issues i WHERE ${stateOnlyWhere.join(' AND ')}`
     )
     .get(...stateOnlyArgs) as { open: number | null; completed: number | null; not_planned: number | null; duplicate: number | null; closed: number | null };
@@ -374,9 +346,12 @@ async function getIssuesImpl(req: NextRequest, full: string) {
     }
   }
 
-  const page_author_stats: Record<string, { open: number; completed: number; not_planned: number; closed: number }> = {};
+  const page_author_stats: Record<string, { open: number; completed: number; not_planned: number; duplicate: number; closed: number }> = {};
   if (authorLogins.length > 0) {
     const placeholders = authorLogins.map(() => '?').join(',');
+    // Here "has a merged linked PR" is the precomputed `merged_link_counts`
+    // count rather than an EXISTS subquery, but the bucket classification is
+    // identical to every other view via `issueBucketSums`.
     const statRows = db
       .prepare(
         `WITH merged_link_counts AS (
@@ -387,24 +362,15 @@ async function getIssuesImpl(req: NextRequest, full: string) {
            GROUP BY l.issue_number
          )
          SELECT i.author_login AS login,
-           SUM(CASE WHEN i.state = 'open' THEN 1 ELSE 0 END) AS open,
-           SUM(CASE WHEN i.state = 'closed'
-                     AND UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED'
-                     AND COALESCE(mlc.cnt, 0) > 0 THEN 1 ELSE 0 END) AS completed,
-           SUM(CASE WHEN i.state = 'closed'
-                     AND UPPER(COALESCE(i.state_reason,'')) = 'NOT_PLANNED' THEN 1 ELSE 0 END) AS not_planned,
-           SUM(CASE WHEN i.state = 'closed'
-                     AND UPPER(COALESCE(i.state_reason,'')) <> 'NOT_PLANNED'
-                     AND NOT (UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED'
-                              AND COALESCE(mlc.cnt, 0) > 0) THEN 1 ELSE 0 END) AS closed
+           ${issueBucketSums('i', 'COALESCE(mlc.cnt, 0) > 0')}
          FROM issues i
          LEFT JOIN merged_link_counts mlc ON mlc.issue_number = i.number
          WHERE i.repo_full_name = ? AND i.author_login IN (${placeholders})
          GROUP BY i.author_login`,
       )
-      .all(full, full, ...authorLogins) as Array<{ login: string; open: number; completed: number; not_planned: number; closed: number }>;
+      .all(full, full, ...authorLogins) as Array<{ login: string; open: number; completed: number; not_planned: number; duplicate: number; closed: number }>;
     for (const r of statRows) {
-      page_author_stats[r.login] = { open: r.open, completed: r.completed, not_planned: r.not_planned, closed: r.closed };
+      page_author_stats[r.login] = { open: r.open, completed: r.completed, not_planned: r.not_planned, duplicate: r.duplicate, closed: r.closed };
     }
   }
 
