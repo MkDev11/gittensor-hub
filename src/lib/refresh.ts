@@ -348,11 +348,11 @@ export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
   // Cold path: schedule the backfill OFF the request path.
   if (!inFlightLinksBackfill.has(normalizedRepo)) {
     inFlightLinksBackfill.add(normalizedRepo);
-    setImmediate(() => {
+    setImmediate(async () => {
       try {
         const writeDb = getDb();
         const markerRepoFullName = resolveCachedRepoFullName(writeDb, normalizedRepo, repoFullName);
-        runPrIssueLinksBackfill(markerRepoFullName);
+        await runPrIssueLinksBackfill(markerRepoFullName);
         // Persistent marker so subsequent requests don't re-schedule
         // when the repo legitimately has zero linked issues.
         writeDb
@@ -388,38 +388,56 @@ function resolveCachedRepoFullName(db: ReturnType<typeof getDb>, normalizedRepo:
   return metaRow?.full_name ?? fallback.trim();
 }
 
-/** The actual blocking backfill body — separated so it can be invoked
- *  from the deferred path (setImmediate above) and from any future
- *  caller that genuinely wants to block until it's done (poller,
- *  migrations, tests). */
-function runPrIssueLinksBackfill(repoFullName: string): number {
+const PR_LINKS_BACKFILL_BATCH = 200;
+
+/** Paginated async backfill of `pr_issue_links`. Commits one batch at a time
+ *  and yields the event loop between batches so concurrent requests are not
+ *  starved behind a single monolithic transaction on large repos. */
+async function runPrIssueLinksBackfill(repoFullName: string): Promise<number> {
   const db = getDb();
   const normalizedRepo = repoFullName.trim().toLowerCase();
-  const pulls = db
-    .prepare(`SELECT repo_full_name, number, title, body FROM pulls WHERE LOWER(repo_full_name) = ?`)
-    .all(normalizedRepo) as Array<{ repo_full_name: string; number: number; title: string; body: string | null }>;
-  if (pulls.length === 0) return 0;
-
   const insert = db.prepare(
     `INSERT OR IGNORE INTO pr_issue_links (repo_full_name, pr_number, issue_number)
      VALUES (?, ?, ?)`
   );
   let inserted = 0;
-  const tx = db.transaction(() => {
-    for (const pr of pulls) {
-      const links = extractLinkedIssues({
-        title: pr.title,
-        body: pr.body,
-        repo_full_name: pr.repo_full_name,
-      });
-      for (const l of links) {
-        if (l.repo && l.repo.toLowerCase() !== normalizedRepo) continue;
-        const r = insert.run(pr.repo_full_name, pr.number, l.number);
-        if (r.changes > 0) inserted += 1;
+  let offset = 0;
+
+  while (true) {
+    const batch = db
+      .prepare(
+        `SELECT repo_full_name, number, title, body FROM pulls
+         WHERE LOWER(repo_full_name) = ? ORDER BY number LIMIT ? OFFSET ?`
+      )
+      .all(normalizedRepo, PR_LINKS_BACKFILL_BATCH, offset) as Array<{
+        repo_full_name: string;
+        number: number;
+        title: string;
+        body: string | null;
+      }>;
+
+    if (batch.length === 0) break;
+
+    const tx = db.transaction(() => {
+      for (const pr of batch) {
+        const links = extractLinkedIssues({
+          title: pr.title,
+          body: pr.body,
+          repo_full_name: pr.repo_full_name,
+        });
+        for (const l of links) {
+          if (l.repo && l.repo.toLowerCase() !== normalizedRepo) continue;
+          const r = insert.run(pr.repo_full_name, pr.number, l.number);
+          if (r.changes > 0) inserted += 1;
+        }
       }
-    }
-  });
-  tx();
+    });
+    tx();
+
+    offset += batch.length;
+    await yieldEventLoop();
+  }
+
   return inserted;
 }
 
