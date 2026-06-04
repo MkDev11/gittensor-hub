@@ -29,28 +29,32 @@ export const PULL_BUCKETS: readonly PullBucket[] = ['open', 'draft', 'merged', '
 /**
  * SQL boolean predicate over the `pulls` columns (`state` / `draft` / `merged`)
  * that is true for exactly the rows in `bucket`. The predicates are mutually
- * exclusive. Inputs are developer-controlled constants — never user input.
+ * exclusive. `alias` qualifies the columns (e.g. `'p'` → `p.merged`) for queries
+ * that join/alias the `pulls` table; pass `''` (default) for unqualified columns.
+ * Inputs are developer-controlled constants — never user input.
  */
-export function pullBucketPredicate(bucket: PullBucket): string {
+export function pullBucketPredicate(bucket: PullBucket, alias = ''): string {
+  const c = alias ? `${alias}.` : '';
   switch (bucket) {
     case 'merged':
-      return 'merged = 1';
+      return `${c}merged = 1`;
     case 'closed':
-      return "merged = 0 AND state = 'closed'";
+      return `${c}merged = 0 AND ${c}state = 'closed'`;
     case 'draft':
-      return "merged = 0 AND state = 'open' AND draft = 1";
+      return `${c}merged = 0 AND ${c}state = 'open' AND ${c}draft = 1`;
     case 'open':
-      return "merged = 0 AND state = 'open' AND draft = 0";
+      return `${c}merged = 0 AND ${c}state = 'open' AND ${c}draft = 0`;
   }
 }
 
 /**
  * `SUM(CASE WHEN <predicate> THEN 1 ELSE 0 END) AS <bucket>` columns for all
- * four buckets, for the `state_counts` aggregation `SELECT`.
+ * four buckets, for the `state_counts` aggregation `SELECT`. `alias` qualifies
+ * the source columns (see `pullBucketPredicate`).
  */
-export function pullBucketSums(): string {
+export function pullBucketSums(alias = ''): string {
   return PULL_BUCKETS.map(
-    (b) => `SUM(CASE WHEN ${pullBucketPredicate(b)} THEN 1 ELSE 0 END) AS ${b}`,
+    (b) => `SUM(CASE WHEN ${pullBucketPredicate(b, alias)} THEN 1 ELSE 0 END) AS ${b}`,
   ).join(',\n         ');
 }
 
@@ -58,12 +62,12 @@ export function pullBucketSums(): string {
  * `CASE … END` expression ranking rows by bucket precedence
  * (merged 0 → closed 1 → draft 2 → open 3) for `ORDER BY state`. Mirrors
  * `pullStatus()` so a closed draft sorts with Closed, matching its badge,
- * the filter, and the counts.
+ * the filter, and the counts. `alias` qualifies the columns (see above).
  */
-export function pullBucketRankSql(): string {
+export function pullBucketRankSql(alias = ''): string {
   return `CASE
-      WHEN ${pullBucketPredicate('merged')} THEN 0
-      WHEN ${pullBucketPredicate('closed')} THEN 1
-      WHEN ${pullBucketPredicate('draft')} THEN 2
+      WHEN ${pullBucketPredicate('merged', alias)} THEN 0
+      WHEN ${pullBucketPredicate('closed', alias)} THEN 1
+      WHEN ${pullBucketPredicate('draft', alias)} THEN 2
       ELSE 3 END`;
 }

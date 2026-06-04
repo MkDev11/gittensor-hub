@@ -135,7 +135,7 @@ async function getPullsImpl(req: NextRequest, full: string) {
 
   let orderSql: string;
   if (sort === 'state') {
-    // Mirror PullStatusBadge's bucketing: merged → draft → open → closed.
+    // Mirror pull-bucket precedence: merged → closed → draft → open.
     orderSql = `${pullBucketRankSql()} ${dir}, updated_at DESC`;
   } else {
     orderSql = `${SORT_COLUMN[sort] ?? 'updated_at'} ${dir}, id ${dir}`;
