@@ -313,12 +313,22 @@ export default function RepoExplorer() {
     reset: resetPullFilters,
   } = usePullFilters();
 
+  const [prAuthorSearch, setPrAuthorSearch] = useState('');
+  const [debouncedPrAuthorSearch, setDebouncedPrAuthorSearch] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedPrAuthorSearch(prAuthorSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [prAuthorSearch]);
+
   // Filters and per-repo viewing state are scoped to the active repo — reset
   // them when the user switches repos so e.g. an author filter from repo A
   // doesn't carry over to repo B (where that author may not have any issues).
   useEffect(() => {
     resetIssueFilters();
     resetPullFilters();
+    setPrAuthorSearch('');
+    setDebouncedPrAuthorSearch('');
     setIssuesPage(1);
     setPullsPage(1);
     setExpandedIssue(null);
@@ -1165,10 +1175,11 @@ export default function RepoExplorer() {
   );
 
   const { data: pullsMeta, isFetching: pullsMetaFetching } = useQuery<PullsMetaResponse>({
-    queryKey: ['pulls-meta', selected.owner, selected.name, prAuthorsRequested],
+    queryKey: ['pulls-meta', selected.owner, selected.name, prAuthorsRequested, debouncedPrAuthorSearch],
     queryFn: async ({ signal }) => {
       const sp = new URLSearchParams();
       if (!prAuthorsRequested) sp.set('summary', '1');
+      else if (debouncedPrAuthorSearch) sp.set('q', debouncedPrAuthorSearch);
       const r = await fetch(`/api/repos/${selected.owner}/${selected.name}/pulls-meta?${sp.toString()}`, { signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
@@ -1888,6 +1899,7 @@ export default function RepoExplorer() {
                   totalAuthors={pullsMeta?.total_authors}
                   loading={pullsMetaFetching}
                   onOpen={() => setPrAuthorsRequested(true)}
+                  onSearchChange={setPrAuthorSearch}
                   width={260}
                   ariaLabel="Filter PRs by author"
                 />

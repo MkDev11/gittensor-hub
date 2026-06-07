@@ -30,6 +30,7 @@ interface AuthorFilterProps {
   totalAuthors?: number;
   loading?: boolean;
   onOpen?: () => void;
+  onSearchChange?: (search: string) => void;
   width?: number;
   align?: 'left' | 'right';
   ariaLabel?: string;
@@ -43,6 +44,7 @@ export default function AuthorFilter({
   totalAuthors,
   loading = false,
   onOpen,
+  onSearchChange,
   width = 200,
   align = 'left',
   ariaLabel = 'Filter by author',
@@ -71,6 +73,11 @@ export default function AuthorFilter({
   useEffect(() => {
     if (open) onOpen?.();
   }, [open, onOpen]);
+
+  useEffect(() => {
+    if (!open) return;
+    onSearchChange?.(search);
+  }, [open, search, onSearchChange]);
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
