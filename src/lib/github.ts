@@ -386,6 +386,40 @@ export async function fetchPullsFromGithub(
   return out;
 }
 
+export async function searchPullNumbersByAuthorFromGithub(
+  owner: string,
+  repo: string,
+  author: string,
+  perPage = 100,
+  maxPages = 3,
+): Promise<number[]> {
+  const seen = new Set<number>();
+  const q = `repo:${owner}/${repo} type:pr author:${author}`;
+  for (let page = 1; page <= maxPages; page++) {
+    const resp = await withRotation(
+      (octokit) =>
+        octokit.search.issuesAndPullRequests({
+          q,
+          sort: 'updated',
+          order: 'desc',
+          per_page: perPage,
+          page,
+        }),
+      { kind: 'search' },
+    );
+    const items = resp.data.items;
+    if (items.length === 0) break;
+    for (const item of items) seen.add(item.number);
+    if (items.length < perPage) break;
+  }
+  return [...seen];
+}
+
+export async function fetchPullFromGithub(owner: string, repo: string, number: number): Promise<GhPull> {
+  const resp = await withRotation((octokit) => octokit.pulls.get({ owner, repo, pull_number: number }));
+  return resp.data as unknown as GhPull;
+}
+
 /**
  * Asks GitHub's GraphQL API for the authoritative list of PRs linked to an
  * issue — covers both the "closes/fixes #N" body-keyword case AND the manual

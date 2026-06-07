@@ -3,6 +3,7 @@ import { getReadDb } from '@/lib/db';
 import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { isTrackedRepoServer } from '@/lib/repos-server';
+import { hasMergedLinkedPrSql, issueBucketSums } from '@/lib/issue-buckets';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,13 +74,12 @@ export async function GET(
   backfillPrIssueLinksIfNeeded(full);
 
   // Mirrors the buckets in /api/issues' state filter so the dropdown counts
-  // match what the table shows. Completed = closed + state_reason='completed'
-  // AND has at least one merged linked PR; everything else closed and not
-  // explicitly not_planned/completed-with-merged-PR falls into `closed`.
-  const HAS_MERGED_PR =
-    `EXISTS (SELECT 1 FROM pr_issue_links l
-             JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
-             WHERE l.repo_full_name = i.repo_full_name AND l.issue_number = i.number AND p.merged = 1)`;
+  // match what the table shows. The shared `issueBucketSums` helper is the
+  // single source of truth for the open/completed/not_planned/duplicate/closed
+  // classification, so this dropdown can never drift from the repo-wide
+  // `state_counts` (notably: DUPLICATE is its own bucket, NOT folded into
+  // `closed`).
+  const HAS_MERGED_PR = hasMergedLinkedPrSql('i');
 
   // The full author list can be very large on monster repos. Let the initial
   // page load ask for just the count; the dropdown fetches the full list on
@@ -88,19 +88,7 @@ export async function GET(
   const buildAuthorRowsSql = (extraWhere: string) => `
     SELECT i.author_login AS login,
            COUNT(*) AS count,
-           SUM(CASE WHEN i.state = 'open' THEN 1 ELSE 0 END) AS open,
-           SUM(CASE WHEN i.state = 'closed'
-                     AND UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED'
-                     AND ${HAS_MERGED_PR}
-               THEN 1 ELSE 0 END) AS completed,
-           SUM(CASE WHEN i.state = 'closed'
-                     AND UPPER(COALESCE(i.state_reason,'')) = 'NOT_PLANNED'
-               THEN 1 ELSE 0 END) AS not_planned,
-           SUM(CASE WHEN i.state = 'closed'
-                     AND UPPER(COALESCE(i.state_reason,'')) <> 'NOT_PLANNED'
-                     AND NOT (UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED'
-                              AND ${HAS_MERGED_PR})
-               THEN 1 ELSE 0 END) AS closed
+           ${issueBucketSums('i', HAS_MERGED_PR)}
     FROM issues i
     WHERE i.repo_full_name = ? AND i.author_login IS NOT NULL
       ${extraWhere}
@@ -114,6 +102,7 @@ export async function GET(
     open: number;
     completed: number;
     not_planned: number;
+    duplicate: number;
     closed: number;
   };
 
