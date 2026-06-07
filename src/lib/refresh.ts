@@ -350,7 +350,8 @@ export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
   // Cold path: schedule the backfill OFF the request path.
   if (!inFlightLinksBackfill.has(normalizedRepo)) {
     inFlightLinksBackfill.add(normalizedRepo);
-    setImmediate(async () => {
+    setImmediate(() => {
+      void (async () => {
       try {
         const writeDb = getDb();
         const markerRepoFullName = resolveCachedRepoFullName(writeDb, normalizedRepo, repoFullName);
@@ -373,6 +374,7 @@ export function backfillPrIssueLinksIfNeeded(repoFullName: string): number {
       } finally {
         inFlightLinksBackfill.delete(normalizedRepo);
       }
+      })();
     });
   }
   return 0;
