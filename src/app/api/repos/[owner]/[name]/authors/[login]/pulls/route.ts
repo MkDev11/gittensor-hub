@@ -4,6 +4,8 @@ import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gi
 import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
 import { positiveInt } from '@/lib/api-utils';
 import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
+import { pullBucketSums } from '@/lib/pull-buckets';
+import { hydrateAuthorPullsFromGithub } from '@/lib/refresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,15 +31,19 @@ export async function GET(
   const limit = Math.min(LIMIT_MAX, Math.max(1, requestedLimit));
   const offset = (page - 1) * limit;
 
+  try {
+    await hydrateAuthorPullsFromGithub(owner, name, login);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[author-pulls] ${full} repair failed for @${login}: ${msg.slice(0, 160)}`);
+  }
+
   const db = getReadDb();
   const stats = db
     .prepare(
       `SELECT
          COUNT(*) AS total,
-         SUM(CASE WHEN state = 'open' AND draft = 0 AND merged = 0 THEN 1 ELSE 0 END) AS open,
-         SUM(CASE WHEN draft = 1 AND merged = 0 THEN 1 ELSE 0 END) AS draft,
-         SUM(CASE WHEN merged = 1 THEN 1 ELSE 0 END) AS merged,
-         SUM(CASE WHEN state = 'closed' AND merged = 0 THEN 1 ELSE 0 END) AS closed,
+         ${pullBucketSums()},
          MAX(updated_at) AS last_updated_at
        FROM pulls
        WHERE repo_full_name = ? AND author_login = ?`,

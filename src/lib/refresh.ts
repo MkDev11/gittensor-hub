@@ -4,7 +4,9 @@ import {
   fetchIssueCommentsFromGithub,
   fetchIssueLinkedPrs,
   fetchPrsClosingIssuesBatch,
+  fetchPullFromGithub,
   fetchPullsFromGithub,
+  searchPullNumbersByAuthorFromGithub,
   GhComment,
   GhIssue,
   GhPull,
@@ -449,6 +451,7 @@ const COMMENT_STALE_MS = 5 * 60_000;
 
 const inFlightIssues = new Map<string, Promise<void>>();
 const inFlightPulls = new Map<string, Promise<void>>();
+const inFlightAuthorPullHydrations = new Map<string, Promise<number>>();
 const inFlightComments = new Map<string, Promise<void>>();
 const lastCommentsFetch = new Map<string, number>();
 
@@ -561,6 +564,7 @@ function upsertPull(repoFullName: string, pull: GhPull): void {
        state              = excluded.state,
        draft              = excluded.draft,
        merged             = excluded.merged,
+       author_login       = COALESCE(excluded.author_login, pulls.author_login),
        author_association = excluded.author_association,
        updated_at         = excluded.updated_at,
        closed_at          = excluded.closed_at,
@@ -588,6 +592,72 @@ function upsertPull(repoFullName: string, pull: GhPull): void {
   });
   // Refresh the denormalized PR→issue link rows for this PR's new body/title.
   replacePrIssueLinks(repoFullName, pull.number, pull.title, truncatedBody);
+}
+
+const AUTHOR_PULL_HYDRATE_MAX_PRS = 300;
+const AUTHOR_PULL_HYDRATE_EMPTY_TTL_MS = 10 * 60_000;
+const lastEmptyAuthorPullHydration = new Map<string, number>();
+
+function normalizeGithubLogin(login: string): string | null {
+  const candidate = login.trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(candidate)) return null;
+  return candidate;
+}
+
+export async function hydrateAuthorPullsFromGithub(owner: string, name: string, login: string): Promise<number> {
+  const author = normalizeGithubLogin(login);
+  if (!author) return 0;
+
+  const full = `${owner}/${name}`;
+  const key = `${full.toLowerCase()}:${author.toLowerCase()}`;
+  const existing = inFlightAuthorPullHydrations.get(key);
+  if (existing) return existing;
+  const lastEmpty = lastEmptyAuthorPullHydration.get(key);
+  if (lastEmpty && Date.now() - lastEmpty < AUTHOR_PULL_HYDRATE_EMPTY_TTL_MS) return 0;
+
+  const promise = (async () => {
+    const cached = getReadDb()
+      .prepare(
+        `SELECT COUNT(*) AS c
+         FROM pulls
+         WHERE LOWER(repo_full_name) = LOWER(?) AND LOWER(author_login) = LOWER(?)`,
+      )
+      .get(full, author) as { c: number };
+    if (cached.c > 0) return 0;
+
+    const numbers = await searchPullNumbersByAuthorFromGithub(owner, name, author);
+    if (numbers.length === 0) {
+      lastEmptyAuthorPullHydration.set(key, Date.now());
+      return 0;
+    }
+
+    const pulls: GhPull[] = [];
+    for (const number of numbers.slice(0, AUTHOR_PULL_HYDRATE_MAX_PRS)) {
+      try {
+        const pull = await fetchPullFromGithub(owner, name, number);
+        if ((pull.user?.login ?? '').toLowerCase() === author.toLowerCase()) pulls.push(pull);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[pulls] ${full} author repair skipped PR #${number}: ${msg.slice(0, 160)}`);
+      }
+    }
+
+    if (pulls.length === 0) {
+      lastEmptyAuthorPullHydration.set(key, Date.now());
+      return 0;
+    }
+    const txFn = getDb().transaction((batch: GhPull[]) => {
+      for (const pull of batch) upsertPull(full, pull);
+    });
+    await persistInChunks(pulls, txFn);
+    console.log(`[pulls] ${full} hydrated ${pulls.length} missing PR(s) for @${author}`);
+    return pulls.length;
+  })().finally(() => {
+    inFlightAuthorPullHydrations.delete(key);
+  });
+
+  inFlightAuthorPullHydrations.set(key, promise);
+  return promise;
 }
 
 function touchRepoMeta(repoFullName: string, field: 'last_issues_fetch' | 'last_pulls_fetch', error?: string): void {

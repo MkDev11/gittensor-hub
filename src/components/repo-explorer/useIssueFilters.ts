@@ -12,6 +12,7 @@ export type IssueSortKey =
   | 'author_open'
   | 'author_completed'
   | 'author_not_planned'
+  | 'author_duplicate'
   | 'author_closed';
 
 export interface IssueFilters {

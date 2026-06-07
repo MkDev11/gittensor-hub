@@ -5,6 +5,7 @@ import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gi
 import { getGittensorPrScoreMap, pullScoreKey } from '@/lib/gittensor-pr-scores';
 import { chunk, createRequestTimer, normalizeRepoList, positiveInt, resolveRepoScope } from '@/lib/api-utils';
 import type { AuthorCredibility, LinkedIssueReference, PullScore } from '@/types/entities';
+import { pullBucketPredicate } from '@/lib/pull-buckets';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,20 +45,11 @@ function parseSinceIso(raw: string | null): string | null {
 
 function addStateFilter(where: string[], state: string | null) {
   if (!state || state === 'all') return;
-  if (state === 'open') {
-    where.push("p.state = 'open' AND p.draft = 0 AND p.merged = 0");
-    return;
-  }
-  if (state === 'draft') {
-    where.push('p.draft = 1 AND p.merged = 0');
-    return;
-  }
-  if (state === 'merged') {
-    where.push('p.merged = 1');
-    return;
-  }
-  if (state === 'closed') {
-    where.push("p.state = 'closed' AND p.merged = 0");
+  // Route through the shared mutually-exclusive predicates so a closed unmerged
+  // draft can't match both `?state=draft` and `?state=closed` (it counts as
+  // Closed). Columns are aliased `p` here.
+  if (state === 'open' || state === 'draft' || state === 'merged' || state === 'closed') {
+    where.push(pullBucketPredicate(state, 'p'));
   }
 }
 
