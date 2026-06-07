@@ -4,6 +4,7 @@ import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gi
 import { getIssueDiscoveryDisabledReposAsyncServer } from '@/lib/repos-server';
 import { positiveInt } from '@/lib/api-utils';
 import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
+import { hasMergedLinkedPrSql, issueBucketSums } from '@/lib/issue-buckets';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,28 +41,12 @@ export async function GET(
   const offset = (page - 1) * limit;
 
   const db = getReadDb();
-  const mergedPrSql = `EXISTS (
-    SELECT 1 FROM pr_issue_links l
-    JOIN pulls p ON p.repo_full_name = l.repo_full_name AND p.number = l.pr_number
-    WHERE l.repo_full_name = i.repo_full_name AND l.issue_number = i.number AND p.merged = 1
-  )`;
 
   const stats = db
     .prepare(
       `SELECT
          COUNT(*) AS total,
-         SUM(CASE WHEN i.state = 'open' THEN 1 ELSE 0 END) AS open,
-         SUM(CASE WHEN i.state = 'closed'
-                   AND UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED'
-                   AND ${mergedPrSql}
-             THEN 1 ELSE 0 END) AS completed,
-         SUM(CASE WHEN i.state = 'closed'
-                   AND UPPER(COALESCE(i.state_reason,'')) = 'NOT_PLANNED'
-             THEN 1 ELSE 0 END) AS not_planned,
-         SUM(CASE WHEN i.state = 'closed'
-                   AND UPPER(COALESCE(i.state_reason,'')) <> 'NOT_PLANNED'
-                   AND NOT (UPPER(COALESCE(i.state_reason,'')) = 'COMPLETED' AND ${mergedPrSql})
-             THEN 1 ELSE 0 END) AS closed,
+         ${issueBucketSums('i', hasMergedLinkedPrSql('i'))},
          MAX(i.updated_at) AS last_updated_at
        FROM issues i
        WHERE i.repo_full_name = ? AND i.author_login = ?`,
@@ -72,6 +57,7 @@ export async function GET(
         open: number | null;
         completed: number | null;
         not_planned: number | null;
+        duplicate: number | null;
         closed: number | null;
         last_updated_at: string | null;
       }
@@ -136,6 +122,7 @@ export async function GET(
       open: stats?.open ?? 0,
       completed: stats?.completed ?? 0,
       not_planned: stats?.not_planned ?? 0,
+      duplicate: stats?.duplicate ?? 0,
       closed: stats?.closed ?? 0,
       last_updated_at: stats?.last_updated_at ?? null,
     },

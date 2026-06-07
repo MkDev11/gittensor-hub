@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb, PullRow } from '@/lib/db';
-import { refreshPullsIfStale } from '@/lib/refresh';
+import { hydrateAuthorPullsFromGithub, refreshPullsIfStale } from '@/lib/refresh';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { authorCredibilityForRepo, getGittensorCredibilityIndex } from '@/lib/gittensor-credibility';
 import { getIssueDiscoveryDisabledReposAsyncServer, isTrackedRepoServer } from '@/lib/repos-server';
 import { GITTENSOR_PR_SCORE_TTL_MS, getGittensorPrScoreMap, pullScoreKey } from '@/lib/gittensor-pr-scores';
+import { pullBucketPredicate, pullBucketRankSql, pullBucketSums } from '@/lib/pull-buckets';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,23 @@ const PAGE_SIZE_MAX = 200;
 const PAGE_SIZE_DEFAULT = 50;
 
 type SortKey = 'opened' | 'updated' | 'closed' | 'author' | 'state';
+
+function githubLoginCandidate(value: string | null | undefined): string | null {
+  const candidate = (value ?? '').trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(candidate)) return null;
+  return candidate;
+}
+
+function authorRepairCandidate(author: string | null, q: string | null): string | null {
+  const authorCandidate = author && author !== 'all' && !author.startsWith('__')
+    ? githubLoginCandidate(author)
+    : null;
+  if (authorCandidate) return authorCandidate;
+
+  const query = (q ?? '').trim();
+  if (!query || /^#?\d+$/.test(query)) return null;
+  return githubLoginCandidate(query);
+}
 
 const SORT_COLUMN: Record<SortKey, string> = {
   opened: 'created_at',
@@ -59,12 +77,17 @@ export async function GET(
 
 async function getPullsImpl(req: NextRequest, full: string) {
   if (!(await isTrackedRepoServer(full))) return emptyPullsResponse(full);
+  const [owner, name] = full.split('/');
+  if (!owner || !name) return emptyPullsResponse(full);
 
   // Poller handles refresh on its own cadence — see the same note in the
   // /issues route for why we don't call refresh from request handlers.
   void refreshPullsIfStale;
 
   const url = new URL(req.url);
+  const qParam = url.searchParams.get('q');
+  const authorParam = url.searchParams.get('author') ?? 'all';
+  const repairCandidateForRequest = authorRepairCandidate(authorParam, qParam);
   // ETag short-circuit: 304 when nothing has changed since the client's last
   // poll for this exact filter/sort/page combo.
   const db0 = getReadDb();
@@ -89,11 +112,11 @@ async function getPullsImpl(req: NextRequest, full: string) {
     url.searchParams.get('page'),
     url.searchParams.get('pageSize'),
   ]);
-  const notModified = etagNotModified(req, etag);
+  const notModified = repairCandidateForRequest ? null : etagNotModified(req, etag);
   if (notModified) return notModified;
-  const q = (url.searchParams.get('q') ?? '').trim();
+  const q = (qParam ?? '').trim();
   const state = url.searchParams.get('state') ?? 'all';
-  const author = url.searchParams.get('author') ?? 'all';
+  const author = authorParam;
   const sort = (url.searchParams.get('sort') ?? 'updated') as SortKey;
   const dir = (url.searchParams.get('dir') ?? 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
   const since = url.searchParams.get('since');
@@ -122,10 +145,10 @@ async function getPullsImpl(req: NextRequest, full: string) {
       args.push(author);
     }
     if (includeState) {
-      if (state === 'open') where.push("state = 'open' AND draft = 0 AND merged = 0");
-      else if (state === 'draft') where.push('draft = 1 AND merged = 0');
-      else if (state === 'merged') where.push('merged = 1');
-      else if (state === 'closed') where.push("state = 'closed' AND merged = 0");
+      if (state === 'open') where.push(pullBucketPredicate('open'));
+      else if (state === 'draft') where.push(pullBucketPredicate('draft'));
+      else if (state === 'merged') where.push(pullBucketPredicate('merged'));
+      else if (state === 'closed') where.push(pullBucketPredicate('closed'));
     }
     return { sql: where.join(' AND '), args };
   };
@@ -134,17 +157,13 @@ async function getPullsImpl(req: NextRequest, full: string) {
 
   let orderSql: string;
   if (sort === 'state') {
-    // Mirror PullStatusBadge's bucketing: merged → draft → open → closed.
-    orderSql = `CASE
-      WHEN merged = 1 THEN 0
-      WHEN draft = 1 THEN 1
-      WHEN state = 'open' THEN 2
-      ELSE 3 END ${dir}, updated_at DESC`;
+    // Mirror pull-bucket precedence: merged → closed → draft → open.
+    orderSql = `${pullBucketRankSql()} ${dir}, updated_at DESC`;
   } else {
     orderSql = `${SORT_COLUMN[sort] ?? 'updated_at'} ${dir}, id ${dir}`;
   }
 
-  const rows = db
+  const readRows = () => db
     .prepare(
       `SELECT id, repo_full_name, number, title, NULL as body, state, draft, merged,
               author_login, author_association, created_at, updated_at, closed_at, merged_at,
@@ -156,18 +175,30 @@ async function getPullsImpl(req: NextRequest, full: string) {
     )
     .all(...whereArgs, pageSize, offset) as PullRow[];
 
-  const total = (db
+  const readTotal = () => (db
     .prepare(`SELECT COUNT(*) AS c FROM pulls WHERE ${whereSql}`)
     .get(...whereArgs) as { c: number }).c;
+
+  let rows = readRows();
+  let total = readTotal();
+
+  if (total === 0 && repairCandidateForRequest) {
+    try {
+      const hydrated = await hydrateAuthorPullsFromGithub(owner, name, repairCandidateForRequest);
+      if (hydrated > 0) {
+        rows = readRows();
+        total = readTotal();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[pulls] ${full} author repair failed for @${repairCandidateForRequest}: ${msg.slice(0, 160)}`);
+    }
+  }
 
   const { sql: stateLessWhere, args: stateLessArgs } = buildWhere(false);
   const stateCountsRow = db
     .prepare(
-      `SELECT
-         SUM(CASE WHEN state = 'open' AND draft = 0 AND merged = 0 THEN 1 ELSE 0 END) AS open,
-         SUM(CASE WHEN draft = 1 AND merged = 0 THEN 1 ELSE 0 END) AS draft,
-         SUM(CASE WHEN merged = 1 THEN 1 ELSE 0 END) AS merged,
-         SUM(CASE WHEN state = 'closed' AND merged = 0 THEN 1 ELSE 0 END) AS closed
+      `SELECT ${pullBucketSums()}
        FROM pulls WHERE ${stateLessWhere}`
     )
     .get(...stateLessArgs) as { open: number | null; draft: number | null; merged: number | null; closed: number | null };
@@ -181,7 +212,7 @@ async function getPullsImpl(req: NextRequest, full: string) {
   let new_count: number | undefined;
   if (since) {
     new_count = (db
-      .prepare(`SELECT COUNT(*) AS c FROM pulls WHERE repo_full_name = ? AND state = 'open' AND draft = 0 AND merged = 0 AND COALESCE(created_at, '') > ? AND first_seen_at > ?`)
+      .prepare(`SELECT COUNT(*) AS c FROM pulls WHERE repo_full_name = ? AND ${pullBucketPredicate('open')} AND COALESCE(created_at, '') > ? AND first_seen_at > ?`)
       .get(full, since, since) as { c: number }).c;
   }
 

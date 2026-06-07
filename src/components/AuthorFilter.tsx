@@ -10,6 +10,7 @@ export interface AuthorOption {
   open?: number;
   completed?: number;
   not_planned?: number;
+  duplicate?: number;
   closed?: number;
 }
 
@@ -29,6 +30,7 @@ interface AuthorFilterProps {
   totalAuthors?: number;
   loading?: boolean;
   onOpen?: () => void;
+  onSearchChange?: (search: string) => void;
   width?: number;
   align?: 'left' | 'right';
   ariaLabel?: string;
@@ -42,6 +44,7 @@ export default function AuthorFilter({
   totalAuthors,
   loading = false,
   onOpen,
+  onSearchChange,
   width = 200,
   align = 'left',
   ariaLabel = 'Filter by author',
@@ -70,6 +73,11 @@ export default function AuthorFilter({
   useEffect(() => {
     if (open) onOpen?.();
   }, [open, onOpen]);
+
+  useEffect(() => {
+    if (!open) return;
+    onSearchChange?.(search);
+  }, [open, search, onSearchChange]);
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current) return;
@@ -390,6 +398,7 @@ function VirtualList({
           open={a.open}
           completed={a.completed}
           notPlanned={a.not_planned}
+          duplicate={a.duplicate}
           closed={a.closed}
           onClick={() => onPick(a.login)}
         />
@@ -408,6 +417,7 @@ function AuthorRow({
   open,
   completed,
   notPlanned,
+  duplicate,
   closed,
   label,
   onClick,
@@ -420,12 +430,17 @@ function AuthorRow({
   open?: number;
   completed?: number;
   notPlanned?: number;
+  duplicate?: number;
   closed?: number;
   label?: string;
   onClick: () => void;
 }) {
   const hasBuckets =
-    typeof open === 'number' || typeof completed === 'number' || typeof notPlanned === 'number' || typeof closed === 'number';
+    typeof open === 'number' ||
+    typeof completed === 'number' ||
+    typeof notPlanned === 'number' ||
+    typeof duplicate === 'number' ||
+    typeof closed === 'number';
   return (
     <button
       type="button"
@@ -475,6 +490,7 @@ function AuthorRow({
               <BucketPill label="Open" tone="open" value={open ?? 0} />
               <BucketPill label="Done" tone="done" value={completed ?? 0} />
               <BucketPill label="Not planned" tone="np" value={notPlanned ?? 0} />
+              <BucketPill label="Duplicate" tone="dup" value={duplicate ?? 0} />
               <BucketPill label="Closed" tone="closed" value={closed ?? 0} />
             </span>
           )}
@@ -500,7 +516,7 @@ function AuthorRow({
  *  column position (Open / Done / NP / Closed) carries the meaning so we
  *  drop the letter prefix and let the colored fill do the work — matches
  *  the badge style used elsewhere in the dashboard. */
-function BucketPill({ label, value, tone }: { label: string; value: number; tone: 'open' | 'done' | 'np' | 'closed' }) {
+function BucketPill({ label, value, tone }: { label: string; value: number; tone: 'open' | 'done' | 'np' | 'dup' | 'closed' }) {
   const dim = value === 0;
   // Solid fills mirror the IssueStatusBadge palette so a glance at the
   // dropdown matches the State chips in the table.
@@ -510,6 +526,7 @@ function BucketPill({ label, value, tone }: { label: string; value: number; tone
     open: { bg: 'var(--success-subtle)', fg: 'var(--success-fg)' },
     done: { bg: 'var(--done-subtle)', fg: 'var(--done-fg)' },
     np: { bg: 'var(--bg-emphasis)', fg: 'var(--fg-default)' },
+    dup: { bg: 'var(--bg-emphasis)', fg: 'var(--fg-muted)' },
     closed: { bg: 'var(--danger-subtle)', fg: 'var(--danger-fg)' },
   } as const;
   const { bg, fg } = PALETTE[tone];
