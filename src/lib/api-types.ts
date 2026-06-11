@@ -163,6 +163,42 @@ export function pullStatus(p: PullDto): PullStatus {
   return 'open';
 }
 
+// ─── Fairness signals (see src/lib/fairness-signals.ts) ───────────────────────
+// Per-miner merge-speed vs the repo baseline — surfaces maintainer fast-tracking
+// of favored accounts. Computed from cached PR timestamps; maintainers excluded.
+
+export interface MinerFairnessRow {
+  login: string;
+  mergedPrs: number;
+  /** Closed-unmerged (rejected) miner PRs. */
+  rejectedPrs: number;
+  /** rejected / (merged + rejected). null when nothing resolved. */
+  rejectRate: number | null;
+  /** Median time-to-merge for this miner's merged PRs, hours. */
+  medianTtmHours: number;
+  /** (repoMedian − minerMedian) / repoMedian — signed; positive = faster than
+   *  the repo baseline. null when there's no baseline. */
+  deltaVsRepoMedian: number | null;
+  /** medianTtm < repo baseline — the "fast-tracked" highlight. */
+  fasterThanRepo: boolean;
+}
+
+export interface FairnessSignals {
+  repo: string;
+  /** Pooled median TTM over every non-maintainer miner merged PR (hours). */
+  repoMedianTtmHours: number | null;
+  /** Total merged PRs behind the baseline. */
+  mergedSample: number;
+  /** Distinct non-maintainer miners with ≥1 merged PR. */
+  minerCount: number;
+  /** Maintainer logins filtered out (for transparency in the UI). */
+  maintainersExcluded: number;
+  /** Whether maintainer filtering was applied (false = mirror unavailable). */
+  maintainerFiltered: boolean;
+  /** Fastest-first (shortest median TTM). */
+  miners: MinerFairnessRow[];
+}
+
 // ─── Maintainer scorecard (see src/lib/maintainer-stats.ts) ───────────────────
 // Kept here (no server deps) so client components can `import type` the shape
 // without pulling in the better-sqlite3-backed computation module.
