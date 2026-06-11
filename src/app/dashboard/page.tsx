@@ -18,6 +18,7 @@ import {
   KebabHorizontalIcon,
   PeopleIcon,
   RepoIcon,
+  ToolsIcon,
   ZapIcon,
 } from '@primer/octicons-react';
 import type { IssueDto, PullDto } from '@/lib/api-types';
@@ -167,6 +168,13 @@ interface RepoMaintainersResp {
     maintainers: RepoMaintainer[];
     error?: string;
   }>;
+}
+
+interface EmissionResp {
+  totalTaoPerDay?: number;
+  activeMinerTaoPerDay?: number;
+  recycleTaoPerDay?: number;
+  treasuryTaoPerDay?: number;
 }
 
 interface IssuesResp {
@@ -723,6 +731,26 @@ export default function DashboardPage() {
     staleTime: 4 * 60 * 1000,
   });
 
+  const emissionQuery = useQuery<EmissionResp>({
+    queryKey: ['dashboard-sn74-emission'],
+    queryFn: async ({ signal }) => {
+      const response = await fetch('/api/sn74-emission', { signal });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+    staleTime: 4 * 60 * 1000,
+  });
+  // Miner-pool TAO/day — the base the protocol emits to repos (active miners +
+  // recycle + treasury), matching repoMaintainerTAO. Reward shares × this = τ/day.
+  const minerPoolTAO = useMemo(() => {
+    const e = emissionQuery.data;
+    if (e?.activeMinerTaoPerDay != null && e?.recycleTaoPerDay != null && e?.treasuryTaoPerDay != null) {
+      return e.activeMinerTaoPerDay + e.recycleTaoPerDay + e.treasuryTaoPerDay;
+    }
+    return (e?.totalTaoPerDay ?? 30) / 2;
+  }, [emissionQuery.data]);
+
   const gtReposQuery = useQuery<GtReposResp>({
     queryKey: ['dashboard-gt-repos'],
     queryFn: async ({ signal }) => {
@@ -1036,6 +1064,52 @@ export default function DashboardPage() {
       .sort((a, b) => b.reward - a.reward || b.rawScore - a.rawScore || b.prs - a.prs)
       .slice(0, 3);
   }, [repoByName, repoHasIssueScoresForRewards, repoHasRegisteredMaintainers, scoredPulls, scoredRangePulls]);
+  // Top rewarded maintainers — registered miner-maintainers ranked by their
+  // maintainer_cut emission slice (rewardParts.maintainer), split evenly among a
+  // repo's registered maintainers and summed across the repos they maintain.
+  const bestWorkMaintainers = useMemo<MaintainerLeader[]>(() => {
+    const loginById = new Map<string, string>();
+    for (const miner of minersQuery.data?.miners ?? []) {
+      const id = normalizedGithubId(miner.githubId ?? miner.github_id);
+      if (id && miner.githubUsername) loginById.set(id, miner.githubUsername);
+    }
+    const map = new Map<string, { login: string; githubId: string; reward: number; repoRewards: Map<string, { repo: string; reward: number }> }>();
+    for (const row of repoMaintainersQuery.data?.repos ?? []) {
+      const repoKey = row.repo_full_name.toLowerCase();
+      if (!repoHasRegisteredMaintainers.has(repoKey)) continue;
+      const repo = repoByName.get(repoKey);
+      if (!repo) continue;
+      const slice = rewardParts(repo, true).maintainer;
+      if (slice <= 0) continue;
+      const registered = row.maintainers.filter((maintainer) => {
+        const id = normalizedGithubId(maintainer.github_id ?? maintainer.githubId);
+        return Boolean(id && registeredMinerGithubIds.has(id));
+      });
+      if (registered.length === 0) continue;
+      const per = slice / registered.length;
+      for (const maintainer of registered) {
+        const id = normalizedGithubId(maintainer.github_id ?? maintainer.githubId);
+        if (!id) continue;
+        const login = loginById.get(id) ?? maintainer.login ?? id;
+        const current = map.get(id) ?? { login, githubId: id, reward: 0, repoRewards: new Map<string, { repo: string; reward: number }>() };
+        current.reward += per;
+        const repoReward = current.repoRewards.get(repoKey) ?? { repo: row.repo_full_name, reward: 0 };
+        repoReward.reward += per;
+        current.repoRewards.set(repoKey, repoReward);
+        map.set(id, current);
+      }
+    }
+    return Array.from(map.values())
+      .map((row) => {
+        const repoSegments = Array.from(row.repoRewards.values())
+          .filter((segment) => segment.reward > 0)
+          .sort((a, b) => b.reward - a.reward || a.repo.localeCompare(b.repo));
+        return { login: row.login, githubId: row.githubId, reward: row.reward, taoPerDay: row.reward * minerPoolTAO, repoSegments };
+      })
+      .filter((row) => row.reward > 0 && row.repoSegments.length > 0)
+      .sort((a, b) => b.reward - a.reward)
+      .slice(0, 3);
+  }, [minersQuery.data?.miners, repoMaintainersQuery.data?.repos, repoHasRegisteredMaintainers, repoByName, registeredMinerGithubIds, minerPoolTAO]);
   const issuePipelineRepos = useMemo(() => Array.from(new Set(rangeIssues.map((issue) => issue.repo_full_name))).sort(), [rangeIssues]);
   const issuePipelineRepoFilterSet = useMemo(() => new Set(issuePipelineRepoFilters.map((repo) => repo.toLowerCase())), [issuePipelineRepoFilters]);
   const filteredRangeIssues = useMemo(() => {
@@ -1318,9 +1392,10 @@ export default function DashboardPage() {
           </Box>
 
           <BestWorkShowcase
-            pulls={bestWorkPulls.slice(0, 7)}
+            pulls={bestWorkPulls.slice(0, 9)}
             trendingRepos={trendingRepos}
             authorLeaders={bestWorkAuthors}
+            maintainerLeaders={bestWorkMaintainers}
             durationLabel={duration.label}
           />
 
@@ -2055,17 +2130,20 @@ function BestWorkShowcase({
   pulls,
   trendingRepos,
   authorLeaders,
+  maintainerLeaders,
   durationLabel,
 }: {
   pulls: BestWorkPull[];
   trendingRepos: Array<{ repo: RepoEntry; stats?: GtRepo; trend: number; prs: number; score: number }>;
   authorLeaders: AuthorLeader[];
+  maintainerLeaders: MaintainerLeader[];
   durationLabel: string;
 }) {
   const top = pulls[0] ?? null;
-  const runnersUp = pulls.slice(1, 7);
+  const runnersUp = pulls.slice(1, 9);
   const maxTrend = Math.max(1, ...trendingRepos.map((row) => Math.max(0, row.trend || row.prs)));
   const maxAuthorReward = Math.max(0.0001, ...authorLeaders.map((row) => row.reward));
+  const maxMaintainerReward = Math.max(0.0001, ...maintainerLeaders.map((row) => row.reward));
   return (
     <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, bg: 'canvas.default', minWidth: 0, overflow: 'hidden', boxShadow: 'shadow.small' }}>
       <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'border.default', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
@@ -2106,7 +2184,7 @@ function BestWorkShowcase({
               </Box>
             </Box>
             {runnersUp.length > 0 && (
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 2, mt: 2 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', 'repeat(2, minmax(0, 1fr))'], gap: 2, mt: 2 }}>
                 {runnersUp.map((row) => <BestWorkMiniPr key={row.pr.id} row={row} />)}
               </Box>
             )}
@@ -2176,13 +2254,55 @@ function BestWorkShowcase({
                       <MetricChip>{fmtCount(row.repoCount)} repos</MetricChip>
                       {topRepo && (
                         <MetricChip>
-                          <Box as="span" sx={{ mr: 1, fontSize: 0, lineHeight: 1 }} aria-label="Top source">🥇</Box>
+                          <Box as="img" src={`https://github.com/${topRepo.repo.split('/')[0]}.png?size=20`} alt="" sx={{ width: 12, height: 12, borderRadius: 1, mr: 1, verticalAlign: 'middle', bg: 'canvas.inset', flexShrink: 0 }} />
                           {topRepo.repo.split('/').at(-1)} {fmtPct(topRepo.reward)}
                         </MetricChip>
                       )}
                     </>
                   ),
                 };
+                })}
+              />
+            </Box>
+            <Box sx={{ borderTop: '1px solid', borderColor: 'border.default', pt: 3 }}>
+              <BestWorkRankList
+                icon={<ToolsIcon size={14} />}
+                title="Top Rewarded Maintainers"
+                empty="No maintainer_cut rewards yet."
+                rows={maintainerLeaders.map((row) => {
+                  const topRepo = row.repoSegments[0];
+                  const segments = row.repoSegments.map((segment, segmentIndex) => ({
+                    key: segment.repo,
+                    pct: row.reward > 0 ? segment.reward / row.reward : 0,
+                    color: segmentColor(segmentIndex),
+                    tooltip: `${segment.repo} · ${fmtPct(segment.reward)} maintainer reward`,
+                  }));
+                  return {
+                    key: row.githubId,
+                    href: 'https://github.com/' + row.login,
+                    avatarUrl: `https://github.com/${row.login}.png?size=40`,
+                    avatarShape: 'user' as const,
+                    title: row.login,
+                    value: (
+                      <Text sx={{ color: 'fg.default', fontFamily: 'mono', fontWeight: 800, fontSize: 0, whiteSpace: 'nowrap' }}>
+                        {fmtPct(row.reward)}
+                      </Text>
+                    ),
+                    barPct: row.reward / maxMaintainerReward,
+                    segments,
+                    meta: (
+                      <>
+                        <Text sx={{ color: 'fg.muted', fontSize: 0, whiteSpace: 'nowrap' }}>maintainer_cut</Text>
+                        <MetricChip>{fmtNumber(row.taoPerDay)} τ/d</MetricChip>
+                        {topRepo && (
+                          <MetricChip>
+                            <Box as="img" src={`https://github.com/${topRepo.repo.split('/')[0]}.png?size=20`} alt="" sx={{ width: 12, height: 12, borderRadius: 1, mr: 1, verticalAlign: 'middle', bg: 'canvas.inset', flexShrink: 0 }} />
+                            {topRepo.repo.split('/').at(-1)} {fmtPct(topRepo.reward)}
+                          </MetricChip>
+                        )}
+                      </>
+                    ),
+                  };
                 })}
               />
             </Box>
@@ -2221,7 +2341,7 @@ function BestWorkMiniPr({ row }: { row: BestWorkPull }) {
   const pr = row.pr;
   const author = pr.author_login ?? 'unknown';
   return (
-    <Link href={pullHref(pr)} target="_blank" rel="noreferrer" className="best-work-mini-link">
+    <Link href={pullHref(pr)} target="_blank" rel="noreferrer" className="best-work-mini-link" style={{ textDecoration: 'none' }}>
       <article className="best-work-mini-card">
         <div className="best-work-mini-top">
           <span className="best-work-mini-identity">
@@ -2256,6 +2376,14 @@ type AuthorLeader = {
   repoCount: number;
   topPull: PullDto;
   repoSegments: Array<{ repo: string; reward: number; rawScore: number; prs: number; pool: number }>;
+};
+
+type MaintainerLeader = {
+  login: string;
+  githubId: string;
+  reward: number;
+  taoPerDay: number;
+  repoSegments: Array<{ repo: string; reward: number }>;
 };
 
 function segmentColor(index: number): string {
@@ -2368,7 +2496,11 @@ function BestWorkRankList({ icon, title, empty, rows }: { icon: React.ReactNode;
             <Box sx={{ minWidth: 0, py: 1, borderRadius: 2, '&:hover': { bg: 'canvas.subtle' } }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1.6fr) minmax(48px, 0.7fr) auto', gap: 2, alignItems: 'center', minWidth: 0 }}>
                 <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                  <Box sx={{ width: 18, height: 18, borderRadius: 99, border: '1px solid', borderColor: 'accent.muted', bg: 'accent.subtle', color: 'accent.fg', display: 'grid', placeItems: 'center', fontSize: 0, fontFamily: 'mono', fontWeight: 800 }}>{index + 1}</Box>
+                  {(['🥇', '🥈', '🥉'][index] ?? null) ? (
+                    <Box sx={{ width: 18, height: 18, display: 'grid', placeItems: 'center', fontSize: 1, lineHeight: 1 }} aria-label={`Rank ${index + 1}`}>{['🥇', '🥈', '🥉'][index]}</Box>
+                  ) : (
+                    <Box sx={{ width: 18, height: 18, borderRadius: 99, border: '1px solid', borderColor: 'accent.muted', bg: 'accent.subtle', color: 'accent.fg', display: 'grid', placeItems: 'center', fontSize: 0, fontFamily: 'mono', fontWeight: 800 }}>{index + 1}</Box>
+                  )}
                   <Box as="img" src={row.avatarUrl} alt="" sx={{ width: 18, height: 18, borderRadius: row.avatarShape === 'user' ? 99 : 2, bg: 'canvas.inset', flexShrink: 0 }} />
                 </Box>
                 <Text sx={{ fontWeight: 800, fontSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.title}</Text>
