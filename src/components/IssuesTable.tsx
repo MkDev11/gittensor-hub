@@ -22,12 +22,10 @@ import {
   RepoIcon,
   StarIcon,
   StarFillIcon,
-  TriangleUpIcon,
-  TriangleDownIcon,
 } from '@primer/octicons-react';
 import type { Issue, Pull } from '@/types/entities';
 import { IssueStatusBadge } from '@/components/StatusBadge';
-import { formatRelativeTime, isRecent } from '@/lib/format';
+import { headerCellSx, HeaderCell, RecentTime, type SortDir } from '@/components/table-cells';
 import { useTrackedRepos } from '@/lib/tracked-repos';
 import ContentViewer from '@/components/ContentViewer';
 import { useSettings } from '@/lib/settings';
@@ -35,7 +33,6 @@ import { useSn74Repos, lookupWeight } from '@/lib/use-sn74-repos';
 import { InlinePagination as TablePagination } from '@/components/repo-explorer/Pagination';
 
 type SortKey = 'opened' | 'closed' | 'updated' | 'comments' | 'repo' | 'weight' | 'number';
-type SortDir = 'asc' | 'desc';
 type StateFilter = 'all' | 'open' | 'completed' | 'not_planned' | 'duplicate' | 'closed_other';
 type AuthorTarget = { owner: string; name: string; repoFullName: string; login: string; association: string | null };
 type LinkedPull = LinkedPullReference;
@@ -76,7 +73,7 @@ const issueRowCellSx = {
 
 const EMPTY_PRS: LinkedPull[] = [];
 
-export default function IssuesTable() {
+export default function IssuesTable({ repo }: { repo?: string } = {}) {
   const { repos: sn74Repos, weights: repoWeights, isSuccess: sn74ReposReady } = useSn74Repos();
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
@@ -187,9 +184,10 @@ export default function IssuesTable() {
     if (query.trim()) sp.set('q', query.trim());
     if (stateFilter !== 'all') sp.set('state', stateFilter);
     if (authorFilter !== 'all') sp.set('author', authorFilter);
-    if (trackedRepoParam !== null) sp.set('repos', trackedRepoParam);
+    if (repo) sp.set('repos', repo);
+    else if (trackedRepoParam !== null) sp.set('repos', trackedRepoParam);
     return sp.toString();
-  }, [authorFilter, page, pageSize, query, sortDir, sortKey, stateFilter, trackedRepoParam]);
+  }, [authorFilter, page, pageSize, query, repo, sortDir, sortKey, stateFilter, trackedRepoParam]);
 
   const { data, isLoading, isFetching } = useQuery<IssuesResp>({
     queryKey: ['all-issues', issuesParams],
@@ -226,7 +224,7 @@ export default function IssuesTable() {
   };
 
   return (
-    <Box sx={{ width: '100%', maxWidth: ISSUES_CONTENT_MAX_WIDTH, mx: 'auto' }}>
+    <Box sx={{ width: '100%', ...(repo ? {} : { maxWidth: ISSUES_CONTENT_MAX_WIDTH, mx: 'auto' }) }}>
       <Box
         sx={{
           display: 'flex',
@@ -256,30 +254,32 @@ export default function IssuesTable() {
             width={180}
             ariaLabel="Filter by state"
           />
-          <Box
-            onClick={() => setTrackedOnly((v) => !v)}
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 1,
-              px: '12px',
-              py: '5px',
-              borderRadius: '6px',
-              border: '1px solid',
-              borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
-              bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-emphasis)',
-              color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: 500,
-              lineHeight: '20px',
-              userSelect: 'none',
-              '&:hover': { borderColor: 'var(--border-strong)' },
-            }}
-          >
-            {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
-            Tracked only ({scopedTracked.length})
-          </Box>
+          {!repo && (
+            <Box
+              onClick={() => setTrackedOnly((v) => !v)}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1,
+                px: '12px',
+                py: '5px',
+                borderRadius: '6px',
+                border: '1px solid',
+                borderColor: trackedOnly ? 'var(--attention-emphasis)' : 'var(--border-default)',
+                bg: trackedOnly ? 'var(--attention-subtle, rgba(242, 201, 76, 0.14))' : 'var(--bg-emphasis)',
+                color: trackedOnly ? 'var(--attention-emphasis)' : 'var(--fg-default)',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 500,
+                lineHeight: '20px',
+                userSelect: 'none',
+                '&:hover': { borderColor: 'var(--border-strong)' },
+              }}
+            >
+              {trackedOnly ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
+              Tracked only ({scopedTracked.length})
+            </Box>
+          )}
         </Box>
 
         <Box
@@ -299,7 +299,9 @@ export default function IssuesTable() {
             {isFetching && <Spinner size="sm" tone="muted" />}
             {data && (
               <Text>
-                {data.count} issues across {data.repo_count} repos · live
+                {repo
+                  ? `${data.count} issues · live`
+                  : `${data.count} issues across ${data.repo_count} repos · live`}
               </Text>
             )}
           </Box>
@@ -321,16 +323,20 @@ export default function IssuesTable() {
       </Box>
 
       <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, overflowX: 'auto', overflowY: 'hidden', bg: 'canvas.default' }}>
-        <Box as="table" sx={{ width: '100%', minWidth: 1120, borderCollapse: 'collapse', fontSize: 1 }}>
+        <Box as="table" sx={{ width: '100%', minWidth: repo ? 820 : 1120, borderCollapse: 'collapse', fontSize: 1 }}>
           <Box
             as="thead"
             sx={{ bg: 'canvas.subtle', borderBottom: '1px solid', borderColor: 'border.default' }}
           >
             <Box as="tr">
-              <Box as="th" sx={{ ...headerCellSx, width: 44, textAlign: 'center' }} aria-label="Tracked repository" />
+              {!repo && (
+                <Box as="th" sx={{ ...headerCellSx, width: 44, textAlign: 'center' }} aria-label="Tracked repository" />
+              )}
               <HeaderCell label="State" />
               <HeaderCell label="Issue" />
-              <HeaderCell label="Repository" onClick={() => toggleSort('repo')} active={sortKey === 'repo'} dir={sortDir} />
+              {!repo && (
+                <HeaderCell label="Repository" onClick={() => toggleSort('repo')} active={sortKey === 'repo'} dir={sortDir} />
+              )}
               <Box as="th" sx={{ ...headerCellSx, py: '4px' }}>
                 <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
                   <Box sx={{ color: authorFilter !== 'all' ? 'accent.fg' : 'inherit' }}>Author</Box>
@@ -354,28 +360,41 @@ export default function IssuesTable() {
           <Box as="tbody">
             {isLoading && rows.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={10} sx={{ p: 0 }}>
+                <Box as="td" colSpan={repo ? 8 : 10} sx={{ p: 0 }}>
                   <TableRowsSkeleton
                     rows={12}
-                    cols={[
-                      { width: 32 },
-                      { width: 60 },
-                      { flex: 1 },
-                      { width: 120 },
-                      { width: 100 },
-                      { width: 60 },
-                      { width: 60 },
-                      { width: 60 },
-                      { width: 60 },
-                      { width: 60 },
-                    ]}
+                    cols={
+                      repo
+                        ? [
+                            { width: 60 },
+                            { flex: 1 },
+                            { width: 100 },
+                            { width: 60 },
+                            { width: 60 },
+                            { width: 60 },
+                            { width: 60 },
+                            { width: 60 },
+                          ]
+                        : [
+                            { width: 32 },
+                            { width: 60 },
+                            { flex: 1 },
+                            { width: 120 },
+                            { width: 100 },
+                            { width: 60 },
+                            { width: 60 },
+                            { width: 60 },
+                            { width: 60 },
+                            { width: 60 },
+                          ]
+                    }
                   />
                 </Box>
               </Box>
             )}
             {!isLoading && rows.length === 0 && (
               <Box as="tr">
-                <Box as="td" colSpan={10} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
+                <Box as="td" colSpan={repo ? 8 : 10} sx={{ p: 4, textAlign: 'center', color: 'fg.muted' }}>
                   {data && data.count === 0
                     ? 'No issues cached for current repositories yet. Visit a repo page or run the poller to populate.'
                     : 'No issues match these filters.'}
@@ -390,6 +409,8 @@ export default function IssuesTable() {
                 <React.Fragment key={k}>
                   <IssueTableRow
                     issue={issue}
+                    showTrack={!repo}
+                    showRepo={!repo}
                     tracked={scopedTrackedSet.has(issue.repo_full_name.toLowerCase())}
                     onToggleTrack={() => toggleTrackedRepo(issue.repo_full_name)}
                     onRowClick={() => handleRowClick(issue)}
@@ -401,7 +422,7 @@ export default function IssuesTable() {
                   />
                   {expanded && settings.contentDisplay === 'accordion' && (
                     <Box as="tr">
-                      <Box as="td" colSpan={10} sx={{ p: 0 }}>
+                      <Box as="td" colSpan={repo ? 8 : 10} sx={{ p: 0 }}>
                         <ContentViewer
                           target={{ kind: 'issue', owner: o, name: n, number: issue.number, preloaded: issue }}
                           mode="inline"
@@ -526,54 +547,12 @@ export default function IssuesTable() {
   );
 }
 
-const headerCellSx = {
-  p: 2,
-  textAlign: 'left' as const,
-  fontWeight: 600,
-  fontSize: 0,
-  color: 'fg.muted',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.5px',
-  whiteSpace: 'nowrap' as const,
-};
-
-function HeaderCell({
-  label,
-  onClick,
-  active,
-  dir,
-  align = 'left',
-}: {
-  label: string;
-  onClick?: () => void;
-  active?: boolean;
-  dir?: SortDir;
-  align?: 'left' | 'right';
-}) {
-  return (
-    <Box
-      as="th"
-      onClick={onClick}
-      sx={{
-        ...headerCellSx,
-        textAlign: align,
-        cursor: onClick ? 'pointer' : 'default',
-        userSelect: 'none',
-        '&:hover': onClick ? { color: 'fg.default' } : undefined,
-      }}
-    >
-      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-        {label}
-        {active && (dir === 'asc' ? <TriangleUpIcon size={12} /> : <TriangleDownIcon size={12} />)}
-      </Box>
-    </Box>
-  );
-}
-
 function IssueTableRow({
   weight,
   issue,
   tracked,
+  showTrack = true,
+  showRepo = true,
   onToggleTrack,
   onRowClick,
   onAuthorClick,
@@ -583,6 +562,8 @@ function IssueTableRow({
 }: {
   issue: AggIssue;
   tracked: boolean;
+  showTrack?: boolean;
+  showRepo?: boolean;
   onToggleTrack?: () => void;
   onRowClick?: () => void;
   onAuthorClick?: () => void;
@@ -610,37 +591,39 @@ function IssueTableRow({
         '&:last-child': { borderBottom: 'none' },
       }}
     >
-      <Box as="td" sx={{ ...issueRowCellSx, width: 44, textAlign: 'center' }}>
-        <Box
-          as="button"
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleTrack?.();
-          }}
-          aria-label={tracked ? `Unstar ${issue.repo_full_name}` : `Star ${issue.repo_full_name}`}
-          title={tracked ? `Unstar ${issue.repo_full_name}` : `Star ${issue.repo_full_name}`}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            p: 0,
-            border: 'none',
-            borderRadius: 1,
-            bg: 'transparent',
-            color: tracked ? 'attention.fg' : 'fg.muted',
-            cursor: 'pointer',
-            '&:hover': {
-              bg: 'canvas.inset',
-              color: 'attention.fg',
-            },
-          }}
-        >
-          {tracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
+      {showTrack && (
+        <Box as="td" sx={{ ...issueRowCellSx, width: 44, textAlign: 'center' }}>
+          <Box
+            as="button"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleTrack?.();
+            }}
+            aria-label={tracked ? `Unstar ${issue.repo_full_name}` : `Star ${issue.repo_full_name}`}
+            title={tracked ? `Unstar ${issue.repo_full_name}` : `Star ${issue.repo_full_name}`}
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 24,
+              height: 24,
+              p: 0,
+              border: 'none',
+              borderRadius: 1,
+              bg: 'transparent',
+              color: tracked ? 'attention.fg' : 'fg.muted',
+              cursor: 'pointer',
+              '&:hover': {
+                bg: 'canvas.inset',
+                color: 'attention.fg',
+              },
+            }}
+          >
+            {tracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
+          </Box>
         </Box>
-      </Box>
+      )}
       <Box as="td" sx={issueRowCellSx}>
         <IssueStatusBadge issue={issue} mergedPRCount={issue.merged_pr_count ?? 0} />
       </Box>
@@ -677,21 +660,23 @@ function IssueTableRow({
           <Text sx={{ color: 'fg.muted', fontSize: 0, flexShrink: 0 }}>#{issue.number}</Text>
         </Box>
       </Box>
-      <Box as="td" sx={issueRowCellSx}>
-        <Link
-          href={`/repositories/${owner}/${name}`}
-          prefetch={false}
-          style={{ textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'accent.fg', maxWidth: '100%', '&:hover': { textDecoration: 'underline' } }}>
-            <RepoIcon size={12} />
-            <Text sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {issue.repo_full_name}
-            </Text>
-          </Box>
-        </Link>
-      </Box>
+      {showRepo && (
+        <Box as="td" sx={issueRowCellSx}>
+          <Link
+            href={`/repositories/${owner}/${name}`}
+            prefetch={false}
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, color: 'accent.fg', maxWidth: '100%', '&:hover': { textDecoration: 'underline' } }}>
+              <RepoIcon size={12} />
+              <Text sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {issue.repo_full_name}
+              </Text>
+            </Box>
+          </Link>
+        </Box>
+      )}
       <Box as="td" sx={{ ...issueRowCellSx, fontSize: 0 }}>
         {issue.author_login ? (
           <button
@@ -799,33 +784,3 @@ function IssueTableRow({
   );
 }
 
-const RecentTime = React.memo(function RecentTime({ iso }: { iso: string | null | undefined }) {
-  if (!iso) return <Text sx={{ color: 'var(--fg-muted)' }}>—</Text>;
-  const recent = isRecent(iso);
-  if (recent) {
-    return (
-      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-        <Box
-          sx={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            bg: 'var(--success-emphasis)',
-            display: 'inline-block',
-            animation: 'gtPulse 1.6s ease-in-out infinite',
-          }}
-        />
-        <Text
-          sx={{
-            color: 'var(--success-fg)',
-            fontWeight: 700,
-            letterSpacing: '0.2px',
-          }}
-        >
-          {formatRelativeTime(iso)}
-        </Text>
-      </Box>
-    );
-  }
-  return <Text sx={{ color: 'var(--fg-muted)' }}>{formatRelativeTime(iso)}</Text>;
-});
