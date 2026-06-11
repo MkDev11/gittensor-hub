@@ -327,7 +327,12 @@ function errMsg(e: unknown): string {
 let partialInflight: Promise<void> | null = null;
 async function refreshMissing(): Promise<void> {
   if (partialInflight) return partialInflight;
-  if (!cache) return;
+  // The cold fallback seeds an empty cache while the first full refresh runs.
+  // Do not launch the partial backfill against that placeholder (or alongside
+  // any full refresh), otherwise we duplicate GitHub Search calls and exhaust
+  // the small search quota before the authoritative refresh can finish.
+  if (inflight) return;
+  if (!cache || cache.fetchedAt <= 0) return;
   const { repos } = await getLiveReposAsyncServer();
   const now = Date.now();
   const stale = repos
