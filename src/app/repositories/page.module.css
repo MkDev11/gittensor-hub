@@ -38,7 +38,8 @@
    *      distinct from PR so 2-stream split bars stay readable)
    *   --color-refact = refactor label (custom rust; 4 strategy chips need
    *      to stay individually identifiable)
-   *   --color-moss-* = maintainer cut + credibility chips (success green) */
+   *   --color-maint = maintainer cut (burnt orange)
+   *   --color-moss-* = credibility / positive-state chips (success green) */
   --color-bug: var(--danger-fg);
   --color-enh: var(--attention-fg);
   --color-feat: var(--success-fg);
@@ -50,6 +51,9 @@
    * (success-fg, more muted) so feature-label and issue-stream don't
    * collide. */
   --color-stream-issue: #22c55e;
+  --color-maint: #e0773d;
+  --color-maint-soft: rgba(224, 119, 61, 0.12);
+  --color-maint-border: rgba(224, 119, 61, 0.34);
   --color-moss-400: var(--success-fg);
   --color-moss-500: var(--success-emphasis);
   --color-mine: var(--accent-fg);
@@ -339,7 +343,7 @@
 .badgeIssue     { background: rgba(95, 200, 223, 0.08); color: var(--color-stream-issue); border-color: rgba(95, 200, 223, 0.22); }
 .badgeMixed     { background: var(--attention-subtle); color: var(--color-enh); border-color: var(--attention-subtle-strong); }
 .badgeOverrides { background: rgba(34, 197, 94, 0.06); color: var(--color-enh); border-color: rgba(34, 197, 94, 0.18); }
-.badgeMaint     { background: rgba(158, 184, 114, 0.10); color: var(--color-moss-400); border-color: rgba(158, 184, 114, 0.28); }
+.badgeMaint     { background: var(--color-maint-soft); color: var(--color-maint); border-color: var(--color-maint-border); }
 
 .demoTag {
   display: inline-flex;
@@ -1360,7 +1364,7 @@
 }
 .splitPr { background: var(--color-stream-pr); }
 .splitIss { background: var(--color-stream-issue); }
-.splitMaint { background: var(--color-moss-400); }
+.splitMaint { background: var(--color-maint); }
 
 /* Label profile rows */
 /* Label row: three explicit grid tracks so the value cell can never get
@@ -2071,7 +2075,7 @@
 .textMine  { color: var(--color-mine); }
 .textPr    { color: var(--color-stream-pr); }
 .textIssue { color: var(--color-stream-issue); }
-.textMoss  { color: var(--color-moss-400); }
+.textMoss  { color: var(--color-maint); }
 .textFg    { color: var(--fg); }
 .textFgDim { color: var(--fg-dim); }
 .textFgMute { color: var(--fg-mute); }

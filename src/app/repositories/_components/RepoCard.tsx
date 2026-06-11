@@ -424,7 +424,7 @@ export default function RepoCard({
           </div>
           {maintPct > 0 ? (
             <div style={{ marginTop: 6, fontSize: 10, color: 'var(--fg-subtle)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ width: 6, height: 6, borderRadius: 2, background: 'var(--color-moss-400)' }} />
+              <span style={{ width: 6, height: 6, borderRadius: 2, background: 'var(--color-maint)' }} />
               <span>
                 {(maintCut * 100).toFixed(0)}% maintainer cut → {r.maintainerCount} maintainer{r.maintainerCount === 1 ? '' : 's'} ·{' '}
                 <span className={`mono ${styles.textMoss}`}>{formatTAO(perMaintTAO)} τ/d each</span>

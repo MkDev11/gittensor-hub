@@ -208,7 +208,7 @@ export default function Drawer({
               <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--softer-border, rgba(255,255,255,0.04))' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--color-moss-400)' }} />
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--color-maint)' }} />
                     <span style={{ fontSize: 10.5, color: 'var(--fg-default)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                       Maintainer cut
                     </span>
@@ -217,9 +217,9 @@ export default function Drawer({
                     <span
                       className={styles.badge}
                       style={{
-                        background: 'rgba(158,184,114,0.10)',
-                        color: 'var(--color-moss-400)',
-                        borderColor: 'rgba(158,184,114,0.25)',
+                        background: 'var(--color-maint-soft)',
+                        color: 'var(--color-maint)',
+                        borderColor: 'var(--color-maint-border)',
                         fontSize: 9.5,
                         padding: '0 5px',
                         lineHeight: 1.5,
