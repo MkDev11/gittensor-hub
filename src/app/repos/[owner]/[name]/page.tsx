@@ -44,6 +44,7 @@ import { formatRelativeTime, formatDurationHours, formatDurationDays } from '@/l
 import {
   headlineReviewSpeed,
   headlineIssueResponse,
+  headlineDecisionSpeed,
   reviewSpeedVerdict,
   issueResponseVerdict,
   reviewSpeedGaugePos,
@@ -1152,6 +1153,7 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
   const rp = data.responsiveness;
   const prHead = headlineReviewSpeed(data);
   const issueHead = headlineIssueResponse(data);
+  const decHead = headlineDecisionSpeed(data);
   // PR figures only when the repo rewards PRs; issue figures only when it
   // rewards issue discovery. A 100% issue-discovery repo never shows merge speed.
   const hasPr = data.issueDiscoveryShare < 1;
@@ -1165,11 +1167,19 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
           {data.issueDiscoveryEnabled ? (
             <Label variant="accent">issue discovery · {Math.round(data.issueDiscoveryShare * 100)}%</Label>
           ) : null}
+          {!data.minerFiltered ? (
+            <Label variant="attention">miner list unavailable — all contributors</Label>
+          ) : null}
         </Box>
         <Text sx={{ color: 'fg.muted' }}>
           How responsive maintainers are to{' '}
-          <Text as="span" sx={{ fontWeight: 600, color: 'fg.default' }}>gittensor miners&apos;</Text> contributions —
-          restricted to registered miners&apos; work.
+          <Text as="span" sx={{ fontWeight: 600, color: 'fg.default' }}>gittensor miners&apos;</Text> contributions
+          {data.minerFiltered ? (
+            <> — restricted to registered miners&apos; work.</>
+          ) : (
+            <> — the miner list is temporarily unavailable, so this currently counts{' '}
+              <Text as="span" sx={{ fontWeight: 600, color: 'attention.fg' }}>all contributors</Text>.</>
+          )}
           {hasPr && hasIssue
             ? ' This repo rewards both PRs and issue discovery, so both gauges apply.'
             : hasIssue
@@ -1211,6 +1221,7 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
               <PanelHeader icon={StopwatchIcon} title="Review Speed" />
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <MetricRow label="Typical merge time" hint={`last ${rs.windowDays} days`} value={formatDurationHours(rs.medianHoursToMerge)} />
+                <MetricRow label="Typical decision time" hint="merged or closed" value={formatDurationHours(decHead.hours)} />
                 <MetricRow label="9 in 10 merged within" hint="the slow tail" value={formatDurationHours(rs.p90HoursToMerge)} />
                 <MetricRow label="Typical (all-time)" value={formatDurationHours(rs.allTimeMedianHoursToMerge)} />
                 <MetricRow label="Miner PRs in window" value={rs.sampleSize.toLocaleString()} last />

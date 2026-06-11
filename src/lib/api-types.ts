@@ -178,6 +178,19 @@ export interface ReviewSpeedStats {
   allTimeMedianHoursToMerge: number | null;
 }
 
+/** Time from a miner PR opening to *any* decision — merged OR closed-unmerged.
+ *  Complements {@link ReviewSpeedStats} (merge time only), so a maintainer who
+ *  rejects unsuitable PRs quickly still shows up, instead of contributing no
+ *  data. Uses COALESCE(merged_at, closed_at) for the decision timestamp. */
+export interface DecisionSpeedStats {
+  windowDays: number;
+  sampleSize: number;
+  medianHoursToDecision: number | null;
+  p90HoursToDecision: number | null;
+  allTimeSampleSize: number;
+  allTimeMedianHoursToDecision: number | null;
+}
+
 /** Issue-discovery analogue of {@link ReviewSpeedStats}: how fast miner-opened
  *  issues get closed. The headline for issue-discovery repos, where PR merges
  *  aren't the scored work. */
@@ -235,6 +248,7 @@ export interface MaintainerStats {
    *  so the issue-responsiveness figures (miner-opened issues) are first-class. */
   issueDiscoveryEnabled: boolean;
   reviewSpeed: ReviewSpeedStats;
+  decisionSpeed: DecisionSpeedStats;
   issueResponse: IssueResponseStats;
   throughput: ThroughputStats;
   backlog: BacklogStats;
@@ -260,6 +274,24 @@ export function headlineReviewSpeed(s: MaintainerStats): {
     sampleSize: inWindow ? rs.sampleSize : rs.allTimeSampleSize,
     scope: inWindow ? 'window' : 'all-time',
     windowDays: rs.windowDays,
+  };
+}
+
+/** Decision-time analogue of {@link headlineReviewSpeed}: the windowed median
+ *  time-to-decision (merge or close) when the window has decisions, else all-time. */
+export function headlineDecisionSpeed(s: MaintainerStats): {
+  hours: number | null;
+  sampleSize: number;
+  scope: 'window' | 'all-time';
+  windowDays: number;
+} {
+  const ds = s.decisionSpeed;
+  const inWindow = ds.sampleSize > 0;
+  return {
+    hours: inWindow ? ds.medianHoursToDecision : ds.allTimeMedianHoursToDecision,
+    sampleSize: inWindow ? ds.sampleSize : ds.allTimeSampleSize,
+    scope: inWindow ? 'window' : 'all-time',
+    windowDays: ds.windowDays,
   };
 }
 

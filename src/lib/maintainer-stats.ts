@@ -86,7 +86,7 @@ export function computeMaintainerStats(
   const pullRows = db
     .prepare(
       `SELECT author_login AS login, merged, state, draft,
-              created_at AS createdAt, merged_at AS mergedAt
+              created_at AS createdAt, merged_at AS mergedAt, closed_at AS closedAt
        FROM pulls WHERE repo_full_name = ?`,
     )
     .all(repo) as Array<{
@@ -96,6 +96,7 @@ export function computeMaintainerStats(
     draft: number;
     createdAt: string | null;
     mergedAt: string | null;
+    closedAt: string | null;
   }>;
 
   let minerPullRows = 0; // miner PRs seen (drives hasData)
@@ -108,22 +109,28 @@ export function computeMaintainerStats(
   const allMergeHours: number[] = [];
   const windowMergeHours: number[] = [];
   const openAgeDays: number[] = [];
+  // Time-to-decision: every PR that reached a verdict (merged OR closed-unmerged),
+  // timed to merged_at or closed_at. Credits fast rejections, which merge time misses.
+  const allDecisionHours: number[] = [];
+  const windowDecisionHours: number[] = [];
 
   for (const p of pullRows) {
     if (p.merged === 1) mergedAllContributors++;
     if (!isMiner(p.login)) continue;
     minerPullRows++;
+    const createdMs = parseMs(p.createdAt);
 
     if (p.merged === 1) {
       mergedTotal++;
       const mergedMs = parseMs(p.mergedAt);
-      const createdMs = parseMs(p.createdAt);
       if (Number.isFinite(mergedMs)) {
         if (mergedMs >= day30Start) merged30++;
         if (Number.isFinite(createdMs)) {
           const hours = Math.max(0, (mergedMs - createdMs) / HOUR_MS);
           allMergeHours.push(hours);
           if (mergedMs >= windowStart) windowMergeHours.push(hours);
+          allDecisionHours.push(hours);
+          if (mergedMs >= windowStart) windowDecisionHours.push(hours);
         }
       }
       continue;
@@ -131,9 +138,14 @@ export function computeMaintainerStats(
     // Unmerged. closed → resolved-but-rejected; open non-draft → backlog.
     if (p.state === 'closed') {
       closedUnmerged++;
+      const closedMs = parseMs(p.closedAt);
+      if (Number.isFinite(closedMs) && Number.isFinite(createdMs)) {
+        const hours = Math.max(0, (closedMs - createdMs) / HOUR_MS);
+        allDecisionHours.push(hours);
+        if (closedMs >= windowStart) windowDecisionHours.push(hours);
+      }
     } else if (p.state === 'open' && p.draft === 0) {
       openPrs++;
-      const createdMs = parseMs(p.createdAt);
       if (Number.isFinite(createdMs)) {
         openAgeDays.push(Math.max(0, (now - createdMs) / DAY_MS));
         if (createdMs < staleBefore) stalePrs++;
@@ -194,6 +206,14 @@ export function computeMaintainerStats(
       p90HoursToMerge: percentile(windowMergeHours, 0.9),
       allTimeSampleSize: allMergeHours.length,
       allTimeMedianHoursToMerge: median(allMergeHours),
+    },
+    decisionSpeed: {
+      windowDays,
+      sampleSize: windowDecisionHours.length,
+      medianHoursToDecision: median(windowDecisionHours),
+      p90HoursToDecision: percentile(windowDecisionHours, 0.9),
+      allTimeSampleSize: allDecisionHours.length,
+      allTimeMedianHoursToDecision: median(allDecisionHours),
     },
     issueResponse: {
       windowDays,

@@ -21,6 +21,7 @@ import type { RepoMiner, RepoMinersResponse } from '@/types/entities';
 import {
   headlineReviewSpeed,
   headlineIssueResponse,
+  headlineDecisionSpeed,
   reviewSpeedVerdict,
   issueResponseVerdict,
   reviewSpeedGaugePos,
@@ -1073,6 +1074,7 @@ function MaintainerSection({ owner, name }: { owner: string; name: string }) {
 
   const prHead = headlineReviewSpeed(data);
   const issueHead = headlineIssueResponse(data);
+  const decHead = headlineDecisionSpeed(data);
   // Show the PR review-speed gauge only when the repo actually rewards PRs, and
   // the issue-response gauge only when it rewards issue discovery. A 100%
   // issue-discovery repo (PR slice 0) never shows "median to merge" — those PRs
@@ -1096,12 +1098,18 @@ function MaintainerSection({ owner, name }: { owner: string; name: string }) {
       ? [medianWait, stalePrs, mergeRate, { value: pct01(rp.issueCloseRate), label: 'close rate', color: 'var(--fg-default)' }]
       : hasIssue
         ? []
-        : [medianWait, { value: formatDurationDays(bl.oldestOpenPrDays), label: 'oldest open', color: 'var(--fg-default)' }, stalePrs, mergeRate];
+        : [medianWait, { value: formatDurationHours(decHead.hours), label: 'decision time', hint: 'merge or close', color: 'var(--fg-default)' }, stalePrs, mergeRate];
 
   return (
     <div style={containerStyle}>
       {header}
-      <SectionNote>Responsiveness to gittensor miners&apos; work</SectionNote>
+      <SectionNote>{data.minerFiltered ? "Responsiveness to gittensor miners' work" : 'Responsiveness to all contributors'}</SectionNote>
+
+      {!data.minerFiltered ? (
+        <div style={{ fontSize: 10.5, lineHeight: 1.4, color: '#eab308', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: 4, padding: '6px 8px', marginBottom: 12 }}>
+          Miner list unavailable — showing all contributors, not just registered miners.
+        </div>
+      ) : null}
 
       {data.issueDiscoveryEnabled ? (
         <div style={{ marginTop: -4, marginBottom: 12 }}>

@@ -37,12 +37,17 @@ export async function GET(
     .prepare('SELECT last_issues_fetch, last_pulls_fetch FROM repo_meta WHERE full_name = ?')
     .get(full) as { last_issues_fetch: string | null; last_pulls_fetch: string | null } | undefined;
   const etag = buildEtag([
-    'maintainer-stats-v2',
+    'maintainer-stats-v3',
     full,
     meta?.last_issues_fetch,
     meta?.last_pulls_fetch,
-    new Date().toISOString().slice(0, 10),
-    minerLogins ? minerLogins.size : 'unfiltered',
+    // Bucket by the hour, not the day — the 30-day window and stale-PR boundary
+    // drift with wall-clock, and an inactive repo (no poll to move the fetch
+    // timestamps) would otherwise serve a stale 304 until UTC midnight.
+    new Date().toISOString().slice(0, 13),
+    // Fingerprint the actual membership, not just its size — a same-size swap
+    // (one miner in, one out) must still invalidate. buildEtag hashes parts.
+    minerLogins ? [...minerLogins].sort().join(',') : 'unfiltered',
     issueDiscoveryShare,
   ]);
   const notModified = etagNotModified(req, etag);
