@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { Heading, Text, Box, Label } from '@primer/react';
-import type { Icon } from '@primer/octicons-react';
 import { SkeletonBar } from '@/components/Skeleton';
 import { useQuery } from '@tanstack/react-query';
 import { formatRelativeTime, formatDurationHours, formatDurationDays } from '@/lib/format';
@@ -186,15 +185,6 @@ function SlimGauge({ head, barColor }: { head: GaugeHead; barColor: string }) {
 }
 
 // ─── Generic panel chrome (shared with the repo-detail page) ──────────────────
-
-export function PanelHeader({ icon: IconCmp, title }: { icon: Icon; title: string }) {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-      <IconCmp size={16} />
-      <Heading sx={{ fontSize: 2, fontWeight: 700, m: 0 }}>{title}</Heading>
-    </Box>
-  );
-}
 
 export function CountBox({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (

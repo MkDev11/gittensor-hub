@@ -1650,12 +1650,12 @@ export default function RepoExplorer() {
           <RepoPolicyPanel repo={selected} />
 
           {/* Tabs */}
-          <Box sx={{ display: 'flex', gap: 4, mb: '-1px' }}>
+          <Box sx={{ display: 'flex', gap: [1, 3], mb: '-1px', flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
             <TabButton
               active={tab === 'repository'}
               onClick={() => switchTab('repository')}
               icon={<RepoIcon size={16} />}
-              label="Repository"
+              label="Maintainers"
             />
             <TabButton
               active={tab === 'issues'}
@@ -1669,7 +1669,12 @@ export default function RepoExplorer() {
               active={tab === 'pulls'}
               onClick={() => switchTab('pulls')}
               icon={<GitPullRequestIcon size={16} />}
-              label="Pull Requests"
+              label={
+                <>
+                  <Box as="span" sx={{ display: ['inline', 'none'] }}>PRs</Box>
+                  <Box as="span" sx={{ display: ['none', 'inline'] }}>Pull Requests</Box>
+                </>
+              }
               count={renderedPullTabCount}
               newCount={tab === 'pulls' ? 0 : renderedNewPullsCount}
             />
@@ -1681,9 +1686,13 @@ export default function RepoExplorer() {
             {selected.fullName !== '' && (
               <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <MaintainerScorecard owner={repositoryOwner} name={repositoryName} />
-                {/* Fairness is PR-merge-based — skip it on pure issue-discovery repos. */}
+                {/* PR-merge fairness when the repo rewards PRs, issue-completion
+                  * fairness when it rewards issue discovery — both on mixed repos. */}
                 {(selected.issueDiscoveryShare ?? 0) < 1 && (
-                  <FairnessSignalsCard repositoryFullName={selected.fullName} />
+                  <FairnessSignalsCard repositoryFullName={selected.fullName} mode="pr" />
+                )}
+                {(selected.issueDiscoveryShare ?? 0) > 0 && (
+                  <FairnessSignalsCard repositoryFullName={selected.fullName} mode="issue" />
                 )}
               </Box>
             )}

@@ -169,12 +169,14 @@ export function pullStatus(p: PullDto): PullStatus {
 
 export interface MinerFairnessRow {
   login: string;
-  mergedPrs: number;
-  /** Closed-unmerged (rejected) miner PRs. */
-  rejectedPrs: number;
-  /** rejected / (merged + rejected). null when nothing resolved. */
+  /** Resolved items: merged PRs (pr mode) or completed issues (issue mode). */
+  resolved: number;
+  /** Rejected: closed-unmerged PRs (pr) / not_planned+duplicate issues (issue). */
+  rejected: number;
+  /** rejected / (resolved + rejected). null when nothing resolved. */
   rejectRate: number | null;
-  /** Median time-to-merge for this miner's merged PRs, hours. */
+  /** Median time-to-resolve for this miner's resolved items, hours (PR: open→
+   *  merge; issue: open→completed-close). */
   medianTtmHours: number;
   /** (repoMedian − minerMedian) / repoMedian — signed; positive = faster than
    *  the repo baseline. null when there's no baseline. */
@@ -185,17 +187,20 @@ export interface MinerFairnessRow {
 
 export interface FairnessSignals {
   repo: string;
-  /** Pooled median TTM over every non-maintainer miner merged PR (hours). */
+  /** `pr` ranks PR-merge speed; `issue` ranks issue-completion speed (used on
+   *  pure issue-discovery repos where merges aren't the scored work). */
+  mode: 'pr' | 'issue';
+  /** Pooled median time-to-resolve over every non-maintainer miner item (hours). */
   repoMedianTtmHours: number | null;
-  /** Total merged PRs behind the baseline. */
-  mergedSample: number;
-  /** Distinct non-maintainer miners with ≥1 merged PR. */
+  /** Total resolved items behind the baseline. */
+  resolvedSample: number;
+  /** Distinct non-maintainer miners with ≥1 resolved item. */
   minerCount: number;
   /** Maintainer logins filtered out (for transparency in the UI). */
   maintainersExcluded: number;
   /** Whether maintainer filtering was applied (false = mirror unavailable). */
   maintainerFiltered: boolean;
-  /** Fastest-first (shortest median TTM). */
+  /** Fastest-first (shortest median time-to-resolve). */
   miners: MinerFairnessRow[];
 }
 

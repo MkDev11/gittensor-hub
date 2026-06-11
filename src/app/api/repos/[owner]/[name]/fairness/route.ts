@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getReadDb } from '@/lib/db';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
-import { isTrackedRepoServer } from '@/lib/repos-server';
+import { isTrackedRepoServer, getLiveReposAsyncServer } from '@/lib/repos-server';
 import { getGittensorMinerLogins } from '@/lib/gittensor-miners-server';
 import { computeFairnessSignals } from '@/lib/fairness-signals';
 
@@ -41,18 +41,26 @@ export async function GET(
 
   const db = getReadDb();
 
-  const [minerLogins, maintainerLogins] = await Promise.all([
+  const [minerLogins, maintainerLogins, live] = await Promise.all([
     getGittensorMinerLogins(),
     fetchMaintainerLogins(params.owner, params.name),
+    getLiveReposAsyncServer(),
   ]);
+  // Mode: an explicit ?mode= wins (mixed repos request each lens separately);
+  // otherwise default by share — pure issue-discovery repos (share === 1) score
+  // issue completions, PR merges everywhere else.
+  const issueDiscoveryShare = live.repos.find((r) => r.fullName.toLowerCase() === full.toLowerCase())?.issueDiscoveryShare ?? 0;
+  const modeParam = req.nextUrl.searchParams.get('mode');
+  const mode: 'pr' | 'issue' = modeParam === 'issue' ? 'issue' : modeParam === 'pr' ? 'pr' : (issueDiscoveryShare >= 1 ? 'issue' : 'pr');
 
   const meta = db
-    .prepare('SELECT last_pulls_fetch FROM repo_meta WHERE full_name = ?')
-    .get(full) as { last_pulls_fetch: string | null } | undefined;
+    .prepare('SELECT last_pulls_fetch, last_issues_fetch FROM repo_meta WHERE full_name = ?')
+    .get(full) as { last_pulls_fetch: string | null; last_issues_fetch: string | null } | undefined;
   const etag = buildEtag([
-    'fairness-v1',
+    'fairness-v2',
     full,
-    meta?.last_pulls_fetch,
+    mode,
+    mode === 'issue' ? meta?.last_issues_fetch : meta?.last_pulls_fetch,
     new Date().toISOString().slice(0, 13),
     minerLogins ? [...minerLogins].sort().join(',') : 'unfiltered',
     maintainerLogins ? [...maintainerLogins].sort().join(',') : 'no-maint',
@@ -66,6 +74,7 @@ export async function GET(
     const signals = computeFairnessSignals(db, full, {
       minerLogins: minerLogins ?? new Set<string>(),
       maintainerLogins,
+      mode,
     });
     return NextResponse.json(signals, { headers: withEtagHeaders(etag) });
   } catch (err) {

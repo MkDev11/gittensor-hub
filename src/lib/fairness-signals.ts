@@ -1,14 +1,20 @@
-// "Fairness signals" — per-miner merge-speed vs the repo's own baseline, to
+// "Fairness signals" — per-miner resolve-speed vs the repo's own baseline, to
 // surface maintainers fast-tracking a favored set of accounts (a leading
 // indicator of favoritism / sockpuppets / self-dealing) BEFORE a miner invests
 // time contributing. Signals to investigate, not verdicts: a flagged miner is
 // just an outlier vs this repo's own distribution.
 //
-// Per non-maintainer miner with ≥1 merged PR: median time-to-merge
-// (mergedAt − createdAt), merged count, reject rate. Repo baseline = pooled
-// median of every counted PR's TTM. A miner faster than that baseline is the
-// "fast-tracked" highlight. Median (not mean) so one slow legit PR doesn't skew
-// it. Maintainers are excluded from both the rows AND the baseline.
+// Two modes:
+//   • pr   — merged PRs; time-to-resolve = mergedAt − createdAt. The scored work
+//            on PR repos.
+//   • issue— completed issues; time-to-resolve = closedAt − createdAt. Used on
+//            pure issue-discovery repos, where a discovered issue getting closed
+//            (completed) is the scored work, not a PR merge.
+//
+// Per non-maintainer miner with ≥1 resolved item: median time-to-resolve, count,
+// reject rate. Repo baseline = pooled median of every counted item's time.
+// Median (not mean) so one slow legit item doesn't skew it. Maintainers are
+// excluded from both the rows AND the baseline.
 import Database from 'better-sqlite3';
 import type { FairnessSignals, MinerFairnessRow } from './api-types';
 
@@ -27,11 +33,21 @@ function median(values: number[]): number | null {
 const ratio = (n: number, d: number): number | null => (d > 0 ? n / d : null);
 
 export interface FairnessOptions {
-  /** Lowercased registered miner logins — only their PRs are counted. */
+  /** Lowercased registered miner logins — only their items are counted. */
   minerLogins: Set<string>;
   /** Lowercased maintainer logins — excluded from rows AND the baseline.
    *  Null when the mirror was unavailable (no exclusion applied). */
   maintainerLogins: Set<string> | null;
+  /** `pr` ranks merged-PR speed; `issue` ranks completed-issue speed. */
+  mode: 'pr' | 'issue';
+}
+
+interface RawItem {
+  login: string | null;
+  resolved: boolean; // merged PR / completed issue
+  rejected: boolean; // closed-unmerged PR / not_planned|duplicate issue
+  createdAt: string | null;
+  resolvedAt: string | null; // mergedAt / closedAt
 }
 
 export function computeFairnessSignals(
@@ -39,35 +55,62 @@ export function computeFairnessSignals(
   repo: string,
   opts: FairnessOptions,
 ): FairnessSignals {
-  const { minerLogins, maintainerLogins } = opts;
+  const { minerLogins, maintainerLogins, mode } = opts;
   const isMaintainer = (lc: string): boolean => (maintainerLogins ? maintainerLogins.has(lc) : false);
   const parseMs = (iso: string | null): number => (iso ? Date.parse(iso) : NaN);
 
-  const rows = db
-    .prepare(
-      `SELECT author_login AS login, merged, state, created_at AS createdAt, merged_at AS mergedAt
-       FROM pulls WHERE repo_full_name = ?`,
-    )
-    .all(repo) as Array<{ login: string | null; merged: number; state: string; createdAt: string | null; mergedAt: string | null }>;
+  // Normalize PRs/issues into the same shape so the ranking logic is shared.
+  let items: RawItem[];
+  if (mode === 'issue') {
+    const rows = db
+      .prepare(
+        `SELECT author_login AS login, state, state_reason AS reason,
+                created_at AS createdAt, closed_at AS resolvedAt
+         FROM issues WHERE repo_full_name = ?`,
+      )
+      .all(repo) as Array<{ login: string | null; state: string; reason: string | null; createdAt: string | null; resolvedAt: string | null }>;
+    items = rows.map((r) => ({
+      login: r.login,
+      resolved: r.state === 'closed' && r.reason === 'completed',
+      rejected: r.state === 'closed' && (r.reason === 'not_planned' || r.reason === 'duplicate'),
+      createdAt: r.createdAt,
+      resolvedAt: r.resolvedAt,
+    }));
+  } else {
+    const rows = db
+      .prepare(
+        `SELECT author_login AS login, merged, state,
+                created_at AS createdAt, merged_at AS resolvedAt
+         FROM pulls WHERE repo_full_name = ?`,
+      )
+      .all(repo) as Array<{ login: string | null; merged: number; state: string; createdAt: string | null; resolvedAt: string | null }>;
+    items = rows.map((r) => ({
+      login: r.login,
+      resolved: r.merged === 1,
+      rejected: r.merged !== 1 && r.state === 'closed',
+      createdAt: r.createdAt,
+      resolvedAt: r.resolvedAt,
+    }));
+  }
 
   interface Acc { login: string; ttms: number[]; rejected: number }
   const byAuthor = new Map<string, Acc>();
-  const pooled: number[] = []; // every counted merged-PR TTM → repo baseline
+  const pooled: number[] = []; // every counted resolve-time → repo baseline
 
-  for (const p of rows) {
-    const lc = (p.login ?? '').toLowerCase();
+  for (const it of items) {
+    const lc = (it.login ?? '').toLowerCase();
     if (!lc || !minerLogins.has(lc) || isMaintainer(lc)) continue;
     let a = byAuthor.get(lc);
-    if (!a) { a = { login: p.login as string, ttms: [], rejected: 0 }; byAuthor.set(lc, a); }
-    if (p.merged === 1) {
-      const merged = parseMs(p.mergedAt);
-      const created = parseMs(p.createdAt);
-      if (Number.isFinite(merged) && Number.isFinite(created)) {
-        const hours = Math.max(0, (merged - created) / HOUR_MS);
+    if (!a) { a = { login: it.login as string, ttms: [], rejected: 0 }; byAuthor.set(lc, a); }
+    if (it.resolved) {
+      const resolved = parseMs(it.resolvedAt);
+      const created = parseMs(it.createdAt);
+      if (Number.isFinite(resolved) && Number.isFinite(created)) {
+        const hours = Math.max(0, (resolved - created) / HOUR_MS);
         a.ttms.push(hours);
         pooled.push(hours);
       }
-    } else if (p.state === 'closed') {
+    } else if (it.rejected) {
       a.rejected++;
     }
   }
@@ -75,12 +118,12 @@ export function computeFairnessSignals(
   const repoMedianTtmHours = median(pooled);
   const miners: MinerFairnessRow[] = [];
   for (const a of byAuthor.values()) {
-    if (a.ttms.length === 0) continue; // need ≥1 merged PR with a TTM
+    if (a.ttms.length === 0) continue; // need ≥1 resolved item with a time
     const medianTtmHours = median(a.ttms) as number;
     miners.push({
       login: a.login,
-      mergedPrs: a.ttms.length,
-      rejectedPrs: a.rejected,
+      resolved: a.ttms.length,
+      rejected: a.rejected,
       rejectRate: ratio(a.rejected, a.ttms.length + a.rejected),
       medianTtmHours,
       deltaVsRepoMedian: repoMedianTtmHours != null && repoMedianTtmHours > 0
@@ -93,8 +136,9 @@ export function computeFairnessSignals(
 
   return {
     repo,
+    mode,
     repoMedianTtmHours,
-    mergedSample: pooled.length,
+    resolvedSample: pooled.length,
     minerCount: miners.length,
     maintainersExcluded: maintainerLogins ? maintainerLogins.size : 0,
     maintainerFiltered: maintainerLogins != null,

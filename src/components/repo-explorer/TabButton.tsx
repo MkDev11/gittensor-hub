@@ -11,7 +11,7 @@ export function TabButton({
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
-  label: string;
+  label: React.ReactNode;
   count?: number;
   newCount?: number;
 }) {
@@ -22,8 +22,8 @@ export function TabButton({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '8px 16px',
+        gap: 6,
+        padding: '8px 12px',
         background: 'transparent',
         border: 'none',
         borderBottom: active ? '2px solid var(--attention-emphasis)' : '2px solid transparent',
@@ -33,6 +33,8 @@ export function TabButton({
         fontFamily: 'inherit',
         cursor: 'pointer',
         marginBottom: 0,
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
         transition: 'color 80ms, border-color 80ms',
       }}
       onMouseEnter={(e) => {
