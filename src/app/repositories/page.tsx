@@ -87,18 +87,29 @@ export default function RepositoriesPage() {
 
   /* Per-repo description + language breakdown, fetched server-side via the
    * GitHub API. Cached for an hour upstream — metadata is slow-changing. */
-  const { data: metaResp } = useQuery<{ repos: Record<string, RepoMeta> }>({
+  interface ReposMetadataResponse {
+    fetched_at?: string;
+    repos: Record<string, RepoMeta>;
+  }
+  const metadataReady = (resp: ReposMetadataResponse | undefined): resp is ReposMetadataResponse => {
+    const fetchedAt = Date.parse(resp?.fetched_at ?? '');
+    return Number.isFinite(fetchedAt) && fetchedAt > 0;
+  };
+  const { data: metaResp } = useQuery<ReposMetadataResponse>({
     queryKey: ['repos-metadata'],
     queryFn: async ({ signal }) => {
       const r = await fetch('/api/repos/metadata', { signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json() as Promise<{ repos: Record<string, RepoMeta> }>;
+      return r.json() as Promise<ReposMetadataResponse>;
+    },
+    refetchInterval: (query) => {
+      return metadataReady(query.state.data) ? false : 2_000;
     },
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
-  const metadata = metaResp?.repos ?? null;
-  const metadataLoaded = metaResp != null;
+  const metadataLoaded = metadataReady(metaResp);
+  const metadata = metadataLoaded ? metaResp.repos : null;
 
   /* Hydration gate: TanStack Query returns empty data on the server (no
    * fetch) but may have warm data on the client (re-mount, navigation
