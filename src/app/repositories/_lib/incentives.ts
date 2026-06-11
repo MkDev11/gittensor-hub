@@ -33,8 +33,6 @@ export interface RepoRow {
   maintCut: number;
   trusted: boolean;
   maintainerCount: number;
-  /** Whether the maintainer cut value is a placeholder vs. validator-set. */
-  demoMaint: boolean;
   labels: Record<string, number> | null;
   defaultLabel: number;
   /** Custom eligibility overrides — null means use protocol defaults. */

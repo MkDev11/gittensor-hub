@@ -1198,7 +1198,7 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
           valueLabel="typical merge time"
           sampleNoun="miner PRs"
           verb="merged"
-          extra={{ label: 'of all merges here', value: tp.minerMergeShare }}
+          extra={{ label: 'of merged PRs are from miners', value: tp.minerMergeShare }}
         />
       ) : null}
       {hasIssue ? (
@@ -1210,7 +1210,7 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
           valueLabel="typical close time"
           sampleNoun="miner issues"
           verb="closed"
-          extra={{ label: 'of issues get closed', value: rp.issueCloseRate }}
+          extra={{ label: 'of these issues are now closed', value: rp.issueCloseRate }}
         />
       ) : null}
 
@@ -1222,7 +1222,7 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <MetricRow label="Typical merge time" hint={`last ${rs.windowDays} days`} value={formatDurationHours(rs.medianHoursToMerge)} />
                 <MetricRow label="Typical decision time" hint="merged or closed" value={formatDurationHours(decHead.hours)} />
-                <MetricRow label="9 in 10 merged within" hint="the slow tail" value={formatDurationHours(rs.p90HoursToMerge)} />
+                <MetricRow label="Most merged in" hint="the slow tail" value={formatDurationHours(rs.p90HoursToMerge)} />
                 <MetricRow label="Typical (all-time)" value={formatDurationHours(rs.allTimeMedianHoursToMerge)} />
                 <MetricRow label="Miner PRs in window" value={rs.sampleSize.toLocaleString()} last />
               </Box>
@@ -1278,7 +1278,7 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <MetricRow label="Typical close time" hint={`last ${ir.windowDays} days`} value={formatDurationHours(ir.medianHoursToClose)} />
-                <MetricRow label="9 in 10 closed within" value={formatDurationHours(ir.p90HoursToClose)} />
+                <MetricRow label="Most closed in" value={formatDurationHours(ir.p90HoursToClose)} />
                 <MetricRow label="Close rate" hint="closed of all issues" value={formatRatioPct(rp.issueCloseRate)} last />
               </Box>
             </Box>
@@ -1398,8 +1398,8 @@ function SpeedGaugeHero({
         )}
 
         <Text sx={{ display: 'block', fontFamily: 'mono', fontSize: 0, color: 'fg.muted', mt: 2 }}>
-          {head.sampleSize.toLocaleString()} {sampleNoun} · {scopeLabel}
-          {head.p90Hours != null ? ` · 9 in 10 ${verb} within ${formatDurationHours(head.p90Hours)}` : ''}
+          Based on {head.sampleSize.toLocaleString()} {sampleNoun} · {scopeLabel}
+          {head.p90Hours != null ? ` · Most ${verb} in ${formatDurationHours(head.p90Hours)} or less` : ''}
           {extra && extra.value != null ? ` · ${Math.round(extra.value * 100)}% ${extra.label}` : ''}
         </Text>
       </Box>

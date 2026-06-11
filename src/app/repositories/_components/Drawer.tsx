@@ -71,16 +71,7 @@ export default function Drawer({
   }
 
   const r = row;
-  const cred =
-    r.activity.merged30d + r.activity.closed30d > 0
-      ? r.activity.merged30d / (r.activity.merged30d + r.activity.closed30d)
-      : 0;
-  const credColor =
-    cred >= 0.85 ? 'var(--color-moss-400)' :
-    cred >= 0.7  ? 'var(--color-enh)' :
-    'var(--color-refact)';
-  // PR slice is 0 — PR merges aren't scored, so the merge-rate / resolved
-  // (PR-feasibility) columns don't apply. Show just the emission split.
+  // PR slice is 0 for issue-only repos, so the emission split only has one stream.
   const issueOnly = r.issue >= 1;
 
   const labelsContent = r.labels
@@ -144,7 +135,6 @@ export default function Drawer({
                     {(r.maintCut || 0) > 0 ? (
                       <span className={`${styles.badge} ${styles.badgeMaint}`}>
                         {(r.maintCut * 100).toFixed(0)}% maintainer cut
-                        {r.demoMaint ? <span style={{ opacity: 0.6, marginLeft: 2 }}>·demo</span> : null}
                       </span>
                     ) : null}
                   </div>
@@ -239,7 +229,6 @@ export default function Drawer({
                     >
                       off the top
                     </span>
-                    {r.demoMaint ? <span className={styles.demoTag} title="Placeholder value">demo</span> : null}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
@@ -251,24 +240,6 @@ export default function Drawer({
                   {r.maintainerCount === 1 ? '' : 's'} ·{' '}
                   <span className={`mono ${styles.textMoss}`}>{formatTAO(repoPerMaintainerTAO(r, subnetTAO))} τ/d</span> each
                 </div>
-                {r.demoMaint ? (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: 8,
-                      borderRadius: 4,
-                      fontSize: 10.5,
-                      color: 'var(--fg-subtle)',
-                      lineHeight: 1.5,
-                      background: 'var(--softer-fill, rgba(255,255,255,0.025))',
-                      border: '1px dashed var(--soft-border, rgba(255,255,255,0.08))',
-                    }}
-                  >
-                    <span className={styles.textFgDim}>Note:</span> the <span className="mono">maintainer_cut</span> mechanic is new
-                    (announced in the recent Discord update). No repos have validator-set values yet — this card shows a plausible
-                    placeholder so the UI can be reviewed.
-                  </div>
-                ) : null}
               </div>
             ) : null}
 
@@ -276,7 +247,7 @@ export default function Drawer({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: issueOnly ? '1fr' : 'repeat(4, 1fr)',
+                  gridTemplateColumns: issueOnly ? '1fr' : 'repeat(2, 1fr)',
                   gap: 12,
                   marginTop: 12,
                   paddingTop: 12,
@@ -307,32 +278,6 @@ export default function Drawer({
                       : `${(r.issue * 100).toFixed(0)}% of slice`}
                   </div>
                 </div>
-                {!issueOnly ? (
-                  <>
-                    <div title="Merge rate over the last 30 days = merged ÷ (merged + closed). A forecast of how welcoming the repo is right now.">
-                      <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-                        Merge rate · 30d
-                      </div>
-                      <div className={`mono ${styles.numM} tnum`} style={{ color: credColor }}>
-                        {(cred * 100).toFixed(0)}%
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
-                        merged ÷ resolved
-                      </div>
-                    </div>
-                    <div title="PRs that received a final decision (merged or closed) in the last 30 days — the denominator behind the merge-rate %.">
-                      <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-                        Resolved
-                      </div>
-                      <div className={`mono ${styles.numM} tnum ${styles.textFgDim}`}>
-                        {r.activity.merged30d + r.activity.closed30d}
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
-                        PRs · last 30d
-                      </div>
-                    </div>
-                  </>
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -1127,9 +1072,9 @@ function MaintainerSection({ owner, name }: { owner: string; name: string }) {
           valueLabel="typical merge time"
           subline={
             <>
-              {prHead.scope === 'window' ? `last ${prHead.windowDays} days` : 'all-time'}
-              {prHead.p90Hours != null ? <> · 9 in 10 merged within <span className={styles.textFgDim}>{formatDurationHours(prHead.p90Hours)}</span></> : null}
-              {tp.minerMergeShare != null ? <> · <span className={styles.textFgDim}>{pct01(tp.minerMergeShare)}</span> of all merges here</> : null}
+              {prHead.scope === 'window' ? `Based on merges from the last ${prHead.windowDays} days` : 'Based on all cached merges'}
+              {prHead.p90Hours != null ? <> · Most merged in <span className={styles.textFgDim}>{formatDurationHours(prHead.p90Hours)}</span> or less</> : null}
+              {tp.minerMergeShare != null ? <> · Miner PRs are <span className={styles.textFgDim}>{pct01(tp.minerMergeShare)}</span> of merged PRs</> : null}
             </>
           }
         />
@@ -1143,9 +1088,9 @@ function MaintainerSection({ owner, name }: { owner: string; name: string }) {
           valueLabel="typical close time"
           subline={
             <>
-              {issueHead.scope === 'window' ? `last ${issueHead.windowDays} days` : 'all-time'}
-              {issueHead.p90Hours != null ? <> · 9 in 10 closed within <span className={styles.textFgDim}>{formatDurationHours(issueHead.p90Hours)}</span></> : null}
-              {rp.issueCloseRate != null ? <> · <span className={styles.textFgDim}>{pct01(rp.issueCloseRate)}</span> of issues get closed</> : null}
+              {issueHead.scope === 'window' ? `Based on issues closed in the last ${issueHead.windowDays} days` : 'Based on all cached issues'}
+              {issueHead.p90Hours != null ? <> · Most closed in <span className={styles.textFgDim}>{formatDurationHours(issueHead.p90Hours)}</span> or less</> : null}
+              {rp.issueCloseRate != null ? <> · <span className={styles.textFgDim}>{pct01(rp.issueCloseRate)}</span> of these issues are now closed</> : null}
             </>
           }
         />

@@ -218,10 +218,9 @@ export default function RepoListRow({
               <span
                 className={`${styles.badge} ${styles.badgeMaint}`}
                 style={{ fontSize: 9.5, padding: '0 4px' }}
-                title={`${(r.maintCut * 100).toFixed(0)}% maintainer cut${r.demoMaint ? ' (demo value, not yet set by validators)' : ''}`}
+                title={`${(r.maintCut * 100).toFixed(0)}% maintainer cut`}
               >
                 {(r.maintCut * 100).toFixed(0)}% cut
-                {r.demoMaint ? <span style={{ opacity: 0.6, marginLeft: 2 }}>·demo</span> : null}
               </span>
             ) : null}
           </div>

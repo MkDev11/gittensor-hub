@@ -121,11 +121,9 @@ export function buildRows(
       issue: policy.issueDiscoveryShare ?? 0,
       maintCut,
       trusted: policy.trustedLabelPipeline ?? false,
-      // Validators haven't seeded maintainer counts yet, so we default to 1
-      // when a cut is configured and flag it as `demoMaint` so the UI can
-      // call that out (the HTML prototype did the same).
+      // Validator policy now carries maintainer_cut directly. Maintainer counts
+      // are not in the policy feed yet, so show one recipient when a cut exists.
       maintainerCount: maintCut > 0 ? 1 : 0,
-      demoMaint: maintCut > 0,
       labels,
       defaultLabel: policy.defaultLabelMultiplier ?? 1.0,
       eligibility: pickEligibilityOverrides(policy),
@@ -200,7 +198,6 @@ export function buildRows(
         maintCut: 0,
         trusted: false,
         maintainerCount: 0,
-        demoMaint: false,
         labels: null,
         defaultLabel: 1.0,
         eligibility: null,

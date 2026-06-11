@@ -224,7 +224,6 @@ export default function CompareModal({ open, repos, subnetTAO, strategy, onClose
                   {(r.maintCut * 100).toFixed(0)}% off the top · {r.maintainerCount} maint ·{' '}
                   <span className={styles.textMoss}>{formatTAO(repoPerMaintainerTAO(r, subnetTAO))} ea</span>
                 </div>
-                {r.demoMaint ? <span className={styles.demoTag} style={{ marginTop: 6, display: 'inline-flex' }}>demo</span> : null}
               </>
             )
           )} />
@@ -820,7 +819,6 @@ function CompareMobile({
                     </div>
                     <div className={`mono ${styles.textMoss}`} style={{ fontSize: 10, marginTop: 2 }}>
                       {formatTAO(repoPerMaintainerTAO(r, subnetTAO))} ea
-                      {r.demoMaint ? <span className={styles.demoTag} style={{ marginLeft: 4 }}>demo</span> : null}
                     </div>
                   </div>
                 ) : (
