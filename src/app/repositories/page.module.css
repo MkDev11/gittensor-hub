@@ -1943,12 +1943,15 @@
 .paletteBox {
   position: relative;
   max-width: 36rem;
+  max-height: min(72vh, 720px);
   margin: 14vh auto 0;
   background: var(--app-elev);
   border: 1px solid var(--soft-border);
   border-radius: 10px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .paletteHeader {
   display: flex;
@@ -1976,8 +1979,10 @@
 }
 .paletteInput::placeholder { color: var(--fg-mute); }
 .paletteResults {
-  max-height: 50vh;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
 }
 .paletteItem {

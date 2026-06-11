@@ -61,8 +61,7 @@ export default function Palette({ open, rows, subnetTAO, onClose, onSelect }: Pa
   const matched = useMemo(() => {
     const needle = q.toLowerCase().trim();
     return rows
-      .filter((r) => !needle || `${r.fullName} ${r.description}`.toLowerCase().includes(needle))
-      .slice(0, 10);
+      .filter((r) => !needle || `${r.fullName} ${r.description}`.toLowerCase().includes(needle));
   }, [q, rows]);
 
   // Reset active when results change (typing), and keep it clamped to bounds.
