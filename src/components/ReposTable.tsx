@@ -334,7 +334,7 @@ function RepoRow({
       : band.tone === 'severe'
       ? '#e0823d'
       : 'var(--neutral-emphasis)';
-  const internalHref = `/repos/${repo.owner}/${repo.name}`;
+  const internalHref = `/repositories/${repo.owner}/${repo.name}`;
   const githubHref = `https://github.com/${repo.fullName}`;
 
   const handleRowClick = (e: React.MouseEvent) => {

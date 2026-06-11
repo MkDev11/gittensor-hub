@@ -394,7 +394,7 @@ function issueHref(issue: IssueDto): string {
 function repoHref(repo: RepoEntry | string): string {
   const fullName = typeof repo === 'string' ? repo : repo.fullName;
   const [owner, name] = fullName.split('/');
-  return '/repos/' + owner + '/' + name;
+  return '/repositories/' + owner + '/' + name;
 }
 
 function pullKey(repo: string, number: number): string {

@@ -743,7 +743,7 @@ function PullTableRow({
       </Box>
       <Box as="td" sx={pullRowCellSx}>
         <Link
-          href={`/repos/${owner}/${name}`}
+          href={`/repositories/${owner}/${name}`}
           prefetch={false}
           style={{ textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}

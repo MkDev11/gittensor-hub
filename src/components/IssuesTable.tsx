@@ -679,7 +679,7 @@ function IssueTableRow({
       </Box>
       <Box as="td" sx={issueRowCellSx}>
         <Link
-          href={`/repos/${owner}/${name}`}
+          href={`/repositories/${owner}/${name}`}
           prefetch={false}
           style={{ textDecoration: 'none' }}
           onClick={(e) => e.stopPropagation()}

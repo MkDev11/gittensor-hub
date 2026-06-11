@@ -1146,14 +1146,10 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
     );
   }
 
-  const rs = data.reviewSpeed;
-  const ir = data.issueResponse;
   const tp = data.throughput;
-  const bl = data.backlog;
   const rp = data.responsiveness;
   const prHead = headlineReviewSpeed(data);
   const issueHead = headlineIssueResponse(data);
-  const decHead = headlineDecisionSpeed(data);
   // PR figures only when the repo rewards PRs; issue figures only when it
   // rewards issue discovery. A 100% issue-discovery repo never shows merge speed.
   const hasPr = data.issueDiscoveryShare < 1;
@@ -1216,81 +1212,128 @@ function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
         />
       ) : null}
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], gap: 3 }}>
-        {hasPr ? (
-          <Panel>
-            <Box sx={{ p: 3 }}>
-              <PanelHeader icon={StopwatchIcon} title="Review Speed" />
-              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                <MetricRow label="Typical merge time" hint={`last ${rs.windowDays} days`} value={formatDurationHours(rs.medianHoursToMerge)} />
-                <MetricRow label="Typical decision time" hint="merged or closed" value={formatDurationHours(decHead.hours)} />
-                <MetricRow label="Most merged in" hint="the slow tail" value={formatDurationHours(rs.p90HoursToMerge)} />
-                <MetricRow label="Typical (all-time)" value={formatDurationHours(rs.allTimeMedianHoursToMerge)} />
-                <MetricRow label="Miner PRs in window" value={rs.sampleSize.toLocaleString()} last />
-              </Box>
-            </Box>
-          </Panel>
-        ) : null}
-
-        {hasPr ? (
-          <Panel>
-            <Box sx={{ p: 3 }}>
-              <PanelHeader icon={GitMergeIcon} title="PR Throughput" />
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
-                <CountBox label="PRs merged · 30d" value={tp.mergedPrs30d} />
-                <CountBox label="PRs merged · all-time" value={tp.mergedPrsTotal} />
-                <CountBox label="Open PRs" value={bl.openPrs} />
-                <CountBox label="Resolved PRs" value={tp.resolvedPrs} hint="merged + closed" />
-              </Box>
-              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                <MetricRow label="Merge rate" hint="merged of resolved" value={formatRatioPct(tp.mergeRate)} />
-                <MetricRow label="Miner share of merges" hint="vs all contributors" value={formatRatioPct(tp.minerMergeShare)} last />
-              </Box>
-            </Box>
-          </Panel>
-        ) : null}
-
-        {hasPr ? (
-          <Panel>
-            <Box sx={{ p: 3 }}>
-              <PanelHeader icon={InboxIcon} title="PR Backlog" />
-              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                <MetricRow label="Open PRs" value={bl.openPrs.toLocaleString()} />
-                <MetricRow label="Median open-PR age" value={<Text sx={{ color: ageTone(bl.medianOpenPrAgeDays) }}>{formatDurationDays(bl.medianOpenPrAgeDays)}</Text>} />
-                <MetricRow label="Oldest open PR" value={formatDurationDays(bl.oldestOpenPrDays)} />
-                <MetricRow
-                  label={`Stale PRs (>${bl.staleThresholdDays}d)`}
-                  value={<Text sx={{ color: bl.stalePrs > 0 ? 'danger.fg' : 'success.fg' }}>{bl.stalePrs.toLocaleString()}</Text>}
-                  last
-                />
-              </Box>
-            </Box>
-          </Panel>
-        ) : null}
-
-        {hasIssue ? (
-          <Panel>
-            <Box sx={{ p: 3 }}>
-              <PanelHeader icon={IssueOpenedIcon} title="Issue Response" />
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
-                <CountBox label="Closed · 30d" value={tp.issuesClosed30d} />
-                <CountBox label="Closed · all-time" value={rp.closedIssues} />
-                <CountBox label="Open issues" value={bl.openIssues} />
-                <CountBox label="Closes in window" value={ir.sampleSize} />
-              </Box>
-              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                <MetricRow label="Typical close time" hint={`last ${ir.windowDays} days`} value={formatDurationHours(ir.medianHoursToClose)} />
-                <MetricRow label="Most closed in" value={formatDurationHours(ir.p90HoursToClose)} />
-                <MetricRow label="Close rate" hint="closed of all issues" value={formatRatioPct(rp.issueCloseRate)} last />
-              </Box>
-            </Box>
-          </Panel>
-        ) : null}
-      </Box>
+      <MetersDetail data={data} />
 
       <Text sx={{ fontSize: 0, color: 'fg.subtle' }}>
         Updated {formatRelativeTime(data.generatedAt)} · derived from cached PR/issue timestamps.
       </Text>
+    </Box>
+  );
+}
+
+// ─── Maintenance-tab visual helpers ─────────────────────────────────────────
+
+const PR_GREEN = '#22c55e';
+const ISSUE_INDIGO = '#6366f1';
+
+/** Filled progress bar for a 0..1 ratio. */
+function MeterBar({ pct, color }: { pct: number | null; color: string }) {
+  const w = pct == null || !Number.isFinite(pct) ? 0 : Math.max(0, Math.min(1, pct)) * 100;
+  return (
+    <Box sx={{ height: '6px', borderRadius: 6, bg: 'border.default', overflow: 'hidden', mt: 1 }}>
+      <Box sx={{ height: '100%', width: `${w}%`, bg: color, borderRadius: 6 }} />
+    </Box>
+  );
+}
+
+/** Label + percentage + meter bar. */
+function RateRow({ label, hint, pct, color }: { label: string; hint?: string; pct: number | null; color: string }) {
+  return (
+    <Box sx={{ py: '6px' }}>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 3 }}>
+        <Box>
+          <Text sx={{ fontSize: 1, color: 'fg.default' }}>{label}</Text>
+          {hint ? <Text sx={{ display: 'block', fontSize: 0, color: 'fg.subtle' }}>{hint}</Text> : null}
+        </Box>
+        <Text sx={{ fontFamily: 'mono', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color }}>{formatRatioPct(pct)}</Text>
+      </Box>
+      <MeterBar pct={pct} color={color} />
+    </Box>
+  );
+}
+
+/** Mini log-scale bar: median dot, faded band to p90, optional secondary marker. */
+function SpreadBar({ medianH, p90H, color, markerH }: { medianH: number | null; p90H: number | null; color: string; markerH?: number | null }) {
+  const pMed = reviewSpeedGaugePos(medianH);
+  const pP90 = reviewSpeedGaugePos(p90H);
+  const pMark = reviewSpeedGaugePos(markerH);
+  if (pMed == null) return null;
+  return (
+    <Box sx={{ position: 'relative', height: '6px', borderRadius: 6, bg: 'border.default', mt: 2, mb: 1 }}>
+      <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pMed * 100}%`, borderRadius: 6, bg: color }} />
+      {pP90 != null && pP90 > pMed ? (
+        <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${pMed * 100}%`, width: `${(pP90 - pMed) * 100}%`, borderRadius: 6, bg: `${color}22` }} />
+      ) : null}
+      <Box sx={{ position: 'absolute', left: `${pMed * 100}%`, top: '-3px', width: '12px', height: '12px', ml: '-6px', borderRadius: '50%', bg: color, border: '2px solid', borderColor: 'canvas.default' }} />
+      {pP90 != null && pP90 > pMed ? (
+        <Box sx={{ position: 'absolute', left: `${pP90 * 100}%`, top: '-1px', width: '2px', height: '8px', ml: '-1px', bg: `${color}aa` }} />
+      ) : null}
+      {pMark != null ? (
+        <Box sx={{ position: 'absolute', left: `${pMark * 100}%`, top: '-1px', width: '2px', height: '8px', ml: '-1px', bg: 'fg.muted' }} title="decision time" />
+      ) : null}
+    </Box>
+  );
+}
+
+// ── Detail panels: meters + spread bars ─────────────────────────────────────
+function MetersDetail({ data }: { data: MaintainerStats }) {
+  const rs = data.reviewSpeed, ir = data.issueResponse, tp = data.throughput, bl = data.backlog, rp = data.responsiveness;
+  const decHead = headlineDecisionSpeed(data);
+  const hasPr = data.issueDiscoveryShare < 1, hasIssue = data.issueDiscoveryShare > 0;
+  return (
+    <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], gap: 3 }}>
+      {hasPr ? (
+        <Panel><Box sx={{ p: 3 }}>
+          <PanelHeader icon={StopwatchIcon} title="Review Speed" />
+          <SpreadBar medianH={rs.medianHoursToMerge} p90H={rs.p90HoursToMerge} markerH={decHead.hours} color={PR_GREEN} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'mono', fontSize: 0, color: 'fg.subtle', mb: 2 }}>
+            <span>median {formatDurationHours(rs.medianHoursToMerge)}</span>
+            <span>decision {formatDurationHours(decHead.hours)}</span>
+            <span>p90 {formatDurationHours(rs.p90HoursToMerge)}</span>
+          </Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <MetricRow label="Typical (all-time)" value={formatDurationHours(rs.allTimeMedianHoursToMerge)} />
+            <MetricRow label="Miner PRs in window" value={rs.sampleSize.toLocaleString()} last />
+          </Box>
+        </Box></Panel>
+      ) : null}
+      {hasPr ? (
+        <Panel><Box sx={{ p: 3 }}>
+          <PanelHeader icon={GitMergeIcon} title="PR Throughput" />
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+            <CountBox label="Merged · 30d" value={tp.mergedPrs30d} />
+            <CountBox label="Merged · all-time" value={tp.mergedPrsTotal} />
+          </Box>
+          <RateRow label="Merge rate" hint="merged of resolved" pct={tp.mergeRate} color={PR_GREEN} />
+          <RateRow label="Miner share of merges" hint="vs all contributors" pct={tp.minerMergeShare} color={PR_GREEN} />
+        </Box></Panel>
+      ) : null}
+      {hasPr ? (
+        <Panel><Box sx={{ p: 3 }}>
+          <PanelHeader icon={InboxIcon} title="PR Backlog" />
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <MetricRow label="Open PRs" value={bl.openPrs.toLocaleString()} />
+            <MetricRow label="Median open-PR age" value={<Text sx={{ color: ageTone(bl.medianOpenPrAgeDays) }}>{formatDurationDays(bl.medianOpenPrAgeDays)}</Text>} />
+            <MetricRow label="Oldest open PR" value={formatDurationDays(bl.oldestOpenPrDays)} />
+            <MetricRow label={`Stale PRs (>${bl.staleThresholdDays}d)`} value={<Text sx={{ color: bl.stalePrs > 0 ? 'danger.fg' : 'success.fg' }}>{bl.stalePrs.toLocaleString()}</Text>} last />
+          </Box>
+        </Box></Panel>
+      ) : null}
+      {hasIssue ? (
+        <Panel><Box sx={{ p: 3 }}>
+          <PanelHeader icon={IssueOpenedIcon} title="Issue Response" />
+          <SpreadBar medianH={ir.medianHoursToClose} p90H={ir.p90HoursToClose} color={ISSUE_INDIGO} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', fontFamily: 'mono', fontSize: 0, color: 'fg.subtle', mb: 2 }}>
+            <span>median {formatDurationHours(ir.medianHoursToClose)}</span>
+            <span>p90 {formatDurationHours(ir.p90HoursToClose)}</span>
+          </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+            <CountBox label="Closed · 30d" value={tp.issuesClosed30d} />
+            <CountBox label="Open issues" value={bl.openIssues} />
+          </Box>
+          <RateRow label="Close rate" hint="closed of all issues" pct={rp.issueCloseRate} color={ISSUE_INDIGO} />
+        </Box></Panel>
+      ) : null}
     </Box>
   );
 }

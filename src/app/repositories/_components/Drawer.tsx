@@ -169,11 +169,9 @@ export default function Drawer({
               </a>
               <a
                 className={styles.secBtn}
-                href={`https://github.com/${r.fullName}/issues?q=is:open+label:%22good+first+issue%22`}
-                target="_blank"
-                rel="noreferrer"
+                href={`/repositories/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.name)}`}
               >
-                good-first-issues ↗
+                Repository details
               </a>
               <button type="button" className={styles.secBtn} onClick={() => onToggleCompare(r.fullName)}>
                 {isInCompare ? (
