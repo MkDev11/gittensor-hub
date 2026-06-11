@@ -8,6 +8,7 @@
 
 import type { GtRepo } from '@/types/entities';
 import type { Sn74Repo } from '@/lib/repos';
+import { reviewSpeedVerdict } from '@/lib/api-types';
 
 export const OSS_POOL = 0.9;
 export const TREASURY_PCT = 0.1;
@@ -148,13 +149,10 @@ export function competitionLevel(repo: RepoRow): LevelBadge {
 }
 
 export function mergeSpeedLevel(repo: RepoRow): LevelBadge {
-  const h = repo.activity.medianMergeHours;
-  if (h == null) return { label: 'unknown',   color: '#62666d', desc: '—' };
-  if (h <= 12)   return { label: 'very fast', color: '#22c55e', desc: `~${h}h median` };
-  if (h <= 24)   return { label: 'fast',      color: '#86efac', desc: `~${h}h median` };
-  if (h <= 48)   return { label: 'normal',    color: '#9eb872', desc: `~${h}h median` };
-  if (h <= 96)   return { label: 'slow',      color: '#eab308', desc: `~${Math.round(h / 24)}d median` };
-  return           { label: 'very slow', color: '#c5503a', desc: `~${Math.round(h / 24)}d median` };
+  // Verdict thresholds/colours live in @/lib/api-types (shared with the live
+  // maintainer-stats scorecards). Compare still feeds the placeholder
+  // `medianMergeHours` (null → "unknown") until that field is wired to real data.
+  return reviewSpeedVerdict(repo.activity.medianMergeHours);
 }
 
 export interface EligibilityRisk {

@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import styles from '../page.module.css';
 import Avatar from './Avatar';
 import { LABEL_COLORS, LABEL_KEYS, LANG_COLORS, formatLangPct } from '../_lib/colors';
+import { formatDurationHours } from '@/lib/format';
+import { headlineReviewSpeed, reviewSpeedVerdict, type MaintainerStats } from '@/lib/api-types';
 import {
   competitionLevel,
   decisionScore,
@@ -53,6 +56,57 @@ export default function CompareModal({ open, repos, subnetTAO, strategy, onClose
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
+
+  // Real review-speed per compared repo, from the same endpoint the repo
+  // drawer uses (shared react-query cache key, so a repo viewed in the drawer
+  // is already warm here). Replaces the old `medianMergeHours`-is-null
+  // placeholder that forced the "Time to merge" row to read "demo".
+  const statsResults = useQueries({
+    queries: repos.map((r) => ({
+      queryKey: ['repo-maintainer-stats', r.owner, r.name],
+      queryFn: async ({ signal }: { signal: AbortSignal }) => {
+        const res = await fetch(
+          `/api/repos/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.name)}/maintainer-stats`,
+          { signal },
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<MaintainerStats>;
+      },
+      enabled: open,
+      staleTime: 120_000,
+      refetchOnWindowFocus: false,
+    })),
+  });
+  const statsByFull = new Map<string, MaintainerStats>();
+  repos.forEach((r, i) => {
+    const d = statsResults[i]?.data;
+    if (d) statsByFull.set(r.fullName, d);
+  });
+
+  /** Review-speed verdict for a repo. Prefers the real merge-time median from
+   *  /api/repos/.../maintainer-stats; falls back to the placeholder
+   *  `mergeSpeedLevel` (label "unknown") while stats load or if absent. */
+  const speedVerdictFor = (r: RepoRow): { label: string; color: string; desc: string; real: boolean } => {
+    const s = statsByFull.get(r.fullName);
+    if (s && s.issueDiscoveryShare >= 1) {
+      // 100% issue-discovery repo — PR merges aren't the scored work here.
+      return { label: 'issue-only', color: '#62666d', desc: 'issue-discovery repo · PRs not scored', real: true };
+    }
+    if (s?.hasData) {
+      const head = headlineReviewSpeed(s);
+      if (head.hours != null) {
+        const v = reviewSpeedVerdict(head.hours);
+        const scope = head.scope === 'window' ? `last ${head.windowDays}d` : 'all-time';
+        return {
+          label: v.label,
+          color: v.color,
+          desc: `~${formatDurationHours(head.hours)} median · ${head.sampleSize.toLocaleString()} merges · ${scope}`,
+          real: true,
+        };
+      }
+    }
+    return { ...mergeSpeedLevel(r), real: false };
+  };
 
   const cols = Math.max(1, repos.length);
   // Side-by-side columns: left label rail + N panel columns
@@ -106,6 +160,7 @@ export default function CompareModal({ open, repos, subnetTAO, strategy, onClose
               strategy={strategy}
               subnetTAO={subnetTAO}
               onRemove={onRemove}
+              speedVerdictFor={speedVerdictFor}
             />
           </div>
 
@@ -271,12 +326,13 @@ export default function CompareModal({ open, repos, subnetTAO, strategy, onClose
           }} />
 
           <CompareRow label="Time to merge" repos={repos} colStyle={colStyle} render={(r) => {
-            const s = mergeSpeedLevel(r);
+            const s = speedVerdictFor(r);
             return (
               <>
                 <div style={{ fontSize: 13, fontWeight: 500, color: s.color }}>{s.label}</div>
                 <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', marginTop: 4 }}>
-                  {s.desc} <span className={styles.demoTag} style={{ marginLeft: 4, fontSize: 8.5 }}>demo</span>
+                  {s.desc}
+                  {!s.real ? <span className={styles.demoTag} style={{ marginLeft: 4, fontSize: 8.5 }}>demo</span> : null}
                 </div>
               </>
             );
@@ -672,12 +728,14 @@ function CompareMobile({
   strategy,
   subnetTAO,
   onRemove,
+  speedVerdictFor,
 }: {
   repos: RepoRow[];
   labelList: string[];
   strategy: StrategyKey;
   subnetTAO: number;
   onRemove: (full: string) => void;
+  speedVerdictFor: (r: RepoRow) => { label: string; color: string; desc: string; real: boolean };
 }) {
   return (
     <>
@@ -701,7 +759,7 @@ function CompareMobile({
             cred >= 0.7  ? 'var(--color-enh)' :
             'var(--color-refact)';
           const comp = competitionLevel(r);
-          const merge = mergeSpeedLevel(r);
+          const merge = speedVerdictFor(r);
           const pressure = openSlotPressure(r);
           const risk = eligibilityRisk(r);
           return (

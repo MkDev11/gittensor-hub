@@ -26,6 +26,34 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   return `${Math.floor(months / 12)}y ago`;
 }
 
+/** 1 decimal for small magnitudes, integer once we hit double digits — keeps
+ *  durations compact ("6.2h", but "18h" not "18.0h"). */
+function trimDuration(n: number): string {
+  return n >= 10 ? Math.round(n).toString() : (Math.round(n * 10) / 10).toString();
+}
+
+/**
+ * Compact human duration from a span measured in hours. Adapts the unit to the
+ * magnitude — minutes under an hour, then hours, days, weeks, months. Used by
+ * the maintainer scorecard for review-speed and backlog-age figures.
+ */
+export function formatDurationHours(hours: number | null | undefined, fallback = '—'): string {
+  if (hours == null || !Number.isFinite(hours) || hours < 0) return fallback;
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  if (hours < 24) return `${trimDuration(hours)}h`;
+  const days = hours / 24;
+  if (days < 7) return `${trimDuration(days)}d`;
+  const weeks = days / 7;
+  if (weeks < 8) return `${trimDuration(weeks)}w`;
+  return `${trimDuration(days / 30)}mo`;
+}
+
+/** As {@link formatDurationHours}, but the input span is measured in days. */
+export function formatDurationDays(days: number | null | undefined, fallback = '—'): string {
+  if (days == null || !Number.isFinite(days)) return fallback;
+  return formatDurationHours(days * 24, fallback);
+}
+
 export interface UsdFormatOptions {
   /**
    * 'adaptive' (default): ≥100 → 0 digits, ≥1 → 2 digits, <1 → 4 digits.

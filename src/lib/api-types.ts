@@ -162,3 +162,170 @@ export function pullStatus(p: PullDto): PullStatus {
   if (p.draft) return 'draft';
   return 'open';
 }
+
+// ─── Maintainer scorecard (see src/lib/maintainer-stats.ts) ───────────────────
+// Kept here (no server deps) so client components can `import type` the shape
+// without pulling in the better-sqlite3-backed computation module.
+
+export interface ReviewSpeedStats {
+  windowDays: number;
+  /** Merges that landed inside the window — the sample the headline is over. */
+  sampleSize: number;
+  medianHoursToMerge: number | null;
+  p90HoursToMerge: number | null;
+  /** All-time figures, shown as context beside the recent window. */
+  allTimeSampleSize: number;
+  allTimeMedianHoursToMerge: number | null;
+}
+
+/** Issue-discovery analogue of {@link ReviewSpeedStats}: how fast miner-opened
+ *  issues get closed. The headline for issue-discovery repos, where PR merges
+ *  aren't the scored work. */
+export interface IssueResponseStats {
+  windowDays: number;
+  sampleSize: number;
+  medianHoursToClose: number | null;
+  p90HoursToClose: number | null;
+  allTimeSampleSize: number;
+  allTimeMedianHoursToClose: number | null;
+}
+
+export interface ThroughputStats {
+  mergedPrs30d: number;
+  mergedPrsTotal: number;
+  issuesClosed30d: number;
+  /** merged + closed-unmerged — the PRs the maintainer has acted on. */
+  resolvedPrs: number;
+  /** merged / resolved. null when nothing has been resolved yet. */
+  mergeRate: number | null;
+  /** Gittensor-miner share of ALL merged PRs (miner merges / every merge).
+   *  How much of the repo's merge throughput is subnet work. null when no
+   *  merges, or when miner filtering is off. */
+  minerMergeShare: number | null;
+}
+
+export interface BacklogStats {
+  openPrs: number;
+  medianOpenPrAgeDays: number | null;
+  p90OpenPrAgeDays: number | null;
+  oldestOpenPrDays: number | null;
+  stalePrs: number;
+  staleThresholdDays: number;
+  openIssues: number;
+}
+
+export interface ResponsivenessStats {
+  closedIssues: number;
+  medianIssueCloseDays: number | null;
+  /** closed / (closed + open). null when the repo has no issues. */
+  issueCloseRate: number | null;
+}
+
+export interface MaintainerStats {
+  repo: string;
+  generatedAt: string;
+  /** False when neither a PR nor an issue is cached for the repo. */
+  hasData: boolean;
+  /** Whether the figures are restricted to registered Gittensor miners' work.
+   *  False means the miner list was unavailable and every contributor counts. */
+  minerFiltered: boolean;
+  /** Repo's issue-discovery emission share (0..1). */
+  issueDiscoveryShare: number;
+  /** Convenience: issueDiscoveryShare > 0 — the repo rewards issue discovery,
+   *  so the issue-responsiveness figures (miner-opened issues) are first-class. */
+  issueDiscoveryEnabled: boolean;
+  reviewSpeed: ReviewSpeedStats;
+  issueResponse: IssueResponseStats;
+  throughput: ThroughputStats;
+  backlog: BacklogStats;
+  responsiveness: ResponsivenessStats;
+}
+
+/** Pick the review-speed headline from a {@link MaintainerStats}: the windowed
+ *  median when the recent window has merges, otherwise the all-time median.
+ *  Shared by the repo drawer scorecard and the compare modal so both surface
+ *  the same figure for a repo. */
+export function headlineReviewSpeed(s: MaintainerStats): {
+  hours: number | null;
+  p90Hours: number | null;
+  sampleSize: number;
+  scope: 'window' | 'all-time';
+  windowDays: number;
+} {
+  const rs = s.reviewSpeed;
+  const inWindow = rs.sampleSize > 0;
+  return {
+    hours: inWindow ? rs.medianHoursToMerge : rs.allTimeMedianHoursToMerge,
+    p90Hours: inWindow ? rs.p90HoursToMerge : null,
+    sampleSize: inWindow ? rs.sampleSize : rs.allTimeSampleSize,
+    scope: inWindow ? 'window' : 'all-time',
+    windowDays: rs.windowDays,
+  };
+}
+
+/** Issue-response analogue of {@link headlineReviewSpeed}: the windowed median
+ *  time-to-close when the window has closes, else all-time. */
+export function headlineIssueResponse(s: MaintainerStats): {
+  hours: number | null;
+  p90Hours: number | null;
+  sampleSize: number;
+  scope: 'window' | 'all-time';
+  windowDays: number;
+} {
+  const ir = s.issueResponse;
+  const inWindow = ir.sampleSize > 0;
+  return {
+    hours: inWindow ? ir.medianHoursToClose : ir.allTimeMedianHoursToClose,
+    p90Hours: inWindow ? ir.p90HoursToClose : null,
+    sampleSize: inWindow ? ir.sampleSize : ir.allTimeSampleSize,
+    scope: inWindow ? 'window' : 'all-time',
+    windowDays: ir.windowDays,
+  };
+}
+
+/** Review-speed verdict (label + colour) from a median merge time in hours.
+ *  Shared by the compare modal, the repo drawer, and the repo-page scorecard so
+ *  thresholds and colours stay in lockstep. Plain hex colours so it renders the
+ *  same under both the Primer and the repositories-page palettes. */
+export function reviewSpeedVerdict(h: number | null): { label: string; color: string; desc: string } {
+  if (h == null) return { label: 'unknown',   color: '#62666d', desc: '—' };
+  if (h <= 12)   return { label: 'very fast', color: '#22c55e', desc: `~${h}h median` };
+  if (h <= 24)   return { label: 'fast',      color: '#86efac', desc: `~${h}h median` };
+  if (h <= 48)   return { label: 'normal',    color: '#9eb872', desc: `~${h}h median` };
+  if (h <= 96)   return { label: 'slow',      color: '#eab308', desc: `~${Math.round(h / 24)}d median` };
+  return           { label: 'very slow', color: '#c5503a', desc: `~${Math.round(h / 24)}d median` };
+}
+
+/** Verdict for issue-response time (miner-opened issue → closed). Issues
+ *  legitimately take longer than PR merges, so the thresholds are in days,
+ *  not hours. Same colour scale as {@link reviewSpeedVerdict}. */
+export function issueResponseVerdict(h: number | null): { label: string; color: string; desc: string } {
+  if (h == null) return { label: 'unknown',   color: '#62666d', desc: '—' };
+  const d = Math.round(h / 24);
+  if (h <= 48)    return { label: 'very fast', color: '#22c55e', desc: `~${d <= 1 ? `${Math.round(h)}h` : `${d}d`} median` };
+  if (h <= 168)   return { label: 'fast',      color: '#86efac', desc: `~${d}d median` };  // ≤ 1 week
+  if (h <= 504)   return { label: 'normal',    color: '#9eb872', desc: `~${d}d median` };  // ≤ 3 weeks
+  if (h <= 1080)  return { label: 'slow',      color: '#eab308', desc: `~${d}d median` };  // ≤ ~6 weeks
+  return            { label: 'very slow', color: '#c5503a', desc: `~${d}d median` };
+}
+
+/** Tick marks for the review-speed gauge (30 min → 30 days). */
+export const REVIEW_SPEED_GAUGE_TICKS: ReadonlyArray<{ hours: number; label: string }> = [
+  { hours: 0.5, label: '30m' },
+  { hours: 6, label: '6h' },
+  { hours: 24, label: '1d' },
+  { hours: 168, label: '1w' },
+  { hours: 720, label: '30d' },
+];
+
+/** Log-scaled position (0..1) of a duration on the review-speed gauge — 30 min
+ *  at the left edge, 30 days at the right, so the fast end (where most healthy
+ *  repos sit) gets the resolution. Shared by the drawer and the repo-page
+ *  scorecard so both gauges use one scale. Null for a null/non-finite input. */
+export function reviewSpeedGaugePos(hours: number | null | undefined): number | null {
+  if (hours == null || !Number.isFinite(hours)) return null;
+  const MIN = 0.5;
+  const MAX = 720;
+  const c = Math.min(Math.max(hours, MIN), MAX);
+  return (Math.log(c) - Math.log(MIN)) / (Math.log(MAX) - Math.log(MIN));
+}

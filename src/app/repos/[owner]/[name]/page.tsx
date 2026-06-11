@@ -22,6 +22,10 @@ import {
   FileIcon,
   CheckCircleIcon,
   XCircleIcon,
+  PulseIcon,
+  StopwatchIcon,
+  GitMergeIcon,
+  InboxIcon,
 } from '@primer/octicons-react';
 import type { Icon } from '@primer/octicons-react';
 import Spinner from '@/components/Spinner';
@@ -36,9 +40,18 @@ import type {
   RepoMinersResponse,
 } from '@/types/entities';
 import { renderMarkdownToHtml } from '@/lib/markdown';
-import { formatRelativeTime } from '@/lib/format';
+import { formatRelativeTime, formatDurationHours, formatDurationDays } from '@/lib/format';
+import {
+  headlineReviewSpeed,
+  headlineIssueResponse,
+  reviewSpeedVerdict,
+  issueResponseVerdict,
+  reviewSpeedGaugePos,
+  REVIEW_SPEED_GAUGE_TICKS,
+  type MaintainerStats,
+} from '@/lib/api-types';
 
-type TabKey = 'readme' | 'code' | 'issues' | 'pulls' | 'contributing' | 'check';
+type TabKey = 'readme' | 'code' | 'issues' | 'pulls' | 'contributing' | 'maintenance' | 'check';
 
 const TABS: { key: TabKey; label: string; icon: Icon }[] = [
   { key: 'readme', label: 'Readme', icon: BookIcon },
@@ -46,6 +59,7 @@ const TABS: { key: TabKey; label: string; icon: Icon }[] = [
   { key: 'issues', label: 'Issues', icon: IssueOpenedIcon },
   { key: 'pulls', label: 'Pull Requests', icon: GitPullRequestIcon },
   { key: 'contributing', label: 'Contributing', icon: PeopleIcon },
+  { key: 'maintenance', label: 'Maintenance', icon: PulseIcon },
   { key: 'check', label: 'Repo Check', icon: ChecklistIcon },
 ];
 
@@ -200,6 +214,7 @@ export default function RepoDetailPage(ctx: { params: Promise<{ owner: string; n
             {tab === 'issues' && <IssuesTab owner={params.owner} name={params.name} />}
             {tab === 'pulls' && <PullsTab owner={params.owner} name={params.name} />}
             {tab === 'contributing' && <ContributingTab owner={params.owner} name={params.name} />}
+            {tab === 'maintenance' && <MaintenanceTab owner={params.owner} name={params.name} />}
             {tab === 'check' && <RepoCheckTab owner={params.owner} name={params.name} />}
           </Box>
 
@@ -1090,6 +1105,317 @@ interface HealthResp {
     issueTemplates: boolean;
     securityPolicy: boolean;
   };
+}
+
+// ─── Maintenance tab: maintainer-performance scorecard ────────────────────────
+
+/** null-aware ratio→percent. Distinguishes a true 0% from "no data" (—). */
+function formatRatioPct(value: number | null | undefined, fallback = '—'): string {
+  if (value == null || !Number.isFinite(value)) return fallback;
+  return `${Math.round(value * 100)}%`;
+}
+
+/** Colour a duration by how long contributors are kept waiting. */
+function ageTone(days: number | null, warn = 14, bad = 30): string {
+  if (days == null) return 'fg.default';
+  if (days <= warn) return 'success.fg';
+  if (days <= bad) return 'attention.fg';
+  return 'danger.fg';
+}
+
+function MaintenanceTab({ owner, name }: { owner: string; name: string }) {
+  const { data, isLoading, isError } = useQuery<MaintainerStats>({
+    queryKey: ['repo-maintainer-stats', owner, name],
+    queryFn: async () => {
+      const r = await fetch(`/api/repos/${owner}/${name}/maintainer-stats`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  if (isLoading) return <PanelLoading />;
+  if (isError || !data) return <PanelError message="Failed to load maintainer stats." />;
+  if (!data.hasData) {
+    return (
+      <PanelEmpty
+        title="No miner activity cached yet"
+        message="No registered gittensor miner has an open or merged PR (or a discovered issue) cached for this repository yet. Stats appear once the poller has synced miner contributions."
+      />
+    );
+  }
+
+  const rs = data.reviewSpeed;
+  const ir = data.issueResponse;
+  const tp = data.throughput;
+  const bl = data.backlog;
+  const rp = data.responsiveness;
+  const prHead = headlineReviewSpeed(data);
+  const issueHead = headlineIssueResponse(data);
+  // PR figures only when the repo rewards PRs; issue figures only when it
+  // rewards issue discovery. A 100% issue-discovery repo never shows merge speed.
+  const hasPr = data.issueDiscoveryShare < 1;
+  const hasIssue = data.issueDiscoveryShare > 0;
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
+          <Heading sx={{ fontSize: 4, m: 0 }}>Maintainer Performance</Heading>
+          {data.issueDiscoveryEnabled ? (
+            <Label variant="accent">issue discovery · {Math.round(data.issueDiscoveryShare * 100)}%</Label>
+          ) : null}
+        </Box>
+        <Text sx={{ color: 'fg.muted' }}>
+          How responsive maintainers are to{' '}
+          <Text as="span" sx={{ fontWeight: 600, color: 'fg.default' }}>gittensor miners&apos;</Text> contributions —
+          restricted to registered miners&apos; work.
+          {hasPr && hasIssue
+            ? ' This repo rewards both PRs and issue discovery, so both gauges apply.'
+            : hasIssue
+              ? ' This repo rewards issue discovery, so issue response — not PR merges — is the scored work.'
+              : ' Review speed is how fast miner PRs get merged.'}
+        </Text>
+      </Box>
+
+      {/* Adaptive gauge hero(es) — PR review speed and/or issue response */}
+      {hasPr ? (
+        <SpeedGaugeHero
+          icon={StopwatchIcon}
+          title="Review speed"
+          head={prHead}
+          verdict={reviewSpeedVerdict(prHead.hours)}
+          valueLabel="typical merge time"
+          sampleNoun="miner PRs"
+          verb="merged"
+          extra={{ label: 'of all merges here', value: tp.minerMergeShare }}
+        />
+      ) : null}
+      {hasIssue ? (
+        <SpeedGaugeHero
+          icon={IssueOpenedIcon}
+          title="Issue response"
+          head={issueHead}
+          verdict={issueResponseVerdict(issueHead.hours)}
+          valueLabel="typical close time"
+          sampleNoun="miner issues"
+          verb="closed"
+          extra={{ label: 'of issues get closed', value: rp.issueCloseRate }}
+        />
+      ) : null}
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], gap: 3 }}>
+        {hasPr ? (
+          <Panel>
+            <Box sx={{ p: 3 }}>
+              <PanelHeader icon={StopwatchIcon} title="Review Speed" />
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <MetricRow label="Typical merge time" hint={`last ${rs.windowDays} days`} value={formatDurationHours(rs.medianHoursToMerge)} />
+                <MetricRow label="9 in 10 merged within" hint="the slow tail" value={formatDurationHours(rs.p90HoursToMerge)} />
+                <MetricRow label="Typical (all-time)" value={formatDurationHours(rs.allTimeMedianHoursToMerge)} />
+                <MetricRow label="Miner PRs in window" value={rs.sampleSize.toLocaleString()} last />
+              </Box>
+            </Box>
+          </Panel>
+        ) : null}
+
+        {hasPr ? (
+          <Panel>
+            <Box sx={{ p: 3 }}>
+              <PanelHeader icon={GitMergeIcon} title="PR Throughput" />
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+                <CountBox label="PRs merged · 30d" value={tp.mergedPrs30d} />
+                <CountBox label="PRs merged · all-time" value={tp.mergedPrsTotal} />
+                <CountBox label="Open PRs" value={bl.openPrs} />
+                <CountBox label="Resolved PRs" value={tp.resolvedPrs} hint="merged + closed" />
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <MetricRow label="Merge rate" hint="merged of resolved" value={formatRatioPct(tp.mergeRate)} />
+                <MetricRow label="Miner share of merges" hint="vs all contributors" value={formatRatioPct(tp.minerMergeShare)} last />
+              </Box>
+            </Box>
+          </Panel>
+        ) : null}
+
+        {hasPr ? (
+          <Panel>
+            <Box sx={{ p: 3 }}>
+              <PanelHeader icon={InboxIcon} title="PR Backlog" />
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <MetricRow label="Open PRs" value={bl.openPrs.toLocaleString()} />
+                <MetricRow label="Median open-PR age" value={<Text sx={{ color: ageTone(bl.medianOpenPrAgeDays) }}>{formatDurationDays(bl.medianOpenPrAgeDays)}</Text>} />
+                <MetricRow label="Oldest open PR" value={formatDurationDays(bl.oldestOpenPrDays)} />
+                <MetricRow
+                  label={`Stale PRs (>${bl.staleThresholdDays}d)`}
+                  value={<Text sx={{ color: bl.stalePrs > 0 ? 'danger.fg' : 'success.fg' }}>{bl.stalePrs.toLocaleString()}</Text>}
+                  last
+                />
+              </Box>
+            </Box>
+          </Panel>
+        ) : null}
+
+        {hasIssue ? (
+          <Panel>
+            <Box sx={{ p: 3 }}>
+              <PanelHeader icon={IssueOpenedIcon} title="Issue Response" />
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+                <CountBox label="Closed · 30d" value={tp.issuesClosed30d} />
+                <CountBox label="Closed · all-time" value={rp.closedIssues} />
+                <CountBox label="Open issues" value={bl.openIssues} />
+                <CountBox label="Closes in window" value={ir.sampleSize} />
+              </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                <MetricRow label="Typical close time" hint={`last ${ir.windowDays} days`} value={formatDurationHours(ir.medianHoursToClose)} />
+                <MetricRow label="9 in 10 closed within" value={formatDurationHours(ir.p90HoursToClose)} />
+                <MetricRow label="Close rate" hint="closed of all issues" value={formatRatioPct(rp.issueCloseRate)} last />
+              </Box>
+            </Box>
+          </Panel>
+        ) : null}
+      </Box>
+
+      <Text sx={{ fontSize: 0, color: 'fg.subtle' }}>
+        Updated {formatRelativeTime(data.generatedAt)} · derived from cached PR/issue timestamps.
+      </Text>
+    </Box>
+  );
+}
+
+function PanelHeader({ icon: IconCmp, title }: { icon: Icon; title: string }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+      <IconCmp size={16} />
+      <Heading sx={{ fontSize: 2, fontWeight: 700, m: 0 }}>{title}</Heading>
+    </Box>
+  );
+}
+
+interface GaugeHead {
+  hours: number | null;
+  p90Hours: number | null;
+  sampleSize: number;
+  scope: 'window' | 'all-time';
+  windowDays: number;
+}
+
+/** Log-scale gauge (Primer). Drives both the PR review-speed and the issue-
+ *  response heroes; same scale/colours as the /repositories drawer via the
+ *  shared helpers in @/lib/api-types, so the two surfaces always agree. */
+function SpeedGaugeHero({
+  icon: IconCmp,
+  title,
+  head,
+  verdict,
+  valueLabel,
+  sampleNoun,
+  verb,
+  extra,
+}: {
+  icon: Icon;
+  title: string;
+  head: GaugeHead;
+  verdict: { label: string; color: string };
+  valueLabel: string;
+  sampleNoun: string;
+  verb: string;
+  extra?: { label: string; value: number | null };
+}) {
+  const posMed = reviewSpeedGaugePos(head.hours);
+  const posP90 = reviewSpeedGaugePos(head.p90Hours);
+  const scopeLabel = head.scope === 'window' ? `last ${head.windowDays} days` : 'all-time';
+  return (
+    <Panel>
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 3, flexWrap: 'wrap' }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'fg.muted', mb: 1 }}>
+              <IconCmp size={14} />
+              <Text sx={{ fontSize: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</Text>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
+              <Text sx={{ fontSize: 6, fontWeight: 700, fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', lineHeight: 1, color: verdict.color }}>
+                {formatDurationHours(head.hours)}
+              </Text>
+              <Text sx={{ fontSize: 1, color: 'fg.muted' }}>{valueLabel}</Text>
+            </Box>
+          </Box>
+          <Box
+            as="span"
+            sx={{
+              px: 2,
+              py: '3px',
+              borderRadius: 6,
+              fontSize: 0,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              border: '1px solid',
+              whiteSpace: 'nowrap',
+              color: verdict.color,
+              bg: `${verdict.color}1a`,
+              borderColor: `${verdict.color}44`,
+            }}
+          >
+            {verdict.label}
+          </Box>
+        </Box>
+
+        {posMed != null && (
+          <Box sx={{ mt: 3 }}>
+            <Box sx={{ position: 'relative', height: '8px', borderRadius: 6, bg: 'border.default' }}>
+              <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${posMed * 100}%`, borderRadius: 6, bg: verdict.color }} />
+              {posP90 != null && posP90 > posMed && (
+                <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `${posMed * 100}%`, width: `${(posP90 - posMed) * 100}%`, borderRadius: 6, bg: `${verdict.color}22` }} />
+              )}
+              <Box sx={{ position: 'absolute', left: `${posMed * 100}%`, top: '-4px', width: '16px', height: '16px', ml: '-8px', borderRadius: '50%', bg: verdict.color, border: '2px solid', borderColor: 'canvas.default' }} />
+              {posP90 != null && posP90 > posMed && (
+                <Box sx={{ position: 'absolute', left: `${posP90 * 100}%`, top: '-2px', width: '2px', height: '12px', ml: '-1px', bg: `${verdict.color}aa` }} />
+              )}
+            </Box>
+            <Box sx={{ position: 'relative', height: '14px', mt: 1 }}>
+              {REVIEW_SPEED_GAUGE_TICKS.map((t) => (
+                <Text
+                  key={t.label}
+                  sx={{ position: 'absolute', left: `${(reviewSpeedGaugePos(t.hours) ?? 0) * 100}%`, transform: 'translateX(-50%)', fontSize: '9px', color: 'fg.subtle', fontFamily: 'mono' }}
+                >
+                  {t.label}
+                </Text>
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        <Text sx={{ display: 'block', fontFamily: 'mono', fontSize: 0, color: 'fg.muted', mt: 2 }}>
+          {head.sampleSize.toLocaleString()} {sampleNoun} · {scopeLabel}
+          {head.p90Hours != null ? ` · 9 in 10 ${verb} within ${formatDurationHours(head.p90Hours)}` : ''}
+          {extra && extra.value != null ? ` · ${Math.round(extra.value * 100)}% ${extra.label}` : ''}
+        </Text>
+      </Box>
+    </Panel>
+  );
+}
+
+function MetricRow({ label, value, hint, last }: { label: string; value: React.ReactNode; hint?: string; last?: boolean }) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: 3,
+        py: '8px',
+        borderBottom: last ? 'none' : '1px solid',
+        borderColor: 'border.muted',
+      }}
+    >
+      <Box sx={{ minWidth: 0 }}>
+        <Text sx={{ fontSize: 1, color: 'fg.default' }}>{label}</Text>
+        {hint && <Text sx={{ display: 'block', fontSize: 0, color: 'fg.subtle' }}>{hint}</Text>}
+      </Box>
+      <Box sx={{ fontFamily: 'mono', fontWeight: 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{value}</Box>
+    </Box>
+  );
 }
 
 function RepoCheckTab({ owner, name }: { owner: string; name: string }) {

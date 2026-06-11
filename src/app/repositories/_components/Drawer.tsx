@@ -16,7 +16,17 @@ import {
   type RepoRow,
 } from '../_lib/incentives';
 import { squarify } from '../_lib/squarify';
+import { formatDurationHours, formatDurationDays } from '@/lib/format';
 import type { RepoMiner, RepoMinersResponse } from '@/types/entities';
+import {
+  headlineReviewSpeed,
+  headlineIssueResponse,
+  reviewSpeedVerdict,
+  issueResponseVerdict,
+  reviewSpeedGaugePos,
+  REVIEW_SPEED_GAUGE_TICKS,
+  type MaintainerStats,
+} from '@/lib/api-types';
 
 interface DrawerProps {
   open: boolean;
@@ -68,6 +78,9 @@ export default function Drawer({
     cred >= 0.85 ? 'var(--color-moss-400)' :
     cred >= 0.7  ? 'var(--color-enh)' :
     'var(--color-refact)';
+  // PR slice is 0 — PR merges aren't scored, so the merge-rate / resolved
+  // (PR-feasibility) columns don't apply. Show just the emission split.
+  const issueOnly = r.issue >= 1;
 
   const labelsContent = r.labels
     ? Object.entries(r.labels)
@@ -193,9 +206,7 @@ export default function Drawer({
 
           {/* TAO emission */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              Daily emission
-            </div>
+            <SectionTitle>Emission</SectionTitle>
             <div className={`${styles.num2xl} tnum ${r.share === 0 ? styles.textFgFaint : styles.textTao}`} style={{ marginBottom: 4 }}>
               {formatTAO(repoDailyTAO(r, subnetTAO))}
               <span className={styles.textFgMute} style={{ fontSize: 16, marginLeft: 8 }}>TAO/day</span>
@@ -209,7 +220,7 @@ export default function Drawer({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--color-moss-400)' }} />
-                    <span style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                    <span style={{ fontSize: 10.5, color: 'var(--fg-default)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                       Maintainer cut
                     </span>
                   </div>
@@ -264,24 +275,26 @@ export default function Drawer({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gridTemplateColumns: issueOnly ? '1fr' : 'repeat(4, 1fr)',
                   gap: 12,
                   marginTop: 12,
                   paddingTop: 12,
                   borderTop: '1px solid var(--softer-border, rgba(255,255,255,0.04))',
                 }}
               >
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-                    PR slice
+                {!issueOnly ? (
+                  <div>
+                    <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+                      PR slice
+                    </div>
+                    <div className={`mono ${styles.numM} tnum ${styles.textPr}`}>{formatTAO(repoPRTAO(r, subnetTAO))} τ/d</div>
+                    <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
+                      {(r.maintCut || 0) > 0
+                        ? `${((1 - r.maintCut) * (1 - r.issue) * 100).toFixed(0)}% of slice (after the cut)`
+                        : `${((1 - r.issue) * 100).toFixed(0)}% of slice`}
+                    </div>
                   </div>
-                  <div className={`mono ${styles.numM} tnum ${styles.textPr}`}>{formatTAO(repoPRTAO(r, subnetTAO))} τ/d</div>
-                  <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
-                    {(r.maintCut || 0) > 0
-                      ? `${((1 - r.maintCut) * (1 - r.issue) * 100).toFixed(0)}% of slice (after the cut)`
-                      : `${((1 - r.issue) * 100).toFixed(0)}% of slice`}
-                  </div>
-                </div>
+                ) : null}
                 <div>
                   <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
                     Issue discovery slice
@@ -293,45 +306,42 @@ export default function Drawer({
                       : `${(r.issue * 100).toFixed(0)}% of slice`}
                   </div>
                 </div>
-                <div title="Merge rate over the last 30 days = merged ÷ (merged + closed). A forecast of how welcoming the repo is right now.">
-                  <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-                    Merge rate · 30d
-                  </div>
-                  <div className={`mono ${styles.numM} tnum`} style={{ color: credColor }}>
-                    {(cred * 100).toFixed(0)}%
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
-                    merged ÷ resolved
-                  </div>
-                </div>
-                <div title="PRs that received a final decision (merged or closed) in the last 30 days — the denominator behind the merge-rate %.">
-                  <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
-                    Resolved
-                  </div>
-                  <div className={`mono ${styles.numM} tnum ${styles.textFgDim}`}>
-                    {r.activity.merged30d + r.activity.closed30d}
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
-                    PRs · last 30d
-                  </div>
-                </div>
+                {!issueOnly ? (
+                  <>
+                    <div title="Merge rate over the last 30 days = merged ÷ (merged + closed). A forecast of how welcoming the repo is right now.">
+                      <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+                        Merge rate · 30d
+                      </div>
+                      <div className={`mono ${styles.numM} tnum`} style={{ color: credColor }}>
+                        {(cred * 100).toFixed(0)}%
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
+                        merged ÷ resolved
+                      </div>
+                    </div>
+                    <div title="PRs that received a final decision (merged or closed) in the last 30 days — the denominator behind the merge-rate %.">
+                      <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>
+                        Resolved
+                      </div>
+                      <div className={`mono ${styles.numM} tnum ${styles.textFgDim}`}>
+                        {r.activity.merged30d + r.activity.closed30d}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--border-strong)', marginTop: 2 }}>
+                        PRs · last 30d
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
 
-          {/* Activity */}
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              Activity · 30d{' '}
-              <span className={`mono ${styles.textFgFaint}`} style={{ textTransform: 'none', letterSpacing: 0 }}>PRs created in the last 30 days · open count live from GitHub</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-              <ActivityStat value={r.activity.merged30d} label="merged PRs" tone="strong" />
-              <ActivityStat value={r.activity.openPRs} label="open PRs" tone="dim" />
-              <ActivityStat value={r.activity.closed30d} label="closed PRs" tone="dim" />
-              <ActivityStat value={r.activity.contribs} label="contributors" tone="strong" />
-            </div>
-          </div>
+          {/* Activity — PR activity, or issue activity for issue-only repos */}
+          <ActivitySection r={r} />
+
+          {/* Maintainer performance — real review-speed / backlog / issue
+            * responsiveness from /api/repos/.../maintainer-stats. */}
+          <MaintainerSection owner={r.owner} name={r.name} />
 
           {/* Miner contributors — per-repo ranked treemap from the validator.
             * Eligible miners are full-opacity; historical-but-ineligible
@@ -347,9 +357,8 @@ export default function Drawer({
             * matches the HTML; show a loading-style placeholder while the
             * /api/repos/metadata endpoint is still fetching. */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              Primary languages
-            </div>
+            <SectionTitle>Languages</SectionTitle>
+            <SectionNote>Primary, by share of code</SectionNote>
             {r.langs.length > 0 ? (
               <div className={styles.drawerLangGrid}>
                 {r.langs.map(([n, p]) => {
@@ -383,9 +392,8 @@ export default function Drawer({
 
           {/* Labels */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              Label multipliers
-            </div>
+            <SectionTitle>Labels</SectionTitle>
+            <SectionNote>Per-label PR score multipliers</SectionNote>
             {labelsContent ?? <div style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>No per-label multipliers. PRs score at default ×1.00.</div>}
             {r.labels ? (
               <div style={{ fontSize: 11, color: 'var(--fg-subtle)', marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--softer-border, rgba(255,255,255,0.04))' }}>
@@ -396,17 +404,15 @@ export default function Drawer({
 
           {/* Eligibility */}
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-              Eligibility gate
-            </div>
+            <SectionTitle>Eligibility</SectionTitle>
+            <SectionNote>Requirements to earn from this repo</SectionNote>
             {eligibilityContent}
           </div>
 
           {/* Raw config */}
           <div style={{ padding: '16px 20px' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-              Raw config · master_repositories.json
-            </div>
+            <SectionTitle>Config</SectionTitle>
+            <SectionNote>master_repositories.json</SectionNote>
             <pre
               className="mono"
               style={{
@@ -659,9 +665,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
   if (isLoading) {
     return (
       <div style={containerStyle}>
-        <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-          Active miners
-        </div>
+        <SectionTitle>Miners</SectionTitle>
         <div style={{ fontSize: 12, color: 'var(--fg-subtle)', fontStyle: 'italic' }}>Loading miners…</div>
       </div>
     );
@@ -669,9 +673,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
   if (isError) {
     return (
       <div style={containerStyle}>
-        <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-          Active miners
-        </div>
+        <SectionTitle>Miners</SectionTitle>
         <div style={{ fontSize: 12, color: 'var(--color-refact)' }}>Failed to load miner contributors.</div>
       </div>
     );
@@ -679,9 +681,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
   if (allRows.length === 0) {
     return (
       <div style={containerStyle}>
-        <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-          Active miners
-        </div>
+        <SectionTitle>Miners</SectionTitle>
         <div style={{ fontSize: 12, color: 'var(--fg-subtle)', fontStyle: 'italic', textAlign: 'center', padding: '24px 0' }}>
           No miner data available for this repo yet.
         </div>
@@ -691,14 +691,7 @@ function MinersSection({ owner, name, repoPRTAOValue }: { owner: string; name: s
 
   return (
     <div style={containerStyle}>
-      <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
-        <span>
-          Active miners{' '}
-          <span className={`mono ${styles.textFgFaint}`} style={{ textTransform: 'none', letterSpacing: 0 }}>
-            top {TOP_ACTIVE_MINERS_LIMIT} by repo score
-          </span>
-        </span>
-      </div>
+      <SectionTitle>Miners</SectionTitle>
 
       <div className={styles.minersHeader}>
         <div className={styles.minersHeaderMain}>
@@ -1018,6 +1011,305 @@ function MinerTileContent({
           <span>{eligible ? 'score' : '0 T/Day'}</span>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ─── Maintainer performance section ──────────────────────────────────────────
+// Review-speed gauge scale (30 min → 30 days, log) lives in @/lib/api-types so
+// the repo-page scorecard renders the identical gauge.
+function pct01(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '—';
+  return `${Math.round(v * 100)}%`;
+}
+
+/** Colour for open-PR backlog age — green when fresh, red once contributors
+ *  are waiting longer than the stale threshold. Mirrors the verdict palette. */
+function ageColor(days: number | null): string {
+  if (days == null) return 'var(--fg-default)';
+  if (days <= 7) return '#86efac';
+  if (days <= 21) return '#9eb872';
+  if (days <= 30) return '#eab308';
+  return '#c5503a';
+}
+
+function MaintainerSection({ owner, name }: { owner: string; name: string }) {
+  const { data, isLoading, isError } = useQuery<MaintainerStats>({
+    queryKey: ['repo-maintainer-stats', owner, name],
+    queryFn: async ({ signal }) => {
+      const res = await fetch(
+        `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/maintainer-stats`,
+        { signal },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<MaintainerStats>;
+    },
+    staleTime: 120_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const containerStyle = {
+    padding: '16px 20px',
+    borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))',
+  } as const;
+  const header = <SectionTitle>Performance</SectionTitle>;
+
+  if (isLoading) {
+    return (
+      <div style={containerStyle}>
+        {header}
+        <div style={{ fontSize: 12, color: 'var(--fg-subtle)', fontStyle: 'italic' }}>Loading review stats…</div>
+      </div>
+    );
+  }
+  if (isError || !data || !data.hasData) {
+    return (
+      <div style={containerStyle}>
+        {header}
+        <div style={{ fontSize: 12, color: 'var(--fg-subtle)' }}>No gittensor-miner activity cached for this repo yet.</div>
+      </div>
+    );
+  }
+
+  const prHead = headlineReviewSpeed(data);
+  const issueHead = headlineIssueResponse(data);
+  // Show the PR review-speed gauge only when the repo actually rewards PRs, and
+  // the issue-response gauge only when it rewards issue discovery. A 100%
+  // issue-discovery repo (PR slice 0) never shows "median to merge" — those PRs
+  // aren't the scored work; a mixed repo shows both.
+  const hasPr = data.issueDiscoveryShare < 1;
+  const hasIssue = data.issueDiscoveryShare > 0;
+
+  const bl = data.backlog;
+  const rp = data.responsiveness;
+  const tp = data.throughput;
+
+  // Responsiveness/quality stats only — never the raw volume counts (those live
+  // in the Activity section, so nothing repeats). Issue-only repos show no grid:
+  // the gauge + its subline already carry the full responsiveness story.
+  type PerfStatItem = { value: string; label: string; hint?: string; color: string };
+  const medianWait: PerfStatItem = { value: formatDurationDays(bl.medianOpenPrAgeDays), label: 'median wait', color: ageColor(bl.medianOpenPrAgeDays) };
+  const stalePrs: PerfStatItem = { value: bl.stalePrs.toLocaleString(), label: `stale · >${bl.staleThresholdDays}d`, color: bl.stalePrs > 0 ? '#eab308' : 'var(--fg-default)' };
+  const mergeRate: PerfStatItem = { value: pct01(tp.mergeRate), label: 'merge rate', color: 'var(--fg-default)' };
+  const grid: PerfStatItem[] =
+    hasPr && hasIssue
+      ? [medianWait, stalePrs, mergeRate, { value: pct01(rp.issueCloseRate), label: 'close rate', color: 'var(--fg-default)' }]
+      : hasIssue
+        ? []
+        : [medianWait, { value: formatDurationDays(bl.oldestOpenPrDays), label: 'oldest open', color: 'var(--fg-default)' }, stalePrs, mergeRate];
+
+  return (
+    <div style={containerStyle}>
+      {header}
+      <SectionNote>Responsiveness to gittensor miners&apos; work</SectionNote>
+
+      {data.issueDiscoveryEnabled ? (
+        <div style={{ marginTop: -4, marginBottom: 12 }}>
+          <span className={`${styles.badge} ${styles.badgeIssue}`} title="This repo rewards miners for discovering valid issues — the issue figures below are the ones that matter here.">
+            issue discovery · {Math.round(data.issueDiscoveryShare * 100)}% of emissions
+          </span>
+        </div>
+      ) : null}
+
+      {hasPr ? (
+        <SpeedGauge
+          medianH={prHead.hours}
+          p90H={prHead.p90Hours}
+          verdict={reviewSpeedVerdict(prHead.hours)}
+          valueLabel="typical merge time"
+          subline={
+            <>
+              {prHead.scope === 'window' ? `last ${prHead.windowDays} days` : 'all-time'}
+              {prHead.p90Hours != null ? <> · 9 in 10 merged within <span className={styles.textFgDim}>{formatDurationHours(prHead.p90Hours)}</span></> : null}
+              {tp.minerMergeShare != null ? <> · <span className={styles.textFgDim}>{pct01(tp.minerMergeShare)}</span> of all merges here</> : null}
+            </>
+          }
+        />
+      ) : null}
+
+      {hasIssue ? (
+        <SpeedGauge
+          medianH={issueHead.hours}
+          p90H={issueHead.p90Hours}
+          verdict={issueResponseVerdict(issueHead.hours)}
+          valueLabel="typical close time"
+          subline={
+            <>
+              {issueHead.scope === 'window' ? `last ${issueHead.windowDays} days` : 'all-time'}
+              {issueHead.p90Hours != null ? <> · 9 in 10 closed within <span className={styles.textFgDim}>{formatDurationHours(issueHead.p90Hours)}</span></> : null}
+              {rp.issueCloseRate != null ? <> · <span className={styles.textFgDim}>{pct01(rp.issueCloseRate)}</span> of issues get closed</> : null}
+            </>
+          }
+        />
+      ) : null}
+
+      {/* Responsiveness stats (quality only) — omitted for issue-only repos,
+        * where the gauge + subline already tell the whole story. */}
+      {grid.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          {grid.map((s) => (
+            <PerfStat key={s.label} value={s.value} label={s.label} hint={s.hint} color={s.color} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One review-speed/issue-response gauge: big median value + verdict chip, the
+ *  log-scale bar (filled to the median, faded band to p90), and a subline. */
+function SpeedGauge({
+  medianH,
+  p90H,
+  verdict,
+  valueLabel,
+  subline,
+}: {
+  medianH: number | null;
+  p90H: number | null;
+  verdict: { label: string; color: string };
+  valueLabel: string;
+  subline: React.ReactNode;
+}) {
+  const posMed = reviewSpeedGaugePos(medianH);
+  const posP90 = reviewSpeedGaugePos(p90H);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span className={`${styles.num2xl} tnum`} style={{ color: verdict.color, fontSize: 30 }}>
+            {formatDurationHours(medianH)}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--fg-subtle)' }}>{valueLabel}</span>
+        </div>
+        <span className={styles.badge} style={{ background: `${verdict.color}1a`, color: verdict.color, borderColor: `${verdict.color}44` }}>
+          {verdict.label}
+        </span>
+      </div>
+
+      {posMed != null ? (
+        <div style={{ margin: '14px 0 6px' }}>
+          <div style={{ position: 'relative', height: 6, borderRadius: 3, background: 'var(--bg-inset)' }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${posMed * 100}%`, borderRadius: 3, background: verdict.color }} />
+            {posP90 != null && posP90 > posMed ? (
+              <div
+                style={{ position: 'absolute', top: 0, bottom: 0, left: `${posMed * 100}%`, width: `${(posP90 - posMed) * 100}%`, background: `${verdict.color}22`, borderRadius: 3 }}
+                title={`90th percentile · ${formatDurationHours(p90H)}`}
+              />
+            ) : null}
+            <div
+              style={{ position: 'absolute', left: `${posMed * 100}%`, top: -3, width: 12, height: 12, marginLeft: -6, borderRadius: '50%', background: verdict.color, border: '2px solid var(--bg-subtle)' }}
+              title={`median · ${formatDurationHours(medianH)}`}
+            />
+            {posP90 != null && posP90 > posMed ? (
+              <div style={{ position: 'absolute', left: `${posP90 * 100}%`, top: -2, width: 2, height: 10, marginLeft: -1, background: `${verdict.color}aa` }} />
+            ) : null}
+          </div>
+          <div style={{ position: 'relative', height: 11, marginTop: 5 }}>
+            {REVIEW_SPEED_GAUGE_TICKS.map((t) => (
+              <span
+                key={t.label}
+                className="mono"
+                style={{ position: 'absolute', left: `${(reviewSpeedGaugePos(t.hours) ?? 0) * 100}%`, transform: 'translateX(-50%)', fontSize: 8.5, color: 'var(--fg-faint)' }}
+              >
+                {t.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mono" style={{ fontSize: 10.5, color: 'var(--fg-subtle)', marginTop: posMed != null ? 0 : 8 }}>
+        {subline}
+      </div>
+    </div>
+  );
+}
+
+function PerfStat({ value, label, hint, color }: { value: string; label: string; hint?: string; color: string }) {
+  return (
+    <div>
+      <div className={`mono ${styles.numM} tnum`} style={{ color }}>{value}</div>
+      <div style={{ fontSize: 10.5, color: 'var(--fg-subtle)', marginTop: 2 }}>{label}</div>
+      {hint ? <div className="mono" style={{ fontSize: 9.5, color: 'var(--fg-faint)', marginTop: 1 }}>{hint}</div> : null}
+    </div>
+  );
+}
+
+const SECTION_STRIP_STYLE: React.CSSProperties = {
+  fontSize: 10.5,
+  color: 'var(--fg-default)',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.07em',
+  margin: '-16px -20px 12px',
+  padding: '9px 20px',
+  background: 'var(--soft-fill)',
+  borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))',
+};
+
+/** One-word section header rendered as a full-width tinted strip. Any
+ *  descriptive line goes in the section body via {@link SectionNote}. */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <div style={SECTION_STRIP_STYLE}>{children}</div>;
+}
+
+/** Faint one-line description at the top of a section's body, under its strip. */
+function SectionNote({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={`mono ${styles.textFgFaint}`} style={{ fontSize: 10.5, lineHeight: 1.45, marginTop: -2, marginBottom: 12, opacity: 0.7 }}>
+      {children}
+    </div>
+  );
+}
+
+/** Recent activity — PR activity (merged/open/closed PRs) for PR repos, or
+ *  issue activity for issue-only repos, where PR counts are meaningless. Issue
+ *  counts come from the cached maintainer-stats (miner-filtered, same query the
+ *  Performance section uses). */
+function ActivitySection({ r }: { r: RepoRow }) {
+  const issueOnly = r.issue >= 1;
+  const { data: stats } = useQuery<MaintainerStats>({
+    queryKey: ['repo-maintainer-stats', r.owner, r.name],
+    queryFn: async ({ signal }) => {
+      const res = await fetch(
+        `/api/repos/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.name)}/maintainer-stats`,
+        { signal },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<MaintainerStats>;
+    },
+    enabled: issueOnly,
+    staleTime: 120_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const sectionStyle = { padding: '16px 20px', borderBottom: '1px solid var(--soft-border, rgba(255,255,255,0.06))' } as const;
+
+  if (issueOnly) {
+    return (
+      <div style={sectionStyle}>
+        <SectionTitle>Activity</SectionTitle>
+        <SectionNote>Miner-discovered issues · closed in the last 30 days</SectionNote>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <ActivityStat value={stats?.throughput.issuesClosed30d ?? 0} label="closed · 30d" tone="strong" />
+          <ActivityStat value={stats?.backlog.openIssues ?? 0} label="open issues" tone="dim" />
+          <ActivityStat value={stats?.responsiveness.closedIssues ?? 0} label="closed total" tone="strong" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={sectionStyle}>
+      <SectionTitle>Activity</SectionTitle>
+      <SectionNote>PRs created in the last 30 days · open count live from GitHub</SectionNote>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <ActivityStat value={r.activity.merged30d} label="merged PRs" tone="strong" />
+        <ActivityStat value={r.activity.openPRs} label="open PRs" tone="dim" />
+        <ActivityStat value={r.activity.closed30d} label="closed PRs" tone="dim" />
+        <ActivityStat value={r.activity.contribs} label="contributors" tone="strong" />
+      </div>
     </div>
   );
 }
