@@ -94,6 +94,7 @@ export default function MaintainersPage() {
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('reward');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [showGuide, setShowGuide] = useState(false);
 
   const dataQuery = useQuery<MaintainersResponse>({
     queryKey: ['all-maintainers'],
@@ -172,6 +173,8 @@ export default function MaintainersPage() {
           </Text>
         ) : null}
       </Box>
+
+      <GradeGuide open={showGuide} onToggle={() => setShowGuide((v) => !v)} />
 
       {/* Controls */}
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', mb: 3 }}>
@@ -576,6 +579,76 @@ function SortChip({ active, onClick, label }: { active: boolean; onClick: () => 
       }}
     >
       {label}
+    </Box>
+  );
+}
+
+function GuideRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '170px 1fr'], gap: [0, 2], mt: 2 }}>
+      <Text sx={{ color: 'fg.default', fontWeight: 500 }}>{label}</Text>
+      <Text sx={{ color: 'fg.muted' }}>{children}</Text>
+    </Box>
+  );
+}
+
+const GRADE_BANDS: ReadonlyArray<[string, string]> = [['A', '90+'], ['B', '80+'], ['C', '70+'], ['D', '60+'], ['F', '<60']];
+
+function GradeGuide({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <Box sx={{ mb: 3, border: '1px solid', borderColor: 'border.subtle', borderRadius: 2, overflow: 'hidden', bg: 'canvas.subtle' }}>
+      <Box
+        as="button"
+        type="button"
+        onClick={onToggle}
+        sx={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 2, px: 3, py: 2,
+          border: 'none', bg: 'transparent', cursor: 'pointer', color: 'fg.default', fontSize: 1, textAlign: 'left',
+        }}
+      >
+        <Box sx={{ color: 'fg.subtle', display: 'flex' }}>{open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}</Box>
+        <Box sx={{ color: 'accent.fg', display: 'flex' }}><InfoIcon size={14} /></Box>
+        <Text sx={{ fontWeight: 500 }}>How grading works</Text>
+        <Text sx={{ color: 'fg.subtle', fontSize: 0, display: ['none', 'inline'] }}>— what A–F means and how to read it</Text>
+      </Box>
+
+      {open ? (
+        <Box sx={{ px: 3, pb: 3, pt: 2, fontSize: 1, color: 'fg.muted', lineHeight: 1.55, borderTop: '1px solid', borderColor: 'border.muted' }}>
+          <Text sx={{ display: 'block' }}>
+            One A–F read of how responsive a repo is to miner work — how fast miner PRs merge / issues resolve,
+            whether that work actually lands, and how healthy the open queue is.
+          </Text>
+
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, mt: 2, alignItems: 'baseline' }}>
+            {GRADE_BANDS.map(([letter, range]) => (
+              <Box key={letter} sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                <Text sx={{ fontWeight: 700, color: LETTER_COLOR[letter] }}>{letter}</Text>
+                <Text className="tnum" sx={{ fontSize: 0, color: 'fg.subtle' }}>{range}</Text>
+              </Box>
+            ))}
+          </Box>
+
+          <GuideRow label="PR repos">merge speed 50% · acceptance (% of miner PRs merged) 30% · backlog health 20%</GuideRow>
+          <GuideRow label="Issue-discovery repos">resolve speed 60% · completion rate 40%</GuideRow>
+          <GuideRow label="Mixed repos">the two, blended by the repo&apos;s issue-discovery share</GuideRow>
+          <GuideRow label="PR speed">≤12h very fast · ≤24h fast · ≤48h normal · ≤96h slow · slower very slow</GuideRow>
+          <GuideRow label="Issue speed">≤2d very fast · ≤1w fast · ≤3w normal · ≤6w slow · slower very slow</GuideRow>
+
+          <Text sx={{ display: 'block', mt: 3, fontWeight: 600, color: 'fg.default' }}>Reading it</Text>
+          <Box as="ul" sx={{ mt: 1, pl: '18px', '& li': { mb: 1 } }}>
+            <li><strong>A / B</strong> — miner work lands fast and mostly gets accepted, with a clean queue.</li>
+            <li><strong>D / F</strong> — miner PRs/issues stall, get rejected, or pile up.</li>
+            <li><strong>“*”</strong> — provisional: fewer than 5 resolved items, so treat it as low-confidence.</li>
+            <li>Pair the grade with the shipping numbers — a <strong>B over hundreds</strong> of merges is stronger evidence than an <strong>A over a handful</strong>.</li>
+          </Box>
+
+          <Text sx={{ display: 'block', mt: 3, fontWeight: 600, color: 'fg.default' }}>Caveats</Text>
+          <Box as="ul" sx={{ mt: 1, pl: '18px', '& li': { mb: 1 } }}>
+            <li>Repo-attributed: all of a repo&apos;s maintainers share its grade (an individual merge can&apos;t be credited — GitHub&apos;s PR list omits <code>merged_by</code>).</li>
+            <li>Speed reflects the repo&apos;s merge/close activity, which a <strong>bot or app with merge rights can drive</strong> — not necessarily the listed maintainers.</li>
+          </Box>
+        </Box>
+      ) : null}
     </Box>
   );
 }
