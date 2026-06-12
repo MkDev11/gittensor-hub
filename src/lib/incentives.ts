@@ -68,6 +68,15 @@ export function issuePool(repo: RepoEntry): number {
   return repoScoringPool(repo) * boundedShare(repo.issueDiscoveryShare);
 }
 
+/** Emission share reserved for a repo's registered maintainers — the slice the
+ *  scoring pool sets aside via `maintainerCut`, before PR/issue splitting. Zero
+ *  when the cut is zero. Pairs with {@link prPool}/{@link issuePool} (the three
+ *  sum to the repo's full OSS emission share) and is split evenly among a repo's
+ *  registered miner-maintainers. */
+export function maintainerPool(repo: RepoEntry): number {
+  return repo.emissionShare * OSS_SHARE * boundedShare(repo.maintainerCut);
+}
+
 export function bestLabelMultiplier(repo: RepoEntry): { label: string | null; multiplier: number } {
   const entries = Object.entries(repo.labelMultipliers ?? {});
   if (entries.length === 0) return { label: null, multiplier: repo.defaultLabelMultiplier || 1 };

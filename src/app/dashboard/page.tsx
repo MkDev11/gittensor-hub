@@ -2305,6 +2305,15 @@ function BestWorkShowcase({
                   };
                 })}
               />
+              <Box sx={{ mt: 2, textAlign: 'right' }}>
+                <Box
+                  as={Link}
+                  href="/maintainers"
+                  sx={{ fontSize: 0, color: 'accent.fg', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                >
+                  View all maintainers →
+                </Box>
+              </Box>
             </Box>
           </Box>
         </Box>

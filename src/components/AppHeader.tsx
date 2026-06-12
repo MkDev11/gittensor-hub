@@ -12,6 +12,7 @@ import {
   GlobeIcon,
   BookIcon,
   PeopleIcon,
+  ShieldCheckIcon,
   KebabHorizontalIcon,
 } from '@primer/octicons-react';
 import type { Icon } from '@primer/octicons-react';
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: ChecklistIcon },
   { href: '/explorer', label: 'Explorer', icon: GlobeIcon },
   { href: '/miners', label: 'Miners', icon: PeopleIcon },
+  { href: '/maintainers', label: 'Maintainers', icon: ShieldCheckIcon },
   { href: '/repositories', label: 'Repositories', icon: StackIcon },
   { href: '/issues', label: 'Issues', icon: IssueOpenedIcon },
   { href: '/pulls', label: 'Pull Requests', icon: GitPullRequestIcon },

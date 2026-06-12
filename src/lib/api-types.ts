@@ -252,7 +252,11 @@ export interface IssueResponseStats {
 export interface ThroughputStats {
   mergedPrs30d: number;
   mergedPrsTotal: number;
+  /** Closed in the last 30d, any reason (completed + not_planned + duplicate). */
   issuesClosed30d: number;
+  /** Closed as `completed` in the last 30d — resolved issue throughput (the
+   *  30d analogue of `responsiveness.completedIssues`). */
+  issuesCompleted30d: number;
   /** merged + closed-unmerged — the PRs the maintainer has acted on. */
   resolvedPrs: number;
   /** merged / resolved. null when nothing has been resolved yet. */
@@ -535,4 +539,75 @@ export function maintainerGrade(s: MaintainerStats): MaintainerGrade {
   // issue side, each only counted where that side is actually graded.
   const sample = (hasPr ? s.throughput.resolvedPrs : 0) + (hasIssue ? s.responsiveness.closedIssues : 0);
   return { score, letter: gradeLetter(score), sample, provisional: sample < GRADE_MIN_SAMPLE, pr, issue };
+}
+
+// ─── All-maintainers roster (the /maintainers page) ──────────────────────────
+// A person-centric companion to the repo-centric leaderboard: every maintainer
+// across every tracked repo, with how much work ships through the repos they
+// steward. "Shipping" is repo-attributed — GitHub's PR list endpoint omits
+// `merged_by`, so we cannot tell which individual merged a given PR; a repo's
+// throughput is credited to each of its maintainers. Reward is exact (split
+// evenly among a repo's registered miner-maintainers).
+
+/** One repo a maintainer stewards, with that repo's responsiveness + throughput. */
+export interface MaintainerRepoContribution {
+  repo: string; // owner/name
+  issueDiscoveryShare: number;
+  /** Fraction (0..1) of the repo's emission reserved for its maintainers — the
+   *  lever behind `rewardShare`. */
+  maintainerCut: number;
+  mode: 'PR' | 'issue' | 'mixed';
+  gradeLetter: MaintainerGrade['letter'];
+  gradeScore: number | null;
+  provisional: boolean;
+  /** Headline responsiveness (median hours) for the repo's dominant side. */
+  speedHours: number | null;
+  mergedPrsTotal: number;
+  mergedPrs30d: number;
+  /** Issues resolved (closed as `completed`) — all-time and last 30d. */
+  issuesCompleted: number;
+  issuesResolved30d: number;
+  /** This maintainer's τ-fraction from this repo (0 when not a registered miner). */
+  rewardShare: number;
+  /** Counts toward reward here — i.e. is a registered miner-maintainer of this repo. */
+  isRegisteredMaintainer: boolean;
+}
+
+/** A maintainer aggregated across every repo they steward. */
+export interface MaintainerSummary {
+  login: string;
+  githubId: string | null;
+  /** Is a registered Gittensor miner (and so earns maintainer reward somewhere). */
+  registered: boolean;
+  repoCount: number;
+  repos: MaintainerRepoContribution[];
+  // Shipping totals — summed over the repos they steward (repo-attributed).
+  // "Shipped" = delivered work: merged PRs + issues resolved as `completed`
+  // (rejections like not_planned don't count), consistently in both windows.
+  mergedPrsTotal: number;
+  mergedPrs30d: number;
+  issuesCompletedTotal: number;
+  issuesResolved30d: number;
+  /** mergedPrs30d + issuesResolved30d — the headline recent-shipping figure. */
+  shipped30d: number;
+  /** mergedPrsTotal + issuesCompletedTotal — all-time shipped. */
+  shippedTotal: number;
+  // Blended responsiveness grade across their repos (sample-weighted).
+  gradeScore: number | null;
+  gradeLetter: MaintainerGrade['letter'];
+  gradeSample: number;
+  /** Reward τ-fraction; multiply by the live miner-pool τ/day for τ/day. */
+  rewardShare: number;
+}
+
+export interface MaintainersResponse {
+  generatedAt: string;
+  /** True when figures are restricted to registered miners' work (false on a
+   *  miner-feed outage — every contributor then counts). */
+  minerFiltered: boolean;
+  /** True when at least one repo's maintainer roster was fetched from the mirror. */
+  rosterAvailable: boolean;
+  repoCount: number;
+  maintainerCount: number;
+  maintainers: MaintainerSummary[];
 }

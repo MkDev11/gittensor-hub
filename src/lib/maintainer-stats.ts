@@ -175,6 +175,7 @@ export function computeMaintainerStats(
   let completedIssues = 0; // closed as `completed` — the scored discoveries
   let openIssues = 0;
   let issuesClosed30 = 0;
+  let issuesCompleted30 = 0; // closed as `completed` within 30d — resolved throughput
   const issueCloseDays: number[] = []; // completed-only
   const allCloseHours: number[] = []; // completed-only
   const windowCloseHours: number[] = []; // completed-only
@@ -190,6 +191,7 @@ export function computeMaintainerStats(
       // Only `completed` closes count toward the time-to-resolve headline.
       if (it.reason === 'completed') {
         completedIssues++;
+        if (closedMs >= day30Start) issuesCompleted30++;
         if (Number.isFinite(closedMs) && Number.isFinite(createdMs)) {
           const hours = Math.max(0, (closedMs - createdMs) / HOUR_MS);
           issueCloseDays.push(hours / 24);
@@ -239,6 +241,7 @@ export function computeMaintainerStats(
       mergedPrs30d: merged30,
       mergedPrsTotal: mergedTotal,
       issuesClosed30d: issuesClosed30,
+      issuesCompleted30d: issuesCompleted30,
       resolvedPrs,
       mergeRate: ratio(mergedTotal, resolvedPrs),
       minerMergeShare: minerLogins ? ratio(mergedTotal, mergedAllContributors) : null,
