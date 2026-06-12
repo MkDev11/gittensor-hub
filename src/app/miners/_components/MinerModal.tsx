@@ -674,7 +674,7 @@ export default function MinerModal({
                   className={styles.mmSideStat}
                   title={firstDate ? `Earning SN74 rewards since ${firstDate} (capped at each repo's gittensor registration)` : undefined}
                 >
-                  <dt>Working age</dt>
+                  <dt>In the mines</dt>
                   <dd className={styles.mmMono}>
                     {worksLoading && !works ? (
                       <span className="gt-skeleton" style={{ display: 'inline-block', width: 44, height: 11, borderRadius: 4 }} />
