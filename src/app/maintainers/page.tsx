@@ -438,60 +438,81 @@ function MaintainerRow({
 }
 
 function RepoBreakdown({ m, minerPoolTAO }: { m: MaintainerSummary; minerPoolTAO: number }) {
+  // Columns line up with the parent table's GRID, so each repo's figures sit
+  // directly under Shipping / All-time / Grade / τ-day and visibly sum to the
+  // maintainer's aggregate row above.
   return (
-    <Box sx={{ bg: 'canvas.inset', px: 3, py: 2, borderTop: '1px solid', borderColor: 'border.muted' }}>
+    <Box sx={{ bg: 'canvas.inset', borderTop: '1px solid', borderColor: 'border.muted' }}>
       {m.repos.map((r, i) => {
         const tao = r.rewardShare * minerPoolTAO;
         const ship30 = r.mergedPrs30d + r.issuesResolved30d;
+        const total = r.mergedPrsTotal + r.issuesCompleted;
+        const modeLabel = r.mode === 'PR' ? 'PR review' : r.mode === 'issue' ? 'issue discovery' : 'mixed';
+        const cutPct = (r.maintainerCut * 100).toFixed(r.maintainerCut > 0 && r.maintainerCut < 0.1 ? 1 : 0);
         return (
           <Box
             key={`${r.repo}-${i}`}
             sx={{
-              display: 'grid',
-              gridTemplateColumns: ['1fr', 'minmax(160px,1.4fr) 72px 128px 80px 72px 90px'],
-              alignItems: 'center', gap: 2, py: '6px', fontSize: 0,
-              borderBottom: '1px solid', borderColor: 'border.muted',
-              '&:last-child': { borderBottom: 'none' },
+              display: 'grid', gridTemplateColumns: GRID, alignItems: 'center', gap: 2,
+              px: 3, py: '8px', fontSize: 0,
+              borderBottom: '1px solid', borderColor: 'border.muted', '&:last-child': { borderBottom: 'none' },
             }}
           >
+            {/* connector tick (under the caret column) */}
+            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+              <Box sx={{ width: '1px', height: '16px', bg: 'border.default' }} />
+            </Box>
+
+            {/* repo identity + mode / cut subtext */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`https://github.com/${r.repo.split('/')[0]}.png?size=32`}
+                src={`https://github.com/${r.repo.split('/')[0]}.png?size=40`}
                 alt=""
-                width={16}
-                height={16}
-                style={{ borderRadius: 3, flexShrink: 0, background: 'var(--bgColor-muted, #222)' }}
+                width={18}
+                height={18}
+                style={{ borderRadius: 4, flexShrink: 0, background: 'var(--bgColor-muted, #222)' }}
               />
-              <a
-                href={`https://github.com/${r.repo}`}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                style={{ color: 'inherit', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              >
-                <Text sx={{ color: 'fg.muted' }}>{r.repo.split('/')[0]}/</Text>
-                <Text sx={{ fontWeight: 500 }}>{r.repo.split('/')[1]}</Text>
-              </a>
-              <Text sx={{ color: MODE_COLOR[r.mode], textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0, fontSize: '9.5px' }}>
-                {r.mode === 'PR' ? 'PR' : r.mode === 'issue' ? 'issue' : 'mixed'}
-              </Text>
+              <Box sx={{ minWidth: 0 }}>
+                <a
+                  href={`https://github.com/${r.repo}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ color: 'inherit', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  <Text sx={{ color: 'fg.muted' }}>{r.repo.split('/')[0]}/</Text>
+                  <Text sx={{ fontWeight: 500, color: 'fg.default' }}>{r.repo.split('/')[1]}</Text>
+                </a>
+                <Text sx={{ display: 'block', whiteSpace: 'nowrap' }}>
+                  <Text as="span" sx={{ color: MODE_COLOR[r.mode], textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '9.5px' }}>{modeLabel}</Text>
+                  <Text as="span" sx={{ color: 'fg.subtle' }}> · {cutPct}% cut</Text>
+                </Text>
+              </Box>
             </Box>
-            <Text sx={{ textAlign: ['left', 'right'], color: r.gradeScore != null ? LETTER_COLOR[r.gradeLetter] : 'fg.subtle' }}>
-              {r.gradeLetter}{r.gradeScore != null ? ` ${Math.round(r.gradeScore)}` : ''}{r.provisional ? '*' : ''}
-            </Text>
-            <Text className="tnum" sx={{ textAlign: ['left', 'right'], color: 'fg.muted' }}>
-              {ship30} / 30d · {formatDurationHours(r.speedHours)}
-            </Text>
-            <Text className="tnum" sx={{ textAlign: ['left', 'right'], color: 'fg.subtle' }}>
-              {r.mergedPrsTotal + r.issuesCompleted} total
-            </Text>
-            <Text className="tnum" sx={{ textAlign: ['left', 'right'], color: r.maintainerCut > 0 ? 'fg.muted' : 'fg.subtle' }} title="Maintainer cut — share of this repo's emission reserved for maintainers">
-              {(r.maintainerCut * 100).toFixed(r.maintainerCut > 0 && r.maintainerCut < 0.1 ? 1 : 0)}% cut
-            </Text>
-            <Text className="tnum mono" sx={{ textAlign: ['left', 'right'], color: tao > 0 ? 'success.fg' : 'fg.subtle' }}>
-              {fmtTao(tao)} τ/d
-            </Text>
+
+            {/* Repos column position — left blank for sub-rows */}
+            <span />
+
+            {/* Shipping · 30d (+ median response time) */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.25 }}>
+              <Text className="tnum" sx={{ fontWeight: 500, color: 'fg.default' }}>{ship30}</Text>
+              {r.speedHours != null ? (
+                <Text className="tnum" sx={{ color: 'fg.subtle', whiteSpace: 'nowrap' }}>~{formatDurationHours(r.speedHours)}</Text>
+              ) : null}
+            </Box>
+
+            {/* All-time */}
+            <Text className="tnum" sx={{ textAlign: 'right', color: 'fg.muted' }}>{total}</Text>
+
+            {/* Grade */}
+            <Box sx={{ textAlign: 'right' }}>
+              <Text sx={{ fontWeight: 600, color: r.gradeScore != null ? LETTER_COLOR[r.gradeLetter] : 'fg.subtle' }}>{r.gradeLetter}</Text>
+              {r.gradeScore != null ? <Text className="tnum" sx={{ color: 'fg.subtle', ml: 1 }}>{Math.round(r.gradeScore)}{r.provisional ? '*' : ''}</Text> : null}
+            </Box>
+
+            {/* τ / day */}
+            <Text className="tnum mono" sx={{ textAlign: 'right', color: tao > 0 ? 'success.fg' : 'fg.subtle' }}>{fmtTao(tao)}</Text>
           </Box>
         );
       })}
