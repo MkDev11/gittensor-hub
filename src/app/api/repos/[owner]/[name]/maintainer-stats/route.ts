@@ -3,6 +3,7 @@ import { getReadDb } from '@/lib/db';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { getLiveReposAsyncServer, isTrackedRepoServer } from '@/lib/repos-server';
 import { getGittensorMinerLogins } from '@/lib/gittensor-miners-server';
+import { fetchMaintainerLogins } from '@/lib/maintainers-server';
 import { computeMaintainerStats } from '@/lib/maintainer-stats';
 
 export const dynamic = 'force-dynamic';
@@ -21,10 +22,13 @@ export async function GET(
   const db = getReadDb();
 
   // The repo's issue-discovery share comes from the live policy snapshot; the
-  // miner login set comes from the upstream validator feed (cached). Figures are
-  // restricted to miners' work, so both feed into the response and the ETag.
-  const [minerLogins, live] = await Promise.all([
+  // miner login set comes from the upstream validator feed (cached); the repo's
+  // maintainer logins come from the mirror — excluded from the figures so a
+  // maintainer self-merging their own PR doesn't read as fast review. All three
+  // feed into the response and the ETag.
+  const [minerLogins, maintainerLogins, live] = await Promise.all([
     getGittensorMinerLogins(),
+    fetchMaintainerLogins(params.owner, params.name),
     getLiveReposAsyncServer(),
   ]);
   const issueDiscoveryShare = live.repos.find((r) => r.fullName.toLowerCase() === full.toLowerCase())?.issueDiscoveryShare ?? 0;
@@ -37,7 +41,8 @@ export async function GET(
     .prepare('SELECT last_issues_fetch, last_pulls_fetch FROM repo_meta WHERE full_name = ?')
     .get(full) as { last_issues_fetch: string | null; last_pulls_fetch: string | null } | undefined;
   const etag = buildEtag([
-    'maintainer-stats-v4',
+    // v5: maintainer self-work is now excluded from the figures.
+    'maintainer-stats-v5',
     full,
     meta?.last_issues_fetch,
     meta?.last_pulls_fetch,
@@ -48,13 +53,14 @@ export async function GET(
     // Fingerprint the actual membership, not just its size — a same-size swap
     // (one miner in, one out) must still invalidate. buildEtag hashes parts.
     minerLogins ? [...minerLogins].sort().join(',') : 'unfiltered',
+    maintainerLogins ? [...maintainerLogins].sort().join(',') : 'no-maint',
     issueDiscoveryShare,
   ]);
   const notModified = etagNotModified(req, etag);
   if (notModified) return notModified;
 
   try {
-    const stats = computeMaintainerStats(db, full, { minerLogins, issueDiscoveryShare });
+    const stats = computeMaintainerStats(db, full, { minerLogins, maintainerLogins, issueDiscoveryShare });
     return NextResponse.json(stats, { headers: withEtagHeaders(etag) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

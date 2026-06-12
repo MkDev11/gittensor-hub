@@ -3,30 +3,10 @@ import { getReadDb } from '@/lib/db';
 import { buildEtag, etagNotModified, withEtagHeaders } from '@/lib/etag';
 import { isTrackedRepoServer, getLiveReposAsyncServer } from '@/lib/repos-server';
 import { getGittensorMinerLogins } from '@/lib/gittensor-miners-server';
+import { fetchMaintainerLogins } from '@/lib/maintainers-server';
 import { computeFairnessSignals } from '@/lib/fairness-signals';
 
 export const dynamic = 'force-dynamic';
-
-const MIRROR_BASE_URL = 'https://mirror.gittensor.io';
-
-/** Lowercased maintainer logins from the gittensor mirror. null when the mirror
- *  is unavailable (so the caller can flag that filtering wasn't applied). */
-async function fetchMaintainerLogins(owner: string, name: string): Promise<Set<string> | null> {
-  try {
-    const url = `${MIRROR_BASE_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/maintainers`;
-    const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { maintainers?: Array<{ login?: string }> };
-    const set = new Set<string>();
-    for (const m of body.maintainers ?? []) {
-      const u = (m.login ?? '').trim().toLowerCase();
-      if (u) set.add(u);
-    }
-    return set;
-  } catch {
-    return null;
-  }
-}
 
 export async function GET(
   req: NextRequest,
