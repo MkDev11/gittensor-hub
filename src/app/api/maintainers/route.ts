@@ -38,6 +38,9 @@ interface MinerIndex {
 }
 
 let cache: { at: number; payload: MaintainersResponse } | null = null;
+// Single in-flight rebuild, so a refresh spike after TTL collapses onto one
+// build() instead of fanning out into N DB scans + upstream fetches per caller.
+let inflight: Promise<MaintainersResponse> | null = null;
 
 function normId(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -250,8 +253,19 @@ export async function GET() {
     return NextResponse.json(cache.payload);
   }
   try {
-    const payload = await build();
-    cache = { at: now, payload };
+    if (!inflight) {
+      inflight = build()
+        .then((payload) => {
+          cache = { at: Date.now(), payload };
+          return payload;
+        })
+        .finally(() => {
+          // Clear on both success and failure so a failed build doesn't wedge
+          // every later request onto the same rejected promise.
+          inflight = null;
+        });
+    }
+    const payload = await inflight;
     return NextResponse.json(payload);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
