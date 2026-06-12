@@ -580,27 +580,52 @@ function RepoRow({
   );
 }
 
+function RolePill({ role }: { role: string }) {
+  return (
+    <Box
+      as="span"
+      sx={{
+        flexShrink: 0, px: 1, fontSize: '10px', lineHeight: '16px', borderRadius: 1,
+        bg: 'neutral.muted', color: 'fg.muted', textTransform: 'lowercase', letterSpacing: '0.02em',
+      }}
+    >
+      {role.toLowerCase()}
+    </Box>
+  );
+}
+
 function RepoMaintainerList({ r, minerPoolTAO }: { r: RepoMaintainersSummary; minerPoolTAO: number }) {
+  const registeredCount = r.maintainers.filter((m) => m.registered).length;
+  const cutPct = (r.maintainerCut * 100).toFixed(r.maintainerCut > 0 && r.maintainerCut < 0.1 ? 1 : 0);
   return (
     <Box sx={{ bg: 'canvas.inset', px: 3, py: 2, borderTop: '1px solid', borderColor: 'border.muted' }}>
+      {/* legend — replaces the per-row "registered / not" text */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, fontSize: 0, color: 'fg.subtle' }}>
+        <Box as="span" sx={{ color: 'accent.fg', display: 'inline-flex' }}><VerifiedIcon size={11} /></Box>
+        <Text>
+          {registeredCount} / {r.maintainerCount} registered {registeredCount === 1 ? 'miner' : 'miners'}
+          {r.maintainerCut > 0 ? <> — split this repo&apos;s {cutPct}% maintainer cut</> : ' — no maintainer cut on this repo'}
+        </Text>
+      </Box>
+
       {r.maintainers.map((m, i) => {
         const tao = m.rewardShare * minerPoolTAO;
         return (
           <Box
             key={`${m.githubId ?? m.login}-${i}`}
             sx={{
-              display: 'grid', gridTemplateColumns: ['1fr', 'minmax(160px,1fr) 140px 90px'],
-              alignItems: 'center', gap: 2, py: '6px', fontSize: 0,
+              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 2,
+              py: '7px', fontSize: 1, opacity: m.registered ? 1 : 0.62,
               borderBottom: '1px solid', borderColor: 'border.muted', '&:last-child': { borderBottom: 'none' },
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`https://github.com/${m.login}.png?size=32`}
+                src={`https://github.com/${m.login}.png?size=40`}
                 alt=""
-                width={16}
-                height={16}
+                width={20}
+                height={20}
                 style={{ borderRadius: '50%', flexShrink: 0, background: 'var(--bgColor-muted, #222)' }}
               />
               <a
@@ -608,22 +633,25 @@ function RepoMaintainerList({ r, minerPoolTAO }: { r: RepoMaintainersSummary; mi
                 target="_blank"
                 rel="noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                style={{ color: 'inherit', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                style={{ color: 'inherit', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}
               >
-                <Text sx={{ fontWeight: 500 }}>{m.login}</Text>
+                <Text sx={{ fontWeight: 500, color: m.registered ? 'fg.default' : 'fg.muted' }}>{m.login}</Text>
               </a>
               {m.registered ? (
-                <Box sx={{ color: 'accent.fg', display: 'flex', flexShrink: 0 }} title="Registered Gittensor miner">
+                <Box sx={{ color: 'accent.fg', display: 'flex', flexShrink: 0 }} title="Registered Gittensor miner — earns the maintainer reward">
                   <VerifiedIcon size={12} />
                 </Box>
               ) : null}
+              {m.association ? <RolePill role={m.association} /> : null}
             </Box>
-            <Text sx={{ textAlign: ['left', 'right'], color: 'fg.subtle' }}>
-              {m.registered ? 'registered miner' : 'not a registered miner'}
-            </Text>
-            <Text className="tnum mono" sx={{ textAlign: ['left', 'right'], color: tao > 0 ? 'success.fg' : 'fg.subtle' }}>
-              {fmtTao(tao)} τ/d
-            </Text>
+
+            {m.registered ? (
+              <Text className="tnum mono" sx={{ textAlign: 'right', color: tao > 0 ? 'success.fg' : 'fg.muted', fontSize: 0, whiteSpace: 'nowrap' }}>
+                {fmtTao(tao)} τ/d
+              </Text>
+            ) : (
+              <Text sx={{ textAlign: 'right', color: 'fg.subtle', fontSize: 0 }}>—</Text>
+            )}
           </Box>
         );
       })}

@@ -605,6 +605,9 @@ export interface MaintainerSummary {
 export interface RepoMaintainerEntry {
   login: string;
   githubId: string | null;
+  /** GitHub author association on the repo (OWNER / MEMBER / COLLABORATOR / …),
+   *  '' when the mirror didn't provide one. */
+  association: string;
   /** Registered Gittensor miner — earns the reward split on this repo. */
   registered: boolean;
   /** This maintainer's τ-fraction from this repo (0 when not registered). */

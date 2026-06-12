@@ -28,6 +28,7 @@ const CACHE_TTL_MS = 120_000;
 interface RosterMaintainer {
   githubId: string | null;
   login: string;
+  association: string;
 }
 
 interface MinerIndex {
@@ -58,10 +59,10 @@ async function fetchRoster(owner: string, name: string): Promise<RosterMaintaine
     const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return null;
     const body = (await res.json()) as {
-      maintainers?: Array<{ github_id?: string | number; githubId?: string | number; login?: string }>;
+      maintainers?: Array<{ github_id?: string | number; githubId?: string | number; login?: string; association?: string }>;
     };
     return (body.maintainers ?? [])
-      .map((m) => ({ githubId: normId(m.github_id ?? m.githubId), login: (m.login ?? '').trim() }))
+      .map((m) => ({ githubId: normId(m.github_id ?? m.githubId), login: (m.login ?? '').trim(), association: (m.association ?? '').trim() }))
       .filter((m) => m.login || m.githubId);
   } catch {
     return null;
@@ -190,7 +191,7 @@ async function build(): Promise<MaintainersResponse> {
 
       const key = personKey(m);
       const login = m.login || (m.githubId ? loginById.get(m.githubId) ?? m.githubId : 'unknown');
-      repoEntries.push({ login, githubId: m.githubId, registered: isRegistered, rewardShare: reward });
+      repoEntries.push({ login, githubId: m.githubId, association: m.association, registered: isRegistered, rewardShare: reward });
       let p = people.get(key);
       if (!p) {
         p = {
