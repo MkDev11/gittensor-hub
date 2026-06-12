@@ -226,7 +226,7 @@ export function PrWorkList({
               </div>
               <div className={styles.mmWorkRight}>
                 {pr.score > 0 ? <span className={styles.mmScoreBadge}>{fmtScore(pr.score)}</span> : null}
-                <span className={styles.mmWorkDate}>{relTime(pr.mergedAt ?? pr.createdAt)}</span>
+                <span className={styles.mmWorkDate}>{relTime(pr.mergedAt ?? pr.closedAt ?? pr.createdAt)}</span>
                 <LinkExternalIcon size={11} className={styles.mmWorkExt} />
               </div>
             </a>
@@ -355,7 +355,7 @@ function parseTs(iso: string | null): number {
 export function buildWorkRows(prs: MinerPr[] | undefined, issues: MinerIssue[] | undefined): WorkRow[] {
   const rows: WorkRow[] = [];
   for (const p of prs ?? []) {
-    const updatedAt = p.mergedAt ?? p.createdAt;
+    const updatedAt = p.mergedAt ?? p.closedAt ?? p.createdAt;
     rows.push({
       kind: 'pr',
       repo: p.repo,
@@ -1059,9 +1059,14 @@ export function PrsIssuesTable({
   // Never default onto an empty tab.
   const effFilter = filter === 'pr' && nPr === 0 && nIssue > 0 ? 'issue' : filter === 'issue' && nIssue === 0 && nPr > 0 ? 'pr' : filter;
   const shown = repoScoped.filter((r) => r.kind === effFilter);
-  const footHref = effectiveRepo
-    ? `https://github.com/${effectiveRepo}/pulls?q=is:pr+author:${encodeURIComponent(login)}`
-    : `https://github.com/${login}`;
+  const footHref =
+    effFilter === 'issue'
+      ? effectiveRepo
+        ? `https://github.com/${effectiveRepo}/issues?q=is:issue+author:${encodeURIComponent(login)}`
+        : `https://github.com/${login}?tab=issues`
+      : effectiveRepo
+        ? `https://github.com/${effectiveRepo}/pulls?q=is:pr+author:${encodeURIComponent(login)}`
+        : `https://github.com/${login}`;
 
   if (selected) {
     return (

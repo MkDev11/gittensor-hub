@@ -231,10 +231,18 @@ export default function MinersPage() {
   const errorMessage = isError ? (error instanceof Error ? error.message : 'unknown error') : null;
   const showSkeleton = (!hydrated || isLoading) && !data;
   // Miner emission pool (TAO/day) — the denominator for each card/row share bar.
-  // Matches the treemap's fullPool (active miners + recycle + treasury).
-  const poolTao = emission?.minerTaoPerDay ?? 0;
+  // subnetTao (active miners + recycle + treasury) keeps per-card "% of pool" in
+  // step with the treemap's fullPool and the repositories page, rather than the
+  // distinct minerTaoPerDay field, which diverges from both.
+  const poolTao = subnetTao;
   // Whole-subnet daily emission — denominator for each card's "% of total".
   const totalTao = emission?.totalTaoPerDay ?? 0;
+  // Rank board for the ACTIVE sort, so a card's medal/#rank matches the list order
+  // (null for non-rankable sorts like name/cred → cards show no rank).
+  const rankBoard =
+    sortKey === 'activity' || sortKey === 'score' || sortKey === 'earnings' || sortKey === 'repos'
+      ? ranks[sortKey]
+      : null;
 
   return (
     <main className={styles.page}>
@@ -370,7 +378,7 @@ export default function MinersPage() {
                 <MinerCard
                   key={view.key}
                   view={view}
-                  rank={ranks.activity.get(view.key) ?? 0}
+                  rank={rankBoard?.get(view.key) ?? 0}
                   poolTao={poolTao}
                   totalTao={totalTao}
                   subnetTao={subnetTao}
@@ -402,7 +410,7 @@ export default function MinersPage() {
                 <MinerListRow
                   key={view.key}
                   view={view}
-                  rank={ranks.activity.get(view.key) ?? 0}
+                  rank={rankBoard?.get(view.key) ?? 0}
                   poolTao={poolTao}
                   subnetTao={subnetTao}
                   selected={selectedMiner?.key === view.key}

@@ -429,7 +429,7 @@ export function RepoSignals({
                     {formatNumber(repoTao(row), { digits: 3, fallback: '0' })} τ/d
                   </span>
                 ) : (
-                  <span title="Repo contribution score">score {score(row.prScore + row.issueScore)}</span>
+                  <span title="Repo contribution score">score {score(row.prScore + row.issueScore + row.issueTokenScore)}</span>
                 )}
                 {row.emissionShare > 0 ? (
                   <span

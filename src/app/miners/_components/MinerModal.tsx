@@ -100,17 +100,20 @@ function applyLivePrStats(rows: RepoSignal[], prs: MinerPr[] | undefined, nowMs:
   const cutoff = nowMs - PR_LOOKBACK_DAYS * 86_400_000;
   const stat = new Map<string, { merged: number; closed: number }>();
   for (const p of prs) {
+    // Only PRs inside the trailing window create or touch a bucket. A repo whose
+    // works PRs are all out-of-window gets no bucket, so it keeps the feed's
+    // authoritative snapshot below instead of being overwritten with zeros.
+    const merged = p.mergedAt ? Date.parse(p.mergedAt) >= cutoff : false;
+    const closed = !p.mergedAt && !!p.closedAt && Date.parse(p.closedAt) >= cutoff;
+    if (!merged && !closed) continue;
     const key = p.repo.toLowerCase();
     let s = stat.get(key);
     if (!s) {
       s = { merged: 0, closed: 0 };
       stat.set(key, s);
     }
-    if (p.mergedAt) {
-      if (Date.parse(p.mergedAt) >= cutoff) s.merged += 1;
-    } else if (p.closedAt && Date.parse(p.closedAt) >= cutoff) {
-      s.closed += 1;
-    }
+    if (merged) s.merged += 1;
+    else s.closed += 1;
   }
   return rows.map((r) => {
     const s = stat.get(r.repo.toLowerCase());
@@ -243,7 +246,7 @@ function lastActiveIso(works: MinerWorksResponse | undefined): string | null {
   if (!works) return null;
   let best = 0;
   for (const p of works.prs) {
-    const t = Date.parse(p.mergedAt ?? p.createdAt ?? '');
+    const t = Date.parse(p.mergedAt ?? p.closedAt ?? p.createdAt ?? '');
     if (Number.isFinite(t) && t > best) best = t;
   }
   for (const i of works.issues) {

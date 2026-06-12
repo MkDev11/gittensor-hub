@@ -150,9 +150,9 @@ function attachPrLabels(prs: MinerPr[]): void {
   if (prs.length === 0) return;
   try {
     const db = getReadDb();
-    const stmt = db.prepare('SELECT raw_json FROM pulls WHERE repo_full_name = ? AND number = ?');
+    const stmt = db.prepare('SELECT raw_json FROM pulls WHERE LOWER(repo_full_name) = ? AND number = ?');
     for (const p of prs) {
-      const row = stmt.get(p.repo, p.number) as { raw_json: string | null } | undefined;
+      const row = stmt.get(p.repo.toLowerCase(), p.number) as { raw_json: string | null } | undefined;
       if (row?.raw_json) p.labels = extractLabels(row.raw_json, true);
     }
   } catch {
