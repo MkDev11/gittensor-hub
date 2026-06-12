@@ -74,7 +74,7 @@ export function formatUsd(n: number, opts: UsdFormatOptions = {}): string {
   if (style === 'price') {
     return abs >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`;
   }
-  if (abs >= 100) return `$${n.toFixed(0)}`;
+  if (abs >= 100) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   if (abs >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(4)}`;
 }
