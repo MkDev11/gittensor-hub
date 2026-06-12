@@ -21,8 +21,9 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const SUBNET_URL  = 'https://api.taomarketcap.com/internal/v1/subnets/74/';
-const NEURONS_URL = 'https://api.taomarketcap.com/internal/v1/subnets/neurons/74/';
+const NETUID = 74;
+const SUBNET_URL  = `https://api.taomarketcap.com/internal/v1/subnets/${NETUID}/`;
+const NEURONS_URL = `https://api.taomarketcap.com/internal/v1/subnets/neurons/${NETUID}/`;
 const CACHE_TTL_MS = 60_000;
 const FETCH_TIMEOUT_MS = 10_000;
 const RECYCLE_UID = 0;
@@ -91,6 +92,11 @@ export interface Sn74EmissionSnapshot {
   /** Count of UIDs in each category, for context on the cards. */
   minerCount: number;
   validatorCount: number;
+  /** Per-UID actual daily TAO (alpha_per_day × price) for every neuron — exactly
+   *  the figure TaoMarketCap shows per UID. The miners page looks each miner up by
+   *  uid for its authoritative headline emission (the score-share model only
+   *  approximates this). */
+  perUidTaoPerDay: Record<number, number>;
   /** Alpha → TAO price used for the per-UID conversion. */
   alphaPriceInTao: number;
   /** TaoMarketCap's `miners_tao_per_day` for cross-reference (a narrower
@@ -107,8 +113,8 @@ export interface Sn74EmissionSnapshot {
 // Renamed on each schema change so Next.js HMR drops any stale
 // pre-refactor cache that lacked newer fields — those would otherwise
 // read as undefined → 0 on the client.
-let cacheV4: Sn74EmissionSnapshot | null = null;
-let inflightV4: Promise<Sn74EmissionSnapshot> | null = null;
+let cacheV6: Sn74EmissionSnapshot | null = null;
+let inflightV6: Promise<Sn74EmissionSnapshot> | null = null;
 
 function num(v: unknown): number | null {
   if (v == null) return null;
@@ -153,8 +159,11 @@ async function refresh(): Promise<Sn74EmissionSnapshot> {
   let minerAlpha = 0;
   let validatorCount = 0;
   let minerCount = 0;
+  // Per-UID actual daily TAO — the exact value TaoMarketCap renders per neuron.
+  const perUidTaoPerDay: Record<number, number> = {};
   for (const n of neurons) {
     const a = num(n.alpha_per_day) ?? 0;
+    if (typeof n.uid === 'number') perUidTaoPerDay[n.uid] = a * alphaPrice;
     if (n.uid === RECYCLE_UID) {
       recycleAlpha += a;
     } else if (n.uid === TREASURY_UID) {
@@ -211,6 +220,7 @@ async function refresh(): Promise<Sn74EmissionSnapshot> {
     ownerTaoPerDay,
     minerCount,
     validatorCount,
+    perUidTaoPerDay,
     alphaPriceInTao: alphaPrice,
     minersTaoPerDayUpstream: num(snap.miners_tao_per_day),
     taoPerDay: totalTaoPerDay,
@@ -219,18 +229,18 @@ async function refresh(): Promise<Sn74EmissionSnapshot> {
     alphaBurnPerDay: num(snap.dtao?.daily_burn),
     fetched_at: Date.now(),
   };
-  cacheV4 = next;
+  cacheV6 = next;
   return next;
 }
 
 async function getCached(): Promise<Sn74EmissionSnapshot> {
   const now = Date.now();
-  if (cacheV4 && now - cacheV4.fetched_at < CACHE_TTL_MS) return cacheV4;
-  if (inflightV4) return inflightV4;
-  inflightV4 = refresh().finally(() => {
-    inflightV4 = null;
+  if (cacheV6 && now - cacheV6.fetched_at < CACHE_TTL_MS) return cacheV6;
+  if (inflightV6) return inflightV6;
+  inflightV6 = refresh().finally(() => {
+    inflightV6 = null;
   });
-  return inflightV4;
+  return inflightV6;
 }
 
 export async function GET() {
@@ -238,7 +248,7 @@ export async function GET() {
     const fresh = await getCached();
     return NextResponse.json({ ...fresh, source: 'live' });
   } catch (err) {
-    if (cacheV4) return NextResponse.json({ ...cacheV4, source: 'stale', error: String(err) });
+    if (cacheV6) return NextResponse.json({ ...cacheV6, source: 'stale', error: String(err) });
     return NextResponse.json({ error: String(err) }, { status: 502 });
   }
 }

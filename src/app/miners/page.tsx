@@ -2,951 +2,465 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { PageLayout, Heading, Text, Box, TextInput, Label } from '@primer/react';
-import {
-  SearchIcon,
-  StarIcon,
-  StarFillIcon,
-  TableIcon,
-  ListUnorderedIcon,
-  TriangleDownIcon,
-  TriangleUpIcon,
-} from '@primer/octicons-react';
-import { TableRowsSkeleton, CardGridSkeleton } from '@/components/Skeleton';
+import { ListUnorderedIcon, SearchIcon, SquareFillIcon, StarIcon } from '@primer/octicons-react';
+import { TableRowsSkeleton } from '@/components/Skeleton';
 import { useMinerLogin } from '@/lib/use-miner';
 import { useTrackedMiners } from '@/lib/tracked-miners';
-import { formatUsd, formatUsdMonthly, formatPercent } from '@/lib/format';
-import type { Miner, MinersResponse } from '@/types/entities';
+import { formatCount } from '@/lib/format';
+import type { MinersResponse } from '@/types/entities';
+import styles from './page.module.css';
+import {
+  EMPTY_MINERS,
+  SORT_OPTIONS,
+  compareViews,
+  minerTrackKey,
+  minerView,
+  num,
+  rankMap,
+  repoStreamShare,
+  subnetTaoBase,
+  type EmissionData,
+  type MinerView,
+  type SortDir,
+  type SortKey,
+  type ViewMode,
+} from './_lib/miners';
+import Headline from './_components/Headline';
+import EmissionHeader from './_components/EmissionHeader';
+import MinerCard from './_components/MinerCard';
+import { MinerCardGridSkeleton } from './_components/shared';
+import MinerListRow from './_components/MinerListRow';
+import MinerModal from './_components/MinerModal';
+import Palette from './_components/Palette';
+import Dropdown from '@/components/Dropdown';
+import { InlinePagination } from '@/components/repo-explorer/Pagination';
+import { ISSUE_COLOR, MAINTAINER_COLOR, PR_COLOR, fillBadge } from './_lib/streams';
 
-type SortKey = 'score' | 'earnings' | 'issues' | 'credibility';
-type EligibilityFilter = 'all' | 'eligible' | 'ineligible';
-type ViewMode = 'grid' | 'list';
-
-const SORT_LABEL: Record<SortKey, string> = {
-  score: 'Score',
-  earnings: 'Earnings',
-  issues: 'Issues',
-  credibility: 'Credibility',
-};
-
-const SORT_KEYS: SortKey[] = ['score', 'earnings', 'issues', 'credibility'];
-
-function num(v: unknown): number {
-  const n = typeof v === 'string' ? parseFloat(v) : typeof v === 'number' ? v : 0;
-  return Number.isFinite(n) ? n : 0;
-}
+/** Reward-stream filter pills — mirror the treemap/palette stream colors. A miner
+ *  matches a stream if they EARN it (a multi-stream miner matches more than one). */
+type StreamFilter = 'all' | 'pr' | 'issue' | 'maintainer';
+const STREAM_FILTERS: Array<{ key: StreamFilter; label: string; color: string }> = [
+  { key: 'all', label: 'Show all', color: '' },
+  { key: 'pr', label: 'Pull requests', color: PR_COLOR },
+  { key: 'issue', label: 'Issue discovery', color: ISSUE_COLOR },
+  { key: 'maintainer', label: 'Maintainer cut', color: MAINTAINER_COLOR },
+];
 
 export default function MinersPage() {
   const me = useMinerLogin();
   const { tracked, toggle } = useTrackedMiners();
-  const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('score');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [eligibility, setEligibility] = useState<EligibilityFilter>('all');
-  const [view, setView] = useState<ViewMode>('grid');
-  const [leaderboardMode, setLeaderboardMode] = useState<'usd' | 'issues'>('usd');
 
-  const onSortChange = (k: SortKey) => {
-    if (k === sortKey) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else {
-      setSortKey(k);
-      setSortDir('desc');
-    }
-  };
+  const [stream, setStream] = useState<StreamFilter>('all');
+  const [trackedOnly, setTrackedOnly] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>('activity');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [viewMode, setViewMode] = useState<ViewMode>('card');
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
-  const { data, isLoading, isError } = useQuery<MinersResponse>({
-    queryKey: ['miners'],
-    queryFn: async () => {
-      const r = await fetch('/api/miners');
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
+  // Hold real rows empty until after mount so the first client render matches
+  // the SSR'd HTML (TanStack Query has no data on the server but may have a
+  // warm client cache).
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+
+  const { data, isLoading, isError, error } = useQuery<MinersResponse>({
+    queryKey: ['miners', 'activity'],
+    queryFn: async ({ signal }) => {
+      const response = await fetch('/api/miners/activity', { signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json() as Promise<MinersResponse>;
     },
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
     refetchIntervalInBackground: true,
   });
 
-  // Stable rank — gittensor.io discoveries ranks by issueDiscoveryScore
-  // (the issue-context score), not the global totalScore.
-  const rankByScore = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!data?.miners) return map;
-    const sorted = [...data.miners].sort((a, b) => num(b.issueDiscoveryScore) - num(a.issueDiscoveryScore));
-    sorted.forEach((m, i) => map.set(m.id, i + 1));
-    return map;
-  }, [data]);
+  const { data: emission } = useQuery<EmissionData>({
+    queryKey: ['sn74-emission'],
+    queryFn: async ({ signal }) => {
+      const r = await fetch('/api/sn74-emission', { signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json() as Promise<EmissionData>;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Per-repo TAO base (active miners + recycle + treasury) — the value the
+  // protocol's `emissionShare × OSS_POOL` formula is a fraction of. Drives every
+  // emission figure on the page (headline, treemap, podium, per-repo) so they all
+  // agree, matching the repositories page exactly.
+  const subnetTao = subnetTaoBase(emission);
+
+  const views = useMemo(() => {
+    if (!hydrated) return [];
+    const raw = data?.miners ?? EMPTY_MINERS;
+    // Live TAO→USD rate from the feed (median usd/tao over earning miners) — used
+    // to derive each miner's $/day from their ACCURATE TAO, so USD stays
+    // consistent with the accurate emission everywhere (display + sort).
+    const rates: number[] = [];
+    for (const m of raw) {
+      const t = num((m as { taoPerDay?: unknown }).taoPerDay);
+      const u = num((m as { usdPerDay?: unknown }).usdPerDay);
+      if (t > 0 && u > 0) rates.push(u / t);
+    }
+    rates.sort((a, b) => a - b);
+    const usdPerTao = rates.length > 0 ? rates[Math.floor(rates.length / 2)] : 0;
+    // Each miner's ACTUAL on-chain τ/day, keyed by uid (alpha_per_day × price) —
+    // the exact TaoMarketCap figure, used as the authoritative headline emission.
+    const perUid = emission?.perUidTaoPerDay ?? null;
+    return raw.map((miner) => {
+      // uid > 0 guards a missing uid (coerces to 0) from grabbing UID 0's recycle
+      // emission; 0/111 are the recycle/treasury sinks, never real miners.
+      const uid = num((miner as { uid?: unknown }).uid);
+      const actual = perUid && uid > 0 ? perUid[uid] : undefined;
+      return minerView(miner, subnetTao, usdPerTao, actual);
+    });
+  }, [data?.miners, emission, hydrated, subnetTao]);
+
+  // Each repo's ACTUAL distributed emission (τ/day) — the sum of every contributor's
+  // on-chain per-repo share, so the card's "repo total / your share" reconciles with
+  // the now-accurate per-miner emission. (The old `emissionShare × subnetTAO` was the
+  // NOTIONAL pool — it counted the ~60% that recycles unclaimed, so it overstated.)
+  // Maintainer-only earning repos live in topRepos (pinned), not rows, so include both.
+  const repoEmissionTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    const add = (repo: string, tao: number) => {
+      if (tao > 0) totals.set(repo, (totals.get(repo) ?? 0) + tao);
+    };
+    for (const view of views) {
+      const seen = new Set<string>();
+      for (const row of view.rows) {
+        add(row.repo.toLowerCase(), subnetTao * repoStreamShare(row));
+        seen.add(row.repo.toLowerCase());
+      }
+      for (const row of view.topRepos) {
+        if (!seen.has(row.repo.toLowerCase())) add(row.repo.toLowerCase(), subnetTao * repoStreamShare(row));
+      }
+    }
+    return totals;
+  }, [views, subnetTao]);
 
   const filtered = useMemo(() => {
-    if (!data?.miners) return [] as Miner[];
-    const q = query.trim().toLowerCase();
-    let list = data.miners.filter((m) => {
-      if (q && !`${m.githubUsername} ${m.uid} ${m.hotkey ?? ''}`.toLowerCase().includes(q)) return false;
-      if (eligibility === 'eligible' && !m.isIssueEligible) return false;
-      if (eligibility === 'ineligible' && m.isIssueEligible) return false;
+    const list = views.filter((view) => {
+      if (trackedOnly && !tracked.has(minerTrackKey(view))) return false;
+      if (stream === 'pr' && !view.prEarning) return false;
+      if (stream === 'issue' && !view.issueEarning) return false;
+      if (stream === 'maintainer' && !view.isMaintainer) return false;
       return true;
     });
-    list = [...list].sort((a, b) => {
-      // Match gittensor.io: ELIGIBLE miners always come before INELIGIBLE ones,
-      // regardless of which sort metric is active. The selected metric only
-      // orders within each eligibility group.
-      if (a.isIssueEligible !== b.isIssueEligible) {
-        return a.isIssueEligible ? -1 : 1;
+    return [...list].sort(compareViews(sortKey, sortDir));
+  }, [sortDir, sortKey, stream, tracked, trackedOnly, views]);
+
+  // Pagination — the card grid fits 4 rows (12); the list's compact rows fit more.
+  const pageSize = viewMode === 'card' ? 12 : 20;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const paged = useMemo(
+    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filtered, currentPage, pageSize],
+  );
+  // Jump back to the first page whenever the filter / sort / view changes.
+  useEffect(() => {
+    setPage(1);
+  }, [stream, sortKey, sortDir, trackedOnly, viewMode]);
+
+  // Paging from the footer scrolls back to the top of the board so the new page
+  // starts in view rather than leaving the viewport at the bottom.
+  const boardRef = useRef<HTMLElement>(null);
+  const goToPage = useCallback((p: number) => {
+    setPage(p);
+    boardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  const selectedMiner = useMemo(
+    () => (selectedId ? views.find((view) => view.key === selectedId) ?? null : null),
+    [views, selectedId],
+  );
+  // Position of the open miner within the filtered list — powers the modal's
+  // prev/next navigation (← / →), stepping across pages.
+  const selectedIndex = useMemo(
+    () => (selectedMiner ? filtered.findIndex((v) => v.key === selectedMiner.key) : -1),
+    [filtered, selectedMiner],
+  );
+
+  const ranks = useMemo(
+    () => ({
+      activity: rankMap(views, 'activity'),
+      score: rankMap(views, 'score'),
+      earnings: rankMap(views, 'earnings'),
+      repos: rankMap(views, 'repos'),
+    }),
+    [views],
+  );
+
+  const myKey = useMemo(() => {
+    if (!me) return null;
+    const found = views.find((view) => view.login.toLowerCase() === me.toLowerCase());
+    return found?.key ?? null;
+  }, [me, views]);
+
+  // The signed-in user's own miner row, if they are one — lets us surface their
+  // UID directly even when they're too small to appear as a treemap tile.
+  const myView = useMemo(() => (myKey ? views.find((view) => view.key === myKey) ?? null : null), [myKey, views]);
+
+  const lastSync = data?.fetched_at
+    ? new Date(data.fetched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'pending';
+
+  // ⌘K opens the palette.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
       }
-      let cmp = 0;
-      // All ranks use the issue-context fields — this page mirrors
-      // gittensor.io's /discoveries which is purely about issue rewards.
-      if (sortKey === 'score') cmp = num(a.issueDiscoveryScore) - num(b.issueDiscoveryScore);
-      else if (sortKey === 'earnings') cmp = num(a.usdPerDay) - num(b.usdPerDay);
-      else if (sortKey === 'issues') cmp = (a.totalOpenIssues ?? 0) - (b.totalOpenIssues ?? 0);
-      else if (sortKey === 'credibility') cmp = num(a.issueCredibility) - num(b.issueCredibility);
-      // Tie-breaker: discovery score (so credibility ties don't shuffle randomly)
-      if (cmp === 0) cmp = num(a.issueDiscoveryScore) - num(b.issueDiscoveryScore);
-      return sortDir === 'desc' ? -cmp : cmp;
-    });
-    return list;
-  }, [data, query, eligibility, sortKey, sortDir]);
-
-  // Aggregate sidebar stats — all values recomputed against the same scope as
-  // the visible miners list (`filtered`), so toggling All / Eligible /
-  // Ineligible reshapes every card.
-  const stats = useMemo(() => {
-    const empty = {
-      counts: { all: 0, eligible: 0, ineligible: 0 },
-      issueCounts: { all: 0, eligible: 0, ineligible: 0 },
-      pr: { merged: 0, open: 0, closed: 0, mergeRate: 0, totalDay: 0 },
-      issue: { solved: 0, open: 0, closed: 0, solveRate: 0, totalDay: 0 },
-      code: { added: 0, deleted: 0, repos: 0, avgCred: 0 },
-      topEarners: [] as Miner[],
-      mostActive: [] as Miner[],
     };
-    if (!data?.miners) return empty;
-    const scope = filtered;
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-    let merged = 0, openPr = 0, closedPr = 0, prDay = 0;
-    let solved = 0, openIs = 0, closedIs = 0, isDay = 0;
-    let added = 0, deleted = 0, repos = 0, credSum = 0, credN = 0;
-    let prAll = 0, prElig = 0, prInelig = 0;
-    let isAll = 0, isElig = 0, isInelig = 0;
-    for (const m of scope) {
-      merged += m.totalMergedPrs ?? 0;
-      openPr += m.totalOpenPrs ?? 0;
-      closedPr += m.totalClosedPrs ?? 0;
-      solved += m.totalSolvedIssues ?? 0;
-      openIs += m.totalOpenIssues ?? 0;
-      closedIs += m.totalClosedIssues ?? 0;
-      added += m.totalAdditions ?? 0;
-      deleted += m.totalDeletions ?? 0;
-      repos += m.uniqueReposCount ?? 0;
-      const c = num(m.issueCredibility ?? m.credibility);
-      if (c > 0) { credSum += c; credN += 1; }
-      // Total $/day per track is sum of usdPerDay for miners eligible in that
-      // track (matches gittensor.io). A miner can be eligible for both, in
-      // which case their full usdPerDay counts toward each track's total.
-      const usd = m.usdPerDay ?? 0;
-      if (m.isEligible) prDay += usd;
-      if (m.isIssueEligible) isDay += usd;
-      // Miners Activity: PR column tracks isEligible, ISSUE column tracks isIssueEligible.
-      prAll += 1;
-      if (m.isEligible) prElig += 1; else prInelig += 1;
-      isAll += 1;
-      if (m.isIssueEligible) isElig += 1; else isInelig += 1;
-    }
-    const totalPr = merged + closedPr;
-    const totalIs = solved + closedIs;
+  const selectMiner = useCallback((view: MinerView) => {
+    setSelectedId(view.key);
+  }, []);
 
-    const topEarners = [...scope]
-      .sort((a, b) => num(b.usdPerDay) - num(a.usdPerDay))
-      .slice(0, 5);
-    const mostActive = [...scope]
-      .sort((a, b) => (b.totalOpenIssues ?? 0) - (a.totalOpenIssues ?? 0))
-      .slice(0, 5);
-
-    return {
-      counts: { all: prAll, eligible: prElig, ineligible: prInelig },
-      issueCounts: { all: isAll, eligible: isElig, ineligible: isInelig },
-      pr: { merged, open: openPr, closed: closedPr, mergeRate: totalPr ? Math.round((merged / totalPr) * 100) : 0, totalDay: prDay },
-      issue: { solved, open: openIs, closed: closedIs, solveRate: totalIs ? Math.round((solved / totalIs) * 100) : 0, totalDay: isDay },
-      code: { added, deleted, repos, avgCred: credN ? credSum / credN : 0 },
-      topEarners,
-      mostActive,
-    };
-  }, [data, filtered]);
+  const errorMessage = isError ? (error instanceof Error ? error.message : 'unknown error') : null;
+  const showSkeleton = (!hydrated || isLoading) && !data;
+  // Miner emission pool (TAO/day) — the denominator for each card/row share bar.
+  // subnetTao (active miners + recycle + treasury) keeps per-card "% of pool" in
+  // step with the treemap's fullPool and the repositories page, rather than the
+  // distinct minerTaoPerDay field, which diverges from both.
+  const poolTao = subnetTao;
+  // Whole-subnet daily emission — denominator for each card's "% of total".
+  const totalTao = emission?.totalTaoPerDay ?? 0;
+  // Rank board for the ACTIVE sort, so a card's medal/#rank matches the list order
+  // (null for non-rankable sorts like name/cred → cards show no rank).
+  const rankBoard =
+    sortKey === 'activity' || sortKey === 'score' || sortKey === 'earnings' || sortKey === 'repos'
+      ? ranks[sortKey]
+      : null;
 
   return (
-    <PageLayout containerWidth="full" padding="normal">
-      <PageLayout.Header>
-        <Heading sx={{ fontSize: 4, mb: 1 }}>Miners</Heading>
-        <Text sx={{ color: 'fg.muted' }}>
-          SN74 miners — earnings, scoring, eligibility. Discovery rewards filed via quality issues are scored separately
-          from PR rewards.
-        </Text>
-      </PageLayout.Header>
-      <PageLayout.Content>
-        <Box sx={{ display: ['block', null, 'flex'], gap: 4, alignItems: 'flex-start' }}>
-          {/* main column */}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            {/* Toolbar */}
-            <Box
-              sx={{
-                border: '1px solid',
-                borderColor: 'border.default',
-                borderRadius: 2,
-                bg: 'canvas.subtle',
-                p: 3,
-                mb: 3,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', mb: 2 }}>
-                <Heading sx={{ fontSize: 3, fontWeight: 700 }}>
-                  Miners <Text sx={{ color: 'fg.muted', fontWeight: 400 }}>({data?.count ?? 0})</Text>
-                </Heading>
-                <Box sx={{ flex: 1, minWidth: 240 }}>
-                  <TextInput
-                    leadingVisual={SearchIcon}
-                    placeholder="Search miners…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    sx={{ width: '100%' }}
-                  />
-                </Box>
-              </Box>
-
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-                  {SORT_KEYS.map((k) => {
-                    const active = sortKey === k;
-                    return (
-                      <Box
-                        as="button"
-                        key={k}
-                        onClick={() => onSortChange(k)}
-                        sx={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 1,
-                          px: 2,
-                          py: '4px',
-                          border: '1px solid',
-                          borderColor: active ? 'var(--border-default)' : 'transparent',
-                          borderRadius: 1,
-                          bg: active ? 'var(--bg-emphasis)' : 'transparent',
-                          color: active ? 'var(--fg-default)' : 'var(--fg-muted)',
-                          fontSize: 1,
-                          fontWeight: active ? 600 : 500,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                          '&:hover': { color: 'var(--fg-default)' },
-                        }}
-                      >
-                        {SORT_LABEL[k]}
-                        {active && (sortDir === 'desc' ? <TriangleDownIcon size={12} /> : <TriangleUpIcon size={12} />)}
-                      </Box>
-                    );
-                  })}
-                </Box>
-
-                <Box sx={{ ml: 'auto', display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-                  {(['all', 'eligible', 'ineligible'] as EligibilityFilter[]).map((e) => (
-                    <Box
-                      as="button"
-                      key={e}
-                      onClick={() => setEligibility(e)}
-                      sx={{
-                        px: 2,
-                        py: '4px',
-                        border: '1px solid',
-                        borderColor: eligibility === e ? 'var(--border-default)' : 'transparent',
-                        borderRadius: 1,
-                        bg: eligibility === e ? 'var(--bg-emphasis)' : 'transparent',
-                        color: eligibility === e ? 'var(--fg-default)' : 'var(--fg-muted)',
-                        fontSize: 1,
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        textTransform: 'capitalize',
-                        '&:hover': { color: 'var(--fg-default)' },
-                      }}
-                    >
-                      {e}
-                    </Box>
-                  ))}
-                  <Box sx={{ width: '1px', height: 20, bg: 'border.default', mx: 1 }} />
-                  <ViewToggleBtn active={view === 'grid'} onClick={() => setView('grid')} aria="Grid view">
-                    <TableIcon size={14} />
-                  </ViewToggleBtn>
-                  <ViewToggleBtn active={view === 'list'} onClick={() => setView('list')} aria="List view">
-                    <ListUnorderedIcon size={14} />
-                  </ViewToggleBtn>
-                </Box>
-              </Box>
-            </Box>
-
-            {isError && (
-              <Box sx={{ p: 3, border: '1px solid', borderColor: 'danger.emphasis', bg: 'danger.subtle', borderRadius: 2, mb: 2 }}>
-                <Text sx={{ color: 'danger.fg' }}>Failed to load miners.</Text>
-              </Box>
-            )}
-            {isLoading && !data && (
-              view === 'grid' ? (
-                <CardGridSkeleton count={9} columns={3} cardHeight={140} />
-              ) : (
-                <TableRowsSkeleton
-                  rows={12}
-                  cols={[
-                    { width: 24 },
-                    { width: 28, flex: 0 },
-                    { flex: 1 },
-                    { width: 60 },
-                    { width: 60 },
-                    { width: 60 },
-                    { width: 60 },
-                    { width: 80 },
-                  ]}
-                />
-              )
-            )}
-
-            {data && view === 'grid' && (
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))',
-                  gap: 3,
-                }}
-              >
-                {filtered.map((m) => (
-                  <MinerCard
-                    key={m.id}
-                    miner={m}
-                    rank={rankByScore.get(m.id) ?? 0}
-                    isMe={m.githubUsername.toLowerCase() === me.toLowerCase()}
-                    isTracked={tracked.has(m.id)}
-                    onToggleTrack={() => toggle(m.id)}
-                  />
-                ))}
-              </Box>
-            )}
-
-            {data && view === 'list' && (
-              <MinerListView
-                miners={filtered}
-                rankByScore={rankByScore}
-                me={me}
-                tracked={tracked}
-                onToggleTrack={toggle}
-                sortKey={sortKey}
-                sortDir={sortDir}
-                onSortChange={onSortChange}
-              />
-            )}
-          </Box>
-
-          {/* Sidebar */}
-          <Box sx={{ width: ['100%', null, 300], flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 3, position: ['static', null, 'sticky'], top: 'calc(var(--header-height) + 16px)', mt: [3, null, 0] }}>
-            <SidebarCard title="Miners Activity">
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', rowGap: '6px', columnGap: 2 }}>
-                <Text sx={{ fontSize: 0, color: 'fg.muted' }}></Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', textAlign: 'right', fontWeight: 600 }}>PR</Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', textAlign: 'right', fontWeight: 600 }}>ISSUE</Text>
-
-                <Text sx={{ fontSize: 1 }}>All</Text>
-                <Text sx={{ fontFamily: 'mono', textAlign: 'right', fontWeight: 700 }}>{stats.counts.all}</Text>
-                <Text sx={{ fontFamily: 'mono', textAlign: 'right', fontWeight: 700 }}>{stats.issueCounts.all}</Text>
-
-                <Text sx={{ fontSize: 1 }}>Eligible</Text>
-                <Text sx={{ fontFamily: 'mono', textAlign: 'right', fontWeight: 700, color: 'success.fg' }}>{stats.counts.eligible}</Text>
-                <Text sx={{ fontFamily: 'mono', textAlign: 'right', fontWeight: 700, color: 'success.fg' }}>{stats.issueCounts.eligible}</Text>
-
-                <Text sx={{ fontSize: 1 }}>Ineligible</Text>
-                <Text sx={{ fontFamily: 'mono', textAlign: 'right', fontWeight: 700, color: 'fg.muted' }}>{stats.counts.ineligible}</Text>
-                <Text sx={{ fontFamily: 'mono', textAlign: 'right', fontWeight: 700, color: 'fg.muted' }}>{stats.issueCounts.ineligible}</Text>
-              </Box>
-            </SidebarCard>
-
-            <SidebarCard title="PR Activity">
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', columnGap: 2, rowGap: '6px', mb: 2 }}>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>MERGED</Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>OPEN</Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>CLOSED</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.pr.merged}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.pr.open}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'danger.fg' }}>{stats.pr.closed}</Text>
-              </Box>
-              <Bar label="Merge Rate" pct={stats.pr.mergeRate} color={stats.pr.mergeRate >= 75 ? 'var(--success-fg)' : 'var(--attention-emphasis)'} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, fontSize: 1 }}>
-                <Text sx={{ color: 'fg.muted' }}>Total $/day</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>${stats.pr.totalDay.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Text>
-              </Box>
-            </SidebarCard>
-
-            <SidebarCard title="Issue Activity">
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', columnGap: 2, rowGap: '6px', mb: 2 }}>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>SOLVED</Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>OPEN</Text>
-                <Text sx={{ fontSize: 0, color: 'fg.muted', fontWeight: 600 }}>CLOSED</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.issue.solved}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>{stats.issue.open}</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'danger.fg' }}>{stats.issue.closed}</Text>
-              </Box>
-              <Bar label="Solve Rate" pct={stats.issue.solveRate} color={stats.issue.solveRate >= 75 ? 'var(--success-fg)' : 'var(--attention-emphasis)'} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, fontSize: 1 }}>
-                <Text sx={{ color: 'fg.muted' }}>Total $/day</Text>
-                <Text sx={{ fontFamily: 'mono', fontWeight: 700, color: 'success.fg' }}>${stats.issue.totalDay.toLocaleString(undefined, { maximumFractionDigits: 0 })}</Text>
-              </Box>
-            </SidebarCard>
-
-            <SidebarCard title="Code Impact">
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <KvRow
-                  label="Lines Added"
-                  value={`+${stats.code.added.toLocaleString()}`}
-                  color="var(--success-fg)"
-                />
-                <KvRow
-                  label="Lines Deleted"
-                  value={`-${stats.code.deleted.toLocaleString()}`}
-                  color="var(--danger-fg)"
-                />
-                <KvRow label="Repos Touched" value={stats.code.repos.toLocaleString()} color="var(--fg-default)" />
-                <Box sx={{ mt: 1 }}>
-                  <Bar
-                    label="Avg Credibility"
-                    pct={Math.round(stats.code.avgCred * 100)}
-                    color={stats.code.avgCred >= 0.5 ? 'var(--success-fg)' : stats.code.avgCred >= 0.2 ? 'var(--attention-emphasis)' : 'var(--danger-fg)'}
-                  />
-                </Box>
-              </Box>
-            </SidebarCard>
-
-            <LeaderboardCard
-              mode={leaderboardMode}
-              onModeChange={setLeaderboardMode}
-              earners={stats.topEarners}
-              active={stats.mostActive}
-            />
-          </Box>
-        </Box>
-      </PageLayout.Content>
-    </PageLayout>
-  );
-}
-
-function KvRow({ label, value, color }: { label: string; value: string | number; color: string }) {
-  return (
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-      <Text sx={{ color: 'fg.muted', fontSize: 1 }}>{label}</Text>
-      <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color, fontSize: 2 }}>{value}</Text>
-    </Box>
-  );
-}
-
-function LeaderboardCard({
-  mode,
-  onModeChange,
-  earners,
-  active,
-}: {
-  mode: 'usd' | 'issues';
-  onModeChange: (m: 'usd' | 'issues') => void;
-  earners: Miner[];
-  active: Miner[];
-}) {
-  const rows = mode === 'usd' ? earners : active;
-  const colHeader = mode === 'usd' ? '$/DAY' : 'ISSUES';
-  const cardTitle = mode === 'usd' ? 'Top Earners' : 'Most Active';
-  return (
-    <SidebarCard
-      title={cardTitle}
-      right={
-        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '2px', border: '1px solid', borderColor: 'border.default', borderRadius: 1, p: '2px' }}>
-          <ToggleBtn active={mode === 'usd'} onClick={() => onModeChange('usd')}>$</ToggleBtn>
-          <ToggleBtn active={mode === 'issues'} onClick={() => onModeChange('issues')}>Issues</ToggleBtn>
-        </Box>
-      }
-    >
-      <Box as="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 1 }}>
-        <Box as="thead">
-          <Box as="tr">
-            <Box as="th" sx={{ textAlign: 'left', fontSize: '10px', color: 'fg.muted', fontWeight: 600, py: '4px' }}>#</Box>
-            <Box as="th" sx={{ textAlign: 'left', fontSize: '10px', color: 'fg.muted', fontWeight: 600, py: '4px' }}>MINER</Box>
-            <Box as="th" sx={{ textAlign: 'right', fontSize: '10px', color: 'fg.muted', fontWeight: 600, py: '4px' }}>{colHeader}</Box>
-          </Box>
-        </Box>
-        <Box as="tbody">
-          {rows.map((m, i) => (
-            <Box as="tr" key={m.id} sx={{ borderTop: i === 0 ? 'none' : '1px solid', borderColor: 'border.muted' }}>
-              <Box as="td" sx={{ py: '6px', color: 'fg.muted', fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', width: 22 }}>{i + 1}</Box>
-              <Box as="td" sx={{ py: '6px' }}>
-                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`https://github.com/${m.githubUsername}.png?size=40`}
-                    alt={m.githubUsername}
-                    loading="lazy"
-                    style={{ width: 18, height: 18, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
-                  />
-                  <Text sx={{ fontWeight: 500, color: 'fg.default' }}>{m.githubUsername}</Text>
-                </Box>
-              </Box>
-              <Box
-                as="td"
-                sx={{
-                  py: '6px',
-                  textAlign: 'right',
-                  fontFamily: 'mono',
-                  fontVariantNumeric: 'tabular-nums',
-                  fontWeight: 700,
-                  color: mode === 'usd' ? 'success.fg' : 'fg.default',
-                }}
-              >
-                {mode === 'usd' ? formatUsd(num(m.usdPerDay)) : (m.totalOpenIssues ?? 0).toLocaleString()}
-              </Box>
-            </Box>
-          ))}
-          {rows.length === 0 && (
-            <Box as="tr">
-              <Box as="td" colSpan={3} sx={{ py: 2, color: 'fg.muted', textAlign: 'center', fontSize: 0 }}>
-                No miners in scope.
-              </Box>
-            </Box>
-          )}
-        </Box>
-      </Box>
-    </SidebarCard>
-  );
-}
-
-function ToggleBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <Box
-      as="button"
-      onClick={onClick}
-      sx={{
-        px: 2,
-        py: '2px',
-        border: 'none',
-        bg: active ? 'var(--bg-emphasis)' : 'transparent',
-        color: active ? 'var(--fg-default)' : 'var(--fg-muted)',
-        borderRadius: 1,
-        fontSize: '11px',
-        fontWeight: 600,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        '&:hover': { color: 'var(--fg-default)' },
-      }}
-    >
-      {children}
-    </Box>
-  );
-}
-
-function ViewToggleBtn({ active, onClick, aria, children }: { active: boolean; onClick: () => void; aria: string; children: React.ReactNode }) {
-  return (
-    <Box
-      as="button"
-      onClick={onClick}
-      aria-label={aria}
-      title={aria}
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 28,
-        height: 28,
-        border: '1px solid',
-        borderColor: active ? 'var(--border-default)' : 'transparent',
-        borderRadius: 1,
-        bg: active ? 'var(--bg-emphasis)' : 'transparent',
-        color: active ? 'var(--fg-default)' : 'var(--fg-muted)',
-        cursor: 'pointer',
-      }}
-    >
-      {children}
-    </Box>
-  );
-}
-
-function SidebarCard({ title, right, children }: { title: string; right?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, bg: 'canvas.subtle', p: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, gap: 2 }}>
-        <Heading sx={{ fontSize: 2, fontWeight: 700 }}>{title}</Heading>
-        {right}
-      </Box>
-      <Box sx={{ borderTop: '1px solid', borderColor: 'border.muted', pt: 2 }}>{children}</Box>
-    </Box>
-  );
-}
-
-function Bar({ label, pct, color }: { label: string; pct: number; color: string }) {
-  return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: '4px', fontSize: 1 }}>
-        <Text sx={{ color: 'fg.default' }}>{label}</Text>
-        <Text sx={{ fontFamily: 'mono', fontWeight: 700 }} style={{ color }}>{pct}%</Text>
-      </Box>
-      <Box sx={{ width: '100%', height: 6, bg: 'canvas.inset', borderRadius: 999, overflow: 'hidden' }}>
-        <Box sx={{ height: '100%' }} style={{ width: `${pct}%`, backgroundColor: color }} />
-      </Box>
-    </Box>
-  );
-}
-
-function CredibilityRing({ value, size = 56, dim = false }: { value: number; size?: number; dim?: boolean }) {
-  const r = (size - 6) / 2;
-  const c = 2 * Math.PI * r;
-  const pct = Math.min(1, Math.max(0, value));
-  const offset = c * (1 - pct);
-  const stroke = pct >= 0.5 ? 'var(--success-emphasis)' : pct >= 0.2 ? 'var(--attention-emphasis)' : 'var(--fg-muted)';
-  return (
-    <Box sx={{ position: 'relative', width: size, height: size, opacity: dim ? 0.5 : 1, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} r={r} stroke="var(--border-default)" strokeWidth={4} fill="none" />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          stroke={stroke}
-          strokeWidth={4}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+    <main className={styles.page}>
+      <section className={styles.section}>
+      <div className={styles.container}>
+        <EmissionHeader emission={emission} views={views} onSelectMiner={selectMiner} />
+        <Headline
+          views={views}
+          myView={myView}
+          lastSync={lastSync}
+          emission={emission}
+          loading={!data && !isError}
+          onSelectMiner={selectMiner}
+          onBrowse={() => setPaletteOpen(true)}
         />
-        {pct > 0 && (
-          <circle
-            cx={size / 2 + r * Math.cos(2 * Math.PI * pct - Math.PI / 2)}
-            cy={size / 2 + r * Math.sin(2 * Math.PI * pct - Math.PI / 2)}
-            r={3}
-            fill="var(--danger-fg)"
-          />
-        )}
-      </svg>
-      <Box
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '11px',
-          fontWeight: 700,
-          fontFamily: 'mono',
-          color: stroke,
-        }}
-      >
-        {Math.round(pct * 100)}%
-      </Box>
-    </Box>
-  );
-}
+      </div>
+      </section>
 
-function MinerCard({
-  miner,
-  rank,
-  isMe,
-  isTracked,
-  onToggleTrack,
-}: {
-  miner: Miner;
-  rank: number;
-  isMe: boolean;
-  isTracked: boolean;
-  onToggleTrack: () => void;
-}) {
-  const dim = !miner.isIssueEligible;
-  const usd = num(miner.usdPerDay);
-  // Donut + score in cards reflect issue-context (matches gittensor.io discoveries)
-  const cred = num(miner.issueCredibility ?? miner.credibility);
-  const score = num(miner.issueDiscoveryScore);
-  return (
-    <Box
-      sx={{
-        border: '1px solid',
-        borderColor: isMe ? 'accent.emphasis' : 'border.default',
-        borderRadius: 2,
-        bg: 'canvas.subtle',
-        p: 3,
-        opacity: dim ? 0.55 : 1,
-        transition: 'border-color 80ms, transform 80ms',
-        '&:hover': { borderColor: isMe ? 'accent.emphasis' : 'border.muted' },
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={`https://github.com/${miner.githubUsername}.png?size=64`}
-          alt={miner.githubUsername}
-          loading="lazy"
-          style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
-        />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-            <Text sx={{ fontWeight: 700, fontSize: 2, color: 'fg.default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {miner.githubUsername}
-            </Text>
-            <Text sx={{ color: 'fg.muted', fontSize: 1 }}>#{rank}</Text>
-            {isMe && (
-              <Label variant="accent" sx={{ ml: 1, fontSize: '10px' }}>
-                you
-              </Label>
-            )}
-          </Box>
-          {!miner.isIssueEligible && (
-            <Label
-              variant="secondary"
-              sx={{ mt: '2px', fontSize: '10px', color: 'fg.muted' }}
-              title="Not eligible for issue-discovery rewards"
-            >
-              INELIGIBLE
-            </Label>
-          )}
-        </Box>
-        <Box
-          as="button"
-          onClick={onToggleTrack}
-          aria-label={isTracked ? 'Untrack miner' : 'Track miner'}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 24,
-            height: 24,
-            bg: 'transparent',
-            border: 'none',
-            borderRadius: 1,
-            color: isTracked ? 'attention.fg' : 'fg.muted',
-            cursor: 'pointer',
-            '&:hover': { bg: 'canvas.inset', color: 'attention.fg' },
-          }}
-        >
-          {isTracked ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
-        </Box>
-      </Box>
-
-      <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2, mb: 2 }}>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-            <Text sx={{ fontSize: 5, fontWeight: 700, color: dim ? 'fg.muted' : 'success.fg', fontFamily: 'mono', fontVariantNumeric: 'tabular-nums' }}>
-              {formatUsd(usd)}
-            </Text>
-            <Text sx={{ color: 'fg.muted', fontSize: 1 }}>/day</Text>
-          </Box>
-          <Text sx={{ fontSize: 0, color: 'fg.muted', fontFamily: 'mono' }}>{formatUsdMonthly(usd)}</Text>
-        </Box>
-        <CredibilityRing value={cred} dim={dim} />
-      </Box>
-
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, pt: 2, borderTop: '1px solid', borderColor: 'border.muted' }}>
-        <StatCol label="SOLVED" value={miner.totalSolvedIssues ?? 0} color="var(--success-fg)" />
-        <StatCol label="OPEN" value={miner.totalOpenIssues ?? 0} color="var(--fg-default)" />
-        <StatCol label="CLOSED" value={miner.totalClosedIssues ?? 0} color="var(--danger-fg)" />
-        <StatCol label="SCORE" value={score.toFixed(2)} color="var(--fg-default)" align="right" />
-      </Box>
-    </Box>
-  );
-}
-
-function StatCol({ label, value, color, align = 'left' }: { label: string; value: string | number; color: string; align?: 'left' | 'right' }) {
-  return (
-    <Box sx={{ textAlign: align }}>
-      <Text sx={{ display: 'block', fontSize: '10px', color: 'fg.muted', letterSpacing: '0.5px', fontWeight: 600 }}>{label}</Text>
-      <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color, fontSize: 2 }}>{value}</Text>
-    </Box>
-  );
-}
-
-function MinerListView({
-  miners,
-  rankByScore,
-  me,
-  tracked,
-  onToggleTrack,
-  sortKey,
-  sortDir,
-  onSortChange,
-}: {
-  miners: Miner[];
-  rankByScore: Map<string, number>;
-  me: string;
-  tracked: Set<string>;
-  onToggleTrack: (id: string) => void;
-  sortKey: SortKey;
-  sortDir: 'asc' | 'desc';
-  onSortChange: (k: SortKey) => void;
-}) {
-  return (
-    <Box sx={{ border: '1px solid', borderColor: 'border.default', borderRadius: 2, bg: 'canvas.subtle', overflowX: 'auto', overflowY: 'hidden' }}>
-      <Box as="table" sx={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 1 }}>
-        <Box as="thead" sx={{ bg: 'canvas.subtle', borderBottom: '1px solid', borderColor: 'border.default' }}>
-          <Box as="tr">
-            <Th width={60} sortKey="score" current={sortKey} dir={sortDir} onSort={onSortChange}>RANK</Th>
-            <Th>MINER</Th>
-            <Th align="right" sortKey="earnings" current={sortKey} dir={sortDir} onSort={onSortChange}>EARNINGS/DAY</Th>
-            <Th align="center" sortKey="issues" current={sortKey} dir={sortDir} onSort={onSortChange}>ISSUES</Th>
-            <Th align="right" sortKey="credibility" current={sortKey} dir={sortDir} onSort={onSortChange}>CREDIBILITY</Th>
-            <Th align="right" sortKey="score" current={sortKey} dir={sortDir} onSort={onSortChange}>SCORE</Th>
-            <Th width={32} />
-          </Box>
-        </Box>
-        <Box as="tbody">
-          {miners.map((m) => {
-            const dim = !m.isIssueEligible;
-            const isMe = m.githubUsername.toLowerCase() === me.toLowerCase();
-            const rank = rankByScore.get(m.id) ?? 0;
+      <section className={styles.toolbar} aria-label="Miner controls">
+        <div className={styles.toolbarInner}>
+        <div className={styles.toolbarFilters}>
+        <span className={styles.filterBy}>Filter by</span>
+        <div className={styles.filterChips}>
+          {STREAM_FILTERS.map((f) => {
+            const active = stream === f.key;
             return (
-              <Box
-                as="tr"
-                key={m.id}
-                sx={{
-                  borderBottom: '1px solid',
-                  borderColor: 'border.muted',
-                  bg: isMe ? 'var(--accent-subtle)' : 'transparent',
-                  '&:hover': { bg: 'canvas.default' },
-                  '&:last-child': { borderBottom: 'none' },
-                  opacity: dim ? 0.55 : 1,
-                }}
+              <button
+                key={f.key}
+                type="button"
+                className={styles.chip}
+                style={active ? fillBadge(f.color || 'var(--accent-emphasis)') : undefined}
+                aria-pressed={active}
+                onClick={() => setStream(f.key)}
               >
-                <Box as="td" sx={{ p: 2, verticalAlign: 'middle' }}>
-                  <Box
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      minWidth: 28,
-                      height: 24,
-                      px: 1,
-                      border: '1px solid',
-                      borderColor: rank <= 3 ? 'var(--attention-emphasis)' : 'border.default',
-                      borderRadius: 1,
-                      fontFamily: 'mono',
-                      fontWeight: 700,
-                      fontSize: 0,
-                      color: rank <= 3 ? 'var(--attention-emphasis)' : 'fg.default',
-                    }}
-                  >
-                    {rank}
-                  </Box>
-                </Box>
-                <Box as="td" sx={{ p: 2, verticalAlign: 'middle' }}>
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`https://github.com/${m.githubUsername}.png?size=48`}
-                      alt={m.githubUsername}
-                      loading="lazy"
-                      style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--border-muted)' }}
-                    />
-                    <Text sx={{ fontWeight: 600, color: isMe ? 'accent.fg' : 'fg.default' }}>{m.githubUsername}</Text>
-                    {isMe && <Label variant="accent" sx={{ fontSize: '10px' }}>you</Label>}
-                  </Box>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: dim ? 'fg.muted' : 'success.fg' }}>
-                    {formatUsd(num(m.usdPerDay))}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'center', verticalAlign: 'middle' }}>
-                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontSize: 1 }}>
-                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bg: 'success.emphasis' }} />
-                      <Text>{m.totalSolvedIssues ?? 0}</Text>
-                    </Box>
-                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bg: 'fg.muted' }} />
-                      <Text>{m.totalOpenIssues ?? 0}</Text>
-                    </Box>
-                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bg: 'danger.emphasis' }} />
-                      <Text>{m.totalClosedIssues ?? 0}</Text>
-                    </Box>
-                  </Box>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                    {formatPercent(m.issueCredibility ?? m.credibility, { scale: 100 })}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'right', verticalAlign: 'middle' }}>
-                  <Text sx={{ fontFamily: 'mono', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'fg.default' }}>
-                    {num(m.issueDiscoveryScore).toFixed(2)}
-                  </Text>
-                </Box>
-                <Box as="td" sx={{ p: 2, textAlign: 'center', verticalAlign: 'middle' }}>
-                  <Box
-                    as="button"
-                    onClick={() => onToggleTrack(m.id)}
-                    aria-label={tracked.has(m.id) ? 'Untrack miner' : 'Track miner'}
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 24,
-                      height: 24,
-                      bg: 'transparent',
-                      border: 'none',
-                      borderRadius: 1,
-                      color: tracked.has(m.id) ? 'attention.fg' : 'fg.muted',
-                      cursor: 'pointer',
-                      '&:hover': { bg: 'canvas.inset', color: 'attention.fg' },
-                    }}
-                  >
-                    {tracked.has(m.id) ? <StarFillIcon size={14} /> : <StarIcon size={14} />}
-                  </Box>
-                </Box>
-              </Box>
+                {f.color ? <span className={styles.chipDot} style={{ background: f.color }} /> : null}
+                {f.label}
+              </button>
             );
           })}
-        </Box>
-      </Box>
-    </Box>
-  );
-}
+        </div>
+        </div>
 
-function Th({
-  children,
-  align = 'left',
-  width,
-  sortKey,
-  current,
-  dir,
-  onSort,
-}: {
-  children?: React.ReactNode;
-  align?: 'left' | 'right' | 'center';
-  width?: number;
-  sortKey?: SortKey;
-  current?: SortKey;
-  dir?: 'asc' | 'desc';
-  onSort?: (k: SortKey) => void;
-}) {
-  const isSortable = !!sortKey && !!onSort;
-  const active = isSortable && current === sortKey;
-  return (
-    <Box
-      as="th"
-      onClick={isSortable && sortKey ? () => onSort!(sortKey) : undefined}
-      sx={{
-        p: 2,
-        textAlign: align,
-        width,
-        fontWeight: 600,
-        fontSize: '11px',
-        color: active ? 'fg.default' : 'fg.muted',
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px',
-        whiteSpace: 'nowrap',
-        cursor: isSortable ? 'pointer' : 'default',
-        userSelect: 'none',
-        '&:hover': isSortable ? { color: 'fg.default' } : undefined,
-      }}
-    >
-      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1, justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start' }}>
-        {active && (dir === 'desc' ? <TriangleDownIcon size={12} /> : <TriangleUpIcon size={12} />)}
-        {children}
-      </Box>
-    </Box>
+        <div className={styles.toolbarRight}>
+          <button
+            type="button"
+            className={trackedOnly ? styles.trackedButtonActive : styles.trackedButton}
+            aria-pressed={trackedOnly}
+            onClick={() => setTrackedOnly((current) => !current)}
+          >
+            <StarIcon size={14} />
+            <span className={styles.hideOnMobile}>Tracked</span>
+            <span className={styles.countPill}>{tracked.size}</span>
+          </button>
+          <label className={styles.toolbarSort}>
+            <span className={`${styles.sortLabel} ${styles.hideOnMobile}`}>Sort</span>
+            <Dropdown<SortKey>
+              value={sortKey}
+              options={SORT_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+              onChange={(next) => {
+                setSortKey(next);
+                setSortDir(next === 'name' ? 'asc' : 'desc');
+              }}
+              size="xsmall"
+              width={170}
+              ariaLabel="Sort miners"
+              closeOnScroll
+            />
+          </label>
+
+          <div className={styles.viewToggleGroup} role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={`${styles.viewToggle} ${viewMode === 'card' ? styles.viewToggleActive : ''}`}
+              onClick={() => setViewMode('card')}
+              title="Card view"
+              aria-pressed={viewMode === 'card'}
+            >
+              <SquareFillIcon size={11} />
+              <span className={styles.viewToggleLabel}>Cards</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.viewToggle} ${viewMode === 'list' ? styles.viewToggleActive : ''}`}
+              onClick={() => setViewMode('list')}
+              title="List view"
+              aria-pressed={viewMode === 'list'}
+            >
+              <ListUnorderedIcon size={12} />
+              <span className={styles.viewToggleLabel}>List</span>
+            </button>
+          </div>
+
+          <button type="button" className={styles.searchTrigger} onClick={() => setPaletteOpen(true)} aria-label="Search miners">
+            <SearchIcon size={13} />
+            <span className={styles.searchTriggerLabel}>Search miners</span>
+            <span className={styles.searchTriggerKbd}>
+              <span className={styles.kbd}>⌘</span>
+              <span className={styles.kbd}>K</span>
+            </span>
+          </button>
+        </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+      <div className={styles.container}>
+      <section className={styles.boardShell} ref={boardRef}>
+        <div className={styles.boardHead}>
+          <div>
+            <div className={styles.boardEyebrow}>{formatCount(filtered.length, { fallback: '0' })} miners</div>
+            <h2 className={styles.boardHeading}>All miners</h2>
+          </div>
+          <span className={styles.boardSync}>repo-scoped feed · synced {lastSync}</span>
+        </div>
+
+        {errorMessage && <div className={styles.errorState}>Failed to load repo-scoped miners: {errorMessage}</div>}
+
+        {showSkeleton ? (
+          viewMode === 'card' ? (
+            <MinerCardGridSkeleton count={6} />
+          ) : (
+            <div className={styles.skeletonWrap}>
+              <TableRowsSkeleton rows={10} rowHeight={52} px={14} cols={[{ width: 28 }, { flex: 1.6 }, { width: 72 }, { width: 90 }, { width: 56 }, { width: 84 }, { flex: 1.2 }, { width: 60 }]} />
+            </div>
+          )
+        ) : filtered.length === 0 ? (
+          <div className={styles.emptyState}>No miners match this filter.</div>
+        ) : viewMode === 'card' ? (
+          <div className={styles.minerGrid}>
+            {paged.map((view) => {
+              const trackKey = minerTrackKey(view);
+              return (
+                <MinerCard
+                  key={view.key}
+                  view={view}
+                  rank={rankBoard?.get(view.key) ?? 0}
+                  poolTao={poolTao}
+                  totalTao={totalTao}
+                  subnetTao={subnetTao}
+                  repoTotals={repoEmissionTotals}
+                  selected={selectedMiner?.key === view.key}
+                  mine={view.key === myKey}
+                  tracked={tracked.has(trackKey)}
+                  onSelect={() => selectMiner(view)}
+                  onToggleTrack={() => toggle(trackKey)}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className={styles.listWrap}>
+            <div className={styles.listHeader}>
+              <span className={styles.listActions} />
+              <span>Miner</span>
+              <span className={styles.listHeadRight}>Emission</span>
+              <span className={`${styles.listHeadRight} ${styles.listColHideSm}`}>Score</span>
+              <span className={styles.listColHideMd}>PR activity</span>
+              <span className={styles.listColHideMd}>Issues activity</span>
+              <span className={styles.listColHideLg}>Contributions</span>
+              <span className={styles.listColHideLg}>Top repos</span>
+            </div>
+            {paged.map((view) => {
+              const trackKey = minerTrackKey(view);
+              return (
+                <MinerListRow
+                  key={view.key}
+                  view={view}
+                  rank={rankBoard?.get(view.key) ?? 0}
+                  poolTao={poolTao}
+                  subnetTao={subnetTao}
+                  selected={selectedMiner?.key === view.key}
+                  mine={view.key === myKey}
+                  tracked={tracked.has(trackKey)}
+                  onSelect={() => selectMiner(view)}
+                  onToggleTrack={() => toggle(trackKey)}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {!showSkeleton && totalPages > 1 ? (
+          <div className={styles.pagerRow}>
+            <InlinePagination
+              page={currentPage}
+              totalPages={totalPages}
+              totalItems={filtered.length}
+              pageSize={pageSize}
+              onChange={goToPage}
+            />
+          </div>
+        ) : null}
+      </section>
+      </div>
+      </section>
+
+      {selectedMiner && (
+        <MinerModal
+          view={selectedMiner}
+          subnetTao={subnetTao}
+          tracked={tracked.has(minerTrackKey(selectedMiner))}
+          onClose={() => setSelectedId(null)}
+          onToggleTrack={() => toggle(minerTrackKey(selectedMiner))}
+          onPrev={selectedIndex > 0 ? () => setSelectedId(filtered[selectedIndex - 1].key) : undefined}
+          onNext={
+            selectedIndex >= 0 && selectedIndex < filtered.length - 1
+              ? () => setSelectedId(filtered[selectedIndex + 1].key)
+              : undefined
+          }
+        />
+      )}
+
+      <Palette
+        open={paletteOpen}
+        views={views}
+        onClose={() => setPaletteOpen(false)}
+        onSelect={(key) => setSelectedId(key)}
+      />
+    </main>
   );
 }

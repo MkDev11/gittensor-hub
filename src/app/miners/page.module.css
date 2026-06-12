@@ -1,0 +1,4929 @@
+/* Miners page. A miner-first view over the live SN74 scoring feed. The page
+ * is built from a switchable headline (podium / treemap / market / metrics),
+ * a control toolbar, activity lenses, a card or list board, a detail drawer,
+ * a compare tray + modal, and a ⌘K palette. All surfaces share the design
+ * tokens from globals.css; the locally-scoped `--soft-*` vars below just give
+ * the page a slightly softer border/fill language than the app default. */
+
+.page{
+  --app: var(--bg-canvas);
+  --app-surface: var(--bg-subtle);
+  --app-elev: var(--bg-emphasis);
+  --app-deep: var(--bg-inset);
+  --soft-border: rgba(255, 255, 255, 0.06);
+  --softer-border: rgba(255, 255, 255, 0.04);
+  --soft-fill: rgba(255, 255, 255, 0.04);
+  --softer-fill: rgba(255, 255, 255, 0.025);
+  --fg: var(--fg-default);
+  --fg-dim: var(--fg-muted);
+  --fg-mute: var(--fg-subtle);
+  --mono: ui-monospace, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+
+  width: 100%;
+  /* Full-width root (repositories model): the toolbar band runs edge-to-edge;
+   * content sections center themselves via .container. */
+  min-height: 100%;
+  padding: 24px 0;
+  color: var(--fg-default);
+  overflow-x: clip;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  letter-spacing: -0.005em;
+  accent-color: var(--accent-emphasis);
+}
+
+/* Centers a section at the page max-width with side gutters (the padding that
+ * used to live on .page). Repositories layout: full-width .page + per-section
+ * .container so the toolbar band can run edge-to-edge. */
+/* Repositories layout model: a full-width, side-padded .section (the gutter)
+ * wraps a max-width:1440 .container (the cap). The .container then measures a
+ * clean 1440 on wide screens — the 16px side gutter lives on .section, exactly
+ * as repos does it (padded <section> + inner .container). width: 100% is
+ * required because .page (the <main>) is a flexbox (global `main { display:flex }`):
+ * without it a flex item shrink-wraps to its content instead of filling. */
+.section{
+  width: 100%;
+  padding: 0 16px;
+}
+.container{
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+:global([data-theme='light']) .page{
+  --soft-border: rgba(0, 0, 0, 0.08);
+  --softer-border: rgba(0, 0, 0, 0.05);
+  --soft-fill: rgba(0, 0, 0, 0.04);
+  --softer-fill: rgba(0, 0, 0, 0.025);
+}
+
+.hideOnMobile{
+  display: inline;
+}
+
+@media (max-width: 767px) {
+  .hideOnMobile{
+    display: none !important;
+  }
+}
+
+/* ═══════════════ EMISSION OVERVIEW ═══════════════ */
+
+.emission{
+  padding: 4px 0 2px;
+  margin-bottom: 16px;
+}
+
+.emissionRow{
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Headline row: the TAO/day lead on the left, the live earnings-distribution
+ * panel on the right; wraps (panel drops below) on narrow screens. */
+.emissionTopRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 28px;
+  flex-wrap: wrap;
+}
+
+.emissionLead{
+  min-width: 0;
+  flex: 1 1 300px;
+}
+
+.emissionEyebrow{
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.emissionValue{
+  margin: 4px 0 0;
+  font-size: clamp(20px, 2.5vw, 26px);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--accent-fg);
+}
+
+.emissionValue em{
+  margin-left: 8px;
+  color: var(--fg-subtle);
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.emissionDesc{
+  margin-top: 8px;
+  max-width: 36rem;
+  color: var(--fg-subtle);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.emissionDesc a{
+  color: var(--fg-muted);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+}
+
+/* Recipient cards — a responsive grid that spans the full width as one row,
+ * wrapping on narrow screens. Each follows the reference UI: a tinted icon chip
+ * top-left, a share pill top-right, value / label / source, on a solid bordered
+ * card. Color comes from flat tints (no gradients), keyed to the recipient's
+ * --seg color. */
+.emissionStats{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.emissionStat{
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--soft-border);
+  /* Slightly elevated surface (lighter than the page) so cards read as raised,
+   * not recessed like the darker --bg-inset did. */
+  background: var(--bg-subtle);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+/* Corner decorator — nested rotated rounded squares peeking from the top-right,
+ * group-colored via --deco (flat tints, no gradient). Sits behind the content
+ * (z-index:-1, under the share pill that overlaps it, like the reference). */
+.emissionStat::before{
+  content: '';
+  position: absolute;
+  top: -18px;
+  right: -18px;
+  z-index: -1;
+  width: 50px;
+  height: 50px;
+  border-radius: 13px;
+  transform: rotate(40deg);
+  background: color-mix(in srgb, var(--deco) 14%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--deco) 42%, transparent),
+    0 0 0 7px color-mix(in srgb, var(--deco) 9%, transparent);
+  pointer-events: none;
+}
+
+.emissionStat:hover{
+  border-color: color-mix(in srgb, var(--seg) 48%, var(--soft-border));
+}
+
+/* Loading placeholders aren't interactive — suppress the hover border/outline. */
+.emissionStatSkeleton,
+.emissionStatSkeleton:hover{
+  pointer-events: none;
+  border-color: var(--soft-border);
+}
+
+/* Icon chip — rounded square, tinted fill + a hairline ring, like the reference. */
+.emissionIcon{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  color: var(--seg);
+  background: color-mix(in srgb, var(--seg) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seg) 32%, transparent);
+}
+
+/* Share pill — top-right status chip (dot + % of pool), mirroring the
+ * reference's "● Online" pill. */
+.emissionShare{
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px 2px 6px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--seg) 72%, var(--fg-default));
+  background: color-mix(in srgb, var(--seg) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seg) 28%, transparent);
+}
+
+.emissionShare::before{
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 999px;
+  background: var(--seg);
+}
+
+.emissionStat strong{
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' on, 'cv11';
+}
+
+/* Unit rides smaller + muted so the figure leads. */
+.emissionStat strong em{
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--fg-subtle);
+}
+
+.emissionStat span{
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.emissionStat small{
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+
+/* ═══════════════ HEADLINE (treemap) ═══════════════ */
+
+.headline{
+  margin-bottom: 16px;
+}
+
+.headlineStage{
+  padding: 4px 0 10px;
+  min-height: 300px;
+}
+
+.headlineFoot{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  color: var(--fg-subtle);
+  font-size: 11.5px;
+}
+
+.headlineEmpty{
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  color: var(--fg-subtle);
+  font-size: 13px;
+}
+
+/* Treemap loading placeholder — shimmer tiles of descending width that fill the
+   map area, mirroring the real (TAO-sized) tile strip. */
+.treemapSkeleton{
+  position: absolute;
+  inset: 0;
+}
+
+/* Skeleton tiles are absolutely positioned from the same squarify packer as the
+ * real treemap (left/top/width/height set inline), so the placeholder mosaic
+ * matches the map's shape at any viewport instead of collapsing to bars. */
+.treemapSkeleton > span{
+  position: absolute;
+  border-radius: 8px;
+}
+
+/* ── Shared avatar + rank badge ── */
+
+.avatarWrap{
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* Top-3 medal (RankMedal) at the avatar's bottom-right — same icon as the
+ * treemap tiles. */
+.cardRankMedal{
+  position: absolute;
+  bottom: -7px;
+  right: -7px;
+  z-index: 2;
+  line-height: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* ── Treemap ── */
+
+.treemapWrap{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.treemap{
+  position: relative;
+  width: 100%;
+  border-radius: 8px;
+  /* No overflow:hidden — it would clip the tiles' hover drop-shadow on the
+   * edges. The tiles carry their own rounded corners, so nothing needs
+   * clipping here. */
+  background: var(--bg-inset);
+}
+
+.treeTile{
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--fg-default);
+  cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
+  text-align: left;
+  transition: filter 130ms ease;
+}
+
+/* Bottom-up scrim — keeps the label legible on any tile tint and adds depth.
+ * As the first child it paints above the fill but below the positioned label
+ * and avatar (which carry their own position). */
+.treeTile::before{
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.52) 0%, rgba(0, 0, 0, 0.15) 36%, rgba(0, 0, 0, 0) 68%);
+  pointer-events: none;
+}
+
+/* Brightness + shadow are both in `filter` on purpose: a CSS `filter` clips a
+ * sibling `box-shadow` to the border box (so it'd vanish exactly on hover), but
+ * a `drop-shadow()` inside the filter expands the region and renders fully. */
+.treeTile:hover{
+  filter: brightness(1.14) drop-shadow(0 5px 14px rgba(0, 0, 0, 0.55));
+  z-index: 5;
+}
+
+/* Avatar-backed tiles: the miner's photo fills the tile; the wash + scrim
+ * (defined after the base ::before so it wins) keep it on-brand and legible. */
+.treeTileAvatarBg{
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+.treeTileAvatarBg::before{
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.30) 50%, rgba(0, 0, 0, 0) 80%);
+}
+
+.treeTileAvatarBg .treeName{
+  color: #f7f8f8;
+}
+
+.treeTileAvatarBg .treeValue{
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* "Others" tile face mosaic — real <img>s in a 2x2 grid so square avatars CROP
+ * (object-fit: cover) instead of stretching to the tile's aspect ratio, which is
+ * what made them look distorted. The ::after flat scrim mutes the faces; z-index
+ * keeps the whole thing behind the tile's bottom scrim + "Others" label. */
+.treeTileMosaic{
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.treeTileMosaic img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.treeTileMosaic::after{
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+/* Rank medal — positioned wrapper for the medal SVG (gold/silver/bronze disc +
+ * ribbon, with the rank number inside). The SVG carries the metal colors; this
+ * just places it top-left and adds a drop shadow so it lifts off the avatar. */
+.treeTileRank{
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  z-index: 2;
+  line-height: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+/* Miner UID — top-right pill. Its background is tinted by reward stream (green
+ * PR / purple issue / green→purple split for dual) via an inline style, so the
+ * pill doubles as the stream marker. White text + shadows keep the number
+ * legible on the saturated tint and lift the pill off bright avatars. The dark
+ * background here is a fallback only (the inline tint always overrides it). */
+.treeTileUid{
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* Non-miner pool tiles (recycle / treasury / others) read as muted blocks. */
+.treeSink{
+  color: var(--fg-muted);
+}
+
+.treeSink .treeName{
+  color: var(--fg-default);
+}
+
+.treeLabelRow{
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Stream icon(s) (PR / issue discovery) — shown in the overview inspector sub-line. */
+
+.treeName{
+  position: relative;
+  font-weight: 600;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.treeValue{
+  position: relative;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.82);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+:global([data-theme='light']) .treeValue{
+  color: var(--fg-muted);
+  text-shadow: none;
+}
+
+:global([data-theme='light']) .treeName{
+  text-shadow: none;
+}
+
+/* Light tiles are tinted toward white, so flip the scrim to lift the dark
+ * label off the bottom instead of darkening it. */
+:global([data-theme='light']) .treeTile::before{
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.18) 40%, rgba(255, 255, 255, 0) 70%);
+}
+
+/* Avatar tiles keep a dark veil in light mode too (the photo needs it), so
+ * re-assert the dark scrim + light label. Defined after the light scrim above
+ * to win the specificity tie. */
+:global([data-theme='light']) .treeTileAvatarBg::before{
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.30) 50%, rgba(0, 0, 0, 0) 80%);
+}
+
+:global([data-theme='light']) .treeTileAvatarBg .treeName{
+  color: #f7f8f8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+:global([data-theme='light']) .treeTileAvatarBg .treeValue{
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.treeLegend{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.treeLegendNote{
+  color: var(--fg-subtle);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* ── Treemap overview inspector — mirrors the repositories bar inspector ── */
+
+.treeInspector{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  transition: border-color 150ms, background 150ms;
+}
+
+.treeInspectorActive{
+  border-color: var(--accent-glow);
+  background: var(--accent-subtle);
+}
+
+.treeInspector img{
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+  flex: 0 0 auto;
+}
+
+.treeInspectorEmpty{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.treeInspectorHint{
+  color: var(--fg-subtle);
+  font-size: 10.5px;
+}
+
+/* Empty-overview "Browse all miners" button — tinted secondary in brand indigo,
+ * mirroring the repositories BarInspector browse button. */
+.inspectorBrowseBtn{
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent-glow);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 100ms;
+  min-height: 36px;
+}
+.inspectorBrowseBtn:hover{
+  background: var(--menu-item-hover-bg);
+  border-color: var(--accent-emphasis);
+}
+
+.treeInspectorId{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  /* No flex-grow (matches the repositories BarInspector): content packs to the
+     left and only the Open button is pushed right via margin-left:auto, instead
+     of this block expanding and leaving dead space before the stats. */
+  flex: 0 1 auto;
+}
+
+.treeInspectorId .identityLine strong{
+  max-width: 220px;
+  font-size: 13px;
+}
+
+.treeInspectorSub{
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* Vertical divider between the identity/score badges and the top-repos. */
+.treeDivider{
+  align-self: stretch;
+  flex: 0 0 auto;
+  width: 1px;
+  background: var(--soft-border);
+}
+
+/* The spotlighted miner's top earning/scoring repos — ranked chips (gold /
+   silver / bronze) mirroring the repositories page's "top earners" row. */
+.topRepos{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.topReposLabel{
+  font-size: 9.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--fg-subtle);
+  flex-shrink: 0;
+}
+
+.topReposList{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Pill badge per repo (avatar + name + score) — mirrors the repositories
+   earner chips. */
+.topRepoChip{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border-radius: 999px;
+  background: var(--bg-emphasis);
+  border: 1px solid var(--soft-border);
+  color: var(--fg-default);
+  text-decoration: none;
+  font-size: 11px;
+  line-height: 1;
+  transition: border-color 100ms, background 100ms;
+}
+
+.topRepoChip:hover{
+  border-color: var(--accent-glow);
+}
+
+/* Owner avatar inside each top-repo item — matches the repositories avatarSm
+   (20px, 4px radius). Scoped under .topRepoChip so it beats the generic
+   `.treeInspector img` rule (which otherwise forces 44px). */
+.topRepoChip .topRepoChipAvatar{
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-subtle);
+  flex-shrink: 0;
+}
+
+.topRepoName{
+  font-size: 11px;
+  color: var(--fg-muted);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topRepoScore{
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Muted secondary value inside a stat (e.g. "14 · 2 issues"). */
+.treeStatSub{
+  font-style: normal;
+  font-weight: 400;
+  color: var(--fg-subtle);
+}
+
+/* Stream legend entries — a pill swatch matching each tile's tinted UID pill
+ * (solid PR / issue, or the green→purple split for dual miners). */
+.legendBar{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.legendBar > span{
+  width: 18px;
+  height: 11px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.treeInspectorBrowse{
+  align-self: flex-start;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 10.5px;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--soft-border);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 100ms;
+}
+
+.treeInspectorBrowse:hover{
+  color: var(--accent-fg);
+  text-decoration-color: var(--accent-glow);
+}
+
+.treeInspectorStats{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-left: 1px solid var(--soft-border);
+  border-right: 1px solid var(--soft-border);
+  padding: 0 16px;
+  margin: 0 8px;
+}
+
+.treeInspectorSkeletonStats{
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  flex: 0 0 auto;
+  margin: 0 8px;
+}
+
+.treeInspectorSkeletonStat{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (max-width: 760px) {
+  .treeInspectorSkeletonStats{
+    flex-wrap: wrap;
+    margin: 0;
+  }
+}
+
+.treeInspectorStat{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.treeInspectorStat span{
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  line-height: 1.2;
+}
+
+.treeInspectorStat strong{
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.treeStatGreen{
+  color: var(--success-fg) !important;
+}
+
+.treeStatPurple{
+  color: var(--done-fg) !important;
+}
+
+.treeInspectorOpen{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 12px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 5px;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 100ms;
+}
+
+.treeInspectorOpen:hover{
+  background: var(--btn-primary-hover-bg);
+}
+
+/* Sink (recycle / treasury / others) inspector bits. */
+.sinkSwatch{
+  width: 46px;
+  height: 46px;
+  border-radius: 9px;
+  border: 1px solid var(--soft-border);
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+/* Overview panel swatch for the "Others" tile — a 2x2 face mosaic of its
+ * largest miners, mirroring the tile's mosaic. */
+.sinkMosaic{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: 46px;
+  height: 46px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--soft-border);
+  flex: 0 0 auto;
+}
+
+.sinkMosaic img{
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.uidPill{
+  flex: 0 0 auto;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--bg-emphasis);
+  color: var(--fg-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+/* ═══════════════ TOOLBAR ═══════════════ */
+
+.toolbar{
+  /* Full-width band (repositories model): spans the full-width .page edge to
+   * edge; content centers via .toolbarInner, aligned with the .container sections.
+   * width:100% is required for the same reason as .container — .page (the <main>)
+   * is a flexbox, so without it this flex item shrink-wraps to its content instead
+   * of filling. No max-width here: the band itself goes edge-to-edge. */
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--soft-border);
+  border-bottom: 1px solid var(--soft-border);
+  background: var(--bg-subtle);
+}
+
+.toolbarInner{
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+}
+
+/* Filter group (label + chips) wraps as one unit, so on narrow widths the
+ * controls drop to their own row instead of interleaving with the chips. */
+.toolbarFilters{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+/* Filter-by stream pills — mirror the repositories toolbar chip style. */
+.filterBy{
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+  flex-shrink: 0;
+}
+
+.filterChips{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  border-radius: 5px;
+  background: var(--soft-fill);
+  border: 1px solid var(--soft-border);
+  color: var(--fg-dim);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+  user-select: none;
+}
+
+.chip:hover{
+  color: var(--fg-default);
+  border-color: var(--border-default);
+}
+
+.chipDot{
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.toolbarSort{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sortLabel{
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+
+.toolbarRight{
+  display: inline-flex;
+  align-items: center;
+  gap: 12px 14px;
+  flex-wrap: wrap;
+}
+
+.trackedButton,
+.trackedButtonActive{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.trackedButton:hover,
+.trackedButtonActive{
+  color: var(--fg-default);
+  background: var(--bg-emphasis);
+}
+
+.countPill{
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-emphasis);
+  color: var(--fg-default);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.viewToggleGroup{
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--soft-fill);
+  line-height: 1;
+}
+
+.viewToggle{
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 5px 9px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.viewToggle:hover{
+  color: var(--fg-muted);
+}
+
+.viewToggleActive{
+  color: var(--fg-default) !important;
+  background: var(--bg-canvas) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.viewToggleLabel{
+  display: none;
+}
+
+.searchTrigger{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--soft-border);
+  background: var(--bg-canvas);
+  color: var(--fg-subtle);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+
+.searchTrigger:hover{
+  background: var(--bg-emphasis);
+  color: var(--fg-default);
+  border-color: var(--border-default);
+}
+
+.searchTriggerLabel{
+  display: none;
+}
+
+.searchTriggerKbd{
+  display: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.kbd{
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--soft-fill);
+  border: 1px solid var(--soft-border);
+  color: var(--fg-dim);
+  line-height: 1.4;
+}
+
+@media (min-width: 860px) {
+  .searchTriggerLabel,
+.searchTriggerKbd{
+    display: inline-flex;
+  }
+}
+
+/* Phone layout: the filter group and the controls each take a full row, and
+ * Sort grows to fill so the controls row uses the width instead of leaving a
+ * ragged gap. Below 768px the Tracked/Sort text labels are already hidden
+ * (.hideOnMobile), leaving compact icon + dropdown controls. */
+@media (max-width: 640px) {
+  .toolbarFilters,
+.toolbarRight{
+    flex: 1 1 100%;
+  }
+  .toolbarSort{
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .toolbarSort > button{
+    width: 100% !important;
+  }
+}
+
+/* ═══════════════ BOARD ═══════════════ */
+
+.boardShell{
+  min-width: 0;
+}
+
+.boardHead{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.boardEyebrow{
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.boardHeading{
+  margin-top: 4px;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.boardSync{
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/* ── Card grid ── */
+
+.minerGrid{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* Pagination footer under the card grid / list. */
+.pagerRow{
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid var(--soft-border);
+}
+
+.minerCard{
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  color: var(--fg-default);
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms, border-color 120ms, box-shadow 120ms;
+}
+
+.minerCard:hover{
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+:global([data-theme='light']) .minerCard:hover{
+  border-color: var(--border-default);
+  background: var(--bg-emphasis);
+}
+
+.minerCard:focus,
+.minerCard:focus-visible{
+  outline: none;
+}
+
+/* Selected (drawer open) / in-compare — subtle background tints only; no
+ * left-border bar or inset outline (the compare checkmark also marks compare). */
+.selectedCard{
+  background: var(--accent-subtle);
+}
+
+/* ── Repositories-style card layout ── */
+
+.cardCorner{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardHead{
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding-right: 56px;
+}
+
+.cardHead .avatarWrap img{
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+}
+
+.cardHeadText{
+  min-width: 0;
+  flex: 1;
+}
+
+.cardNameLine{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.cardNameLine strong{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.cardSub{
+  margin-top: 3px;
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cardHeadline{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.cardHeadlineMain{
+  min-width: 0;
+}
+
+.cardBig{
+  font-family: var(--mono);
+  font-size: 36px;
+  line-height: 0.95;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.cardBigUnit{
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--fg-muted);
+}
+
+.cardEyebrow{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.cardEyebrowSep{
+  color: var(--border-strong);
+}
+
+.cardEyebrowMono{
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cardHeadlineSide{
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.cardSideNum{
+  font-family: var(--mono);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+
+.cardSideLabel{
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.cardActivityRow{
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 14px;
+  align-items: start;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--soft-border);
+}
+
+.cardActLabel{
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+/* Header activity triplet — open / merged / closed (or open / closed / completed),
+ * each an icon + count tinted by outcome. Wraps to a second line on narrow cards. */
+.actStats{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 5px;
+}
+
+.actStat{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.actSep{
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+.cardActSide{
+  text-align: right;
+}
+
+.cardActSub{
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-repo contributions chart in the activity row (repo-card sparkline analog). */
+.contribSpark{
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2px;
+  height: 26px;
+}
+
+.contribSpark > span{
+  width: 5px;
+  min-height: 2px;
+  border-radius: 1px;
+}
+
+.contribEmpty{
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  height: 26px;
+  color: var(--fg-subtle);
+}
+
+.cardMaintBadge{
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, #e0773d 34%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, #e0773d 14%, transparent);
+  color: #e0773d;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.identityLine{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.identityLine strong{
+  display: block;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.youPill{
+  flex: 0 0 auto;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 3px;
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.starButton,
+.starActive{
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 1px solid var(--soft-border);
+  border-radius: 5px;
+  background: var(--soft-fill);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+
+.starButton:hover,
+.starActive:hover{
+  color: var(--accent-fg);
+  background: var(--accent-subtle);
+  border-color: var(--accent-glow);
+}
+
+/* Active (tracked / in-compare) — saturated indigo chip with a white glyph,
+ * matching the repositories RepoCard corner buttons. */
+.starActive{
+  color: #ffffff;
+  background: var(--accent-emphasis);
+  border-color: var(--accent-emphasis);
+}
+
+.miniStat{
+  min-width: 0;
+}
+
+.miniStat span{
+  display: block;
+  font-size: 10.5px;
+}
+
+.miniStat strong{
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-default);
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.greenText strong{
+  color: var(--success-fg);
+}
+
+.purpleText strong{
+  color: var(--done-fg);
+}
+
+/* ── Reward-stream badges: named, color-tinted chips under the name ── */
+.streamBadges{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 11px;
+}
+
+.streamBadge{
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── Activity + aggregate credibility strip ── */
+
+.cardReposLabel{
+  margin: 13px 0 7px;
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.repoSignals,
+.repoSignalsEmpty{
+  margin: 0 0 13px;
+}
+
+.repoSignals{
+  display: grid;
+  gap: 6px;
+}
+
+.repoSignalsEmpty{
+  display: flex;
+  align-items: center;
+  min-height: 86px;
+  padding: 10px;
+  border: 1px dashed var(--soft-border);
+  border-radius: 6px;
+  color: var(--fg-subtle);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.repoRow{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  background: var(--soft-fill);
+}
+
+.repoRowAvatar{
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+}
+
+.repoRowBody{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.repoRowName{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-default);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.repoRowMeta{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.repoRowMeta span{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1.5px 6px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+}
+
+/* Emission badge — accent-tinted so the per-repo TAO reads as the headline metric. */
+.repoRowMeta .repoRowTao{
+  color: var(--accent-fg);
+  border-color: color-mix(in srgb, var(--accent-fg) 32%, transparent);
+  background: color-mix(in srgb, var(--accent-fg) 12%, transparent);
+}
+
+/* Repo emission weight ("% pool") — muted, borderless, so it reads as context
+ * for the τ/d rather than another metric competing for attention. */
+.repoRowMeta .repoRowPool{
+  padding: 1.5px 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--fg-subtle);
+}
+
+/* "+N more earning repos" reconciliation line under the shown top repos. */
+.cardReposMore{
+  margin: -7px 0 13px;
+  padding: 5px 2px 0;
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tighter label for the secondary "Working toward earning" section so it doesn't
+ * add as much vertical weight as the primary "Top repos" heading. */
+.cardReposLabelTight{
+  margin-top: 4px;
+}
+
+/* "Working toward earning" — a compact, avatar-less list. Single-line rows keep
+ * this secondary section from inflating the card the way full repo rows would. */
+.blockedList{
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+/* Each "almost earning" repo is two lines — repo + pool weight on top, the gate
+ * progress bar + reason below — split by a hairline (no boxes, matching the
+ * top-repos lines). */
+.blockedRow{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.blockedRow:first-child{
+  padding-top: 1px;
+}
+
+.blockedBody{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.blockedRow + .blockedRow{
+  border-top: 1px solid var(--softer-border);
+}
+
+.blockedTop{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.blockedRepo{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--fg-default);
+}
+
+.blockedPool{
+  flex: 0 0 auto;
+  color: var(--fg-subtle);
+  font-size: 9.5px;
+}
+
+.blockedGate{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.blockedBarTrack{
+  flex: 1 1 auto;
+  display: flex;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-emphasis);
+  overflow: hidden;
+}
+
+.blockedBarSeg{
+  height: 100%;
+}
+
+.blockedReason{
+  flex: 0 0 auto;
+  color: var(--fg-subtle);
+  font-size: 9.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.blockedNum{
+  font-weight: 700;
+}
+
+.blockedMore{
+  margin-top: 6px;
+  color: var(--fg-subtle);
+  font-size: 10px;
+}
+
+/* Contextual incentive note — explains a penalty, or why an active miner is
+ * earning nothing yet (and how earning would happen). */
+.cardNote{
+  display: flex;
+  gap: 6px;
+  margin-top: 11px;
+  padding: 8px 10px;
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  background: var(--soft-fill);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.cardNote svg{
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--attention-fg);
+}
+
+/* ─── Top-repos switchers (live A/B: grouping + emission style) ──────────── */
+/* ─── "Top repos" per-row list (ring avatar = credibility, emission = the row's
+ * own background filled left-to-right to the miner's share of the repo pool) ── */
+.repoList{
+  display: grid;
+  gap: 0;
+  margin: 0 0 13px;
+}
+
+.repoListRow{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Round just the group's outer corners (top of the first row, bottom of the last)
+ * and clip the per-row fills to them — the inner hairline dividers stay straight,
+ * so the stack reads as one contained panel nested in the 10px card. */
+.repoListLines{
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Edge-to-edge rows split by a hairline divider, each row's background carrying
+ * its emission fill — so the column reads as one continuous per-repo meter. */
+.repoListLines .repoListRow{
+  padding: 10px 4px;
+}
+
+.repoListLines .repoListRow + .repoListRow{
+  border-top: 1px solid var(--softer-border);
+}
+
+.repoListBody{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.repoListTop{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 5px;
+}
+
+.repoListName{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-default);
+}
+
+.repoListTao{
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The repo's TOTAL emission, shown before the miner's share in a muted tone so
+ * it reads as context, distinct from the accent-colored miner share. */
+.repoListTaoRepo{
+  color: var(--fg-muted);
+}
+
+/* Under-bar row: activity badges (left) + score badge (right). */
+.repoListFoot{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 8px;
+}
+
+.repoListFoot:empty{
+  display: none;
+}
+
+.scoreBadge{
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  background: var(--soft-fill);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.scoreBadgeNums{
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.scoreBadgeVal{
+  color: var(--fg-default);
+  font-weight: 700;
+}
+
+.scoreBadgeLabel{
+  color: var(--fg-subtle);
+}
+
+.scoreBadgeColl{
+  color: var(--attention-fg);
+  font-weight: 600;
+}
+
+/* Per-repo activity — one badge per type (PRs / issues), each holding its colored
+ * states (open/merged/closed PRs, open/closed/completed issues). Sits in the foot
+ * row alongside the score badge, so spacing is handled by .repoListFoot. */
+.repoStats{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.statBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 9px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  background: var(--soft-fill);
+}
+
+.statItem{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small circular avatar wrapped by credibility "spinner" ring(s). */
+.repoRing{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.repoRingSvg{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.repoRingTrack{
+  stroke: var(--bg-emphasis);
+}
+
+.repoRingImg{
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-emphasis);
+}
+
+.repoRingBadges{
+  position: absolute;
+  right: -3px;
+  bottom: -4px;
+  display: flex;
+  gap: 2px;
+}
+
+.credChip{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid;
+  border-radius: 7px;
+  font-size: 8.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dual-stream avatars carry TWO cred chips — two 3-digit pills overflow a small
+ * avatar when right-anchored, so center the pair and compact them to fit. */
+/* Dual-stream avatars carry both credibilities in ONE centered pill (two separate
+ * 3-digit chips overflow a small avatar) — PR cred and issue-discovery cred,
+ * color-coded, on a neutral pill. */
+.repoRingBadgesDual{
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.credChipDual{
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+  padding: 0 2px;
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  font-size: 7.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.credBadges{
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.credBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px 1px 5px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Circular credibility ring — gray track + stream-colored arc + centered %. */
+.credRing{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.credRing svg{
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.credRingTrack{
+  stroke: var(--bg-emphasis);
+}
+
+/* The 0.80 eligibility marker on the ring — a small contrasting dot so you can
+ * see at a glance whether credibility clears the earning threshold. */
+.credRingThreshold{
+  fill: var(--fg-muted);
+  stroke: var(--bg-subtle);
+  stroke-width: 0.6;
+}
+
+.credRingPct{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+
+.activityPills{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.activityPills span,
+.eligibilityPill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  background: var(--soft-fill);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.activityPills span:first-child{
+  color: var(--success-fg);
+}
+
+.activityPills span:nth-child(2){
+  color: var(--done-fg);
+}
+
+.eligible{
+  color: var(--success-fg);
+  border-color: color-mix(in srgb, var(--success-fg) 38%, var(--soft-border));
+  background: var(--success-subtle);
+}
+
+.inactive{
+  color: var(--fg-muted);
+  background: var(--bg-emphasis);
+}
+
+/* ── List view ── */
+
+.listWrap{
+  display: flex;
+  flex-direction: column;
+  /* Same bordered, rounded card as the repositories table: surface fill, hairline
+   * border, clipped corners — the header strip + rows sit inside it. */
+  background: var(--app-surface);
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.listHeader,
+.listRow{
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1.2fr) 100px 64px minmax(100px, 0.85fr) minmax(100px, 0.85fr) minmax(96px, 0.7fr) minmax(200px, 1.8fr);
+  align-items: center;
+  gap: 12px;
+}
+
+/* Header strip — matches the repositories table header exactly. */
+.listHeader{
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--soft-border);
+  background: var(--app-deep);
+  color: var(--fg-mute);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.listHeadRight{
+  text-align: right;
+}
+
+/* Row chrome mirrors the repositories list — left-accent on select, hairline
+ * dividers, hover tint. The 3px transparent left border + 11px left padding sum
+ * to the header's 14px inset so columns stay aligned. */
+.listRow{
+  padding: 11px 14px;
+  padding-left: 11px;
+  border-bottom: 1px solid var(--softer-border);
+  border-left: 3px solid transparent;
+  color: var(--fg-default);
+  cursor: pointer;
+  text-align: left;
+  transition: background 100ms, border-color 100ms;
+}
+
+.listRow:last-child{
+  border-bottom: none;
+}
+
+.listRow:hover{
+  background: var(--softer-fill);
+}
+
+/* Keep selected / compare rows tinted even on hover (repositories-table behavior). */
+.listRowSelected:hover{
+  background: var(--menu-item-hover-bg);
+}
+
+.listRow:focus,
+.listRow:focus-visible{
+  outline: none;
+}
+
+.listRowSelected{
+  border-left-color: var(--accent-emphasis);
+  background: var(--accent-subtle);
+}
+
+.listIdentity{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.listIdentity img{
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+  flex: 0 0 auto;
+}
+
+.listIdentityText{
+  min-width: 0;
+}
+
+.listIdentityText .identityLine strong{
+  max-width: 100%;
+  font-size: 12.5px;
+}
+
+.listMeta{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  min-width: 0;
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+/* Right-aligned stacked numeric cell — big value + small caption (repos style). */
+.listCell{
+  min-width: 0;
+  text-align: right;
+}
+
+.listCellNum{
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+
+.listTaoNum{
+  color: var(--accent-fg);
+}
+
+.listCellSub{
+  margin-top: 2px;
+  color: var(--fg-subtle);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* PR / issue activity columns — each holds the card's outcome triplet. */
+.listActCell{
+  min-width: 0;
+}
+
+/* Contributions column — the card's per-repo sparkline, left-aligned for the table
+ * (the card right-aligns it) and trimmed a touch to sit on the row. */
+.listContribCell{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.listContribCell .contribSpark{
+  justify-content: flex-start;
+  height: 22px;
+}
+
+.listContribCell .contribEmpty{
+  justify-content: flex-start;
+  height: 22px;
+}
+
+.listContribSub{
+  color: var(--fg-subtle);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Top-repos column — the card's RepoEmissionBar (compact) reused verbatim, so the
+ * ring avatars, names, τ/d and emission fill match the card exactly. */
+.listReposCol{
+  min-width: 0;
+}
+
+/* Compact top-repos (list view) — a single-line strip: a row of ring avatars,
+ * the #1 repo's name + τ/d, and a "+N" for the rest. Keeps the row short. */
+.repoStrip{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.repoStripAvatars{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.repoStripAvatar{
+  display: inline-flex;
+  line-height: 0;
+}
+
+/* Smaller cred badge for the strip's compact avatars (PR/issue cred, or "-" for a
+ * maintained repo), pinned bottom-right by the base .repoRingBadges rule. */
+.repoStripAvatar .credChip{
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 6px;
+  font-size: 7.5px;
+}
+
+.repoStripName{
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-default);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.repoStripTao{
+  flex: 0 0 auto;
+  color: var(--accent-fg);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.repoStripMore{
+  flex: 0 0 auto;
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.repoMiniEmpty{
+  color: var(--fg-subtle);
+  font-size: 11px;
+}
+
+.listActions{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.listActions .starButton,
+.listActions .starActive{
+  width: 24px;
+  height: 24px;
+}
+
+/* ═══════════════ DRAWER ═══════════════ */
+
+@keyframes drawerIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* ── Repo network ── */
+
+.trackRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  border-top: 1px solid var(--softer-border);
+  font-size: 12.5px;
+}
+
+.trackRow strong{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-default);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.goodValue{
+  color: var(--success-fg) !important;
+}
+
+.mutedValue{
+  color: var(--fg-muted) !important;
+}
+
+.progressBlock{
+  margin: 12px 0;
+}
+
+.progressBlock > div{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.progressBlock strong{
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.progressTrack{
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-emphasis);
+}
+
+.progressTrack span{
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.progressGreen{
+  background: var(--success-emphasis);
+}
+
+.progressPurple{
+  background: var(--done-emphasis);
+}
+
+/* ═══════════════ STATES ═══════════════ */
+
+.emptyState,
+.errorState{
+  padding: 32px;
+  color: var(--fg-muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.errorState{
+  color: var(--danger-fg);
+  background: var(--danger-subtle);
+  border-bottom: 1px solid var(--danger-emphasis);
+}
+
+.skeletonWrap{
+  padding: 12px;
+}
+
+/* ═══════════════ COMPARE TRAY + MODAL ═══════════════ */
+
+.modalOuter{
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: start center;
+  padding: 8vh 16px 16px;
+}
+
+.modalBg{
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.modalBox{
+  position: relative;
+  width: 100%;
+  max-width: 920px;
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-emphasis);
+  border: 1px solid var(--soft-border);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* ═══════════════ MINER DETAIL MODAL ═══════════════ */
+
+/* Wider box for the modal's 2-column body. */
+.modalBoxWide{
+  max-width: 1020px;
+}
+
+/* Header: rich identity block on the left, action cluster on the right.
+ * Surface dropped one step (--bg-inset) for a console title-bar feel; scoped to
+ * .modalBoxWide so the shared Compare modal header is untouched. */
+
+/* 56px frame holding a 40px circular avatar inside dual credibility rings
+ * (outer = PR cred green, inner = issue cred purple). */
+
+.mmMono{
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mmNav{
+  display: flex;
+  gap: 4px;
+  margin-right: 2px;
+}
+
+/* Anchors share the square-button look the scaffold already gives buttons. */
+
+/* Hero — headline emission + rank chips. A faint wash + a 2px left tick are the
+ * one place tinted by the miner's DOMINANT reward stream (--mm-stream, set inline);
+ * everything else stays grayscale / rationed indigo. */
+
+/* Precision instrument readout — integer bold, fraction muted, unit as a tag. */
+
+/* Rank strip as a hairline-divided instrument quad (one register, tabular). */
+
+.mmFailed{
+  margin: 12px 18px 0;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger-emphasis) 40%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger-emphasis) 12%, var(--bg-canvas));
+  color: var(--danger-fg);
+  font-size: 12px;
+}
+
+/* Two-column body. */
+
+.mmSectionCount{
+  margin-left: auto;
+  color: var(--fg-subtle);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Emission breakdown — a donut centerpiece (stream-colored arcs) beside the
+ * τ/d + % legend kept as the data table, framed in a console field. */
+
+.mmDonut{
+  width: 108px;
+  height: 108px;
+  flex: 0 0 auto;
+}
+
+.mmDonutHole{
+  font-family: var(--mono);
+  fill: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mmDonutUnit{
+  fill: var(--fg-subtle);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+}
+
+.mmLegend{
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.mmLegendRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mmSwatch{
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.mmLegendLabel{
+  color: var(--fg-muted);
+}
+
+.mmLegendTao{
+  margin-left: auto;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-default);
+}
+
+.mmLegendPct{
+  width: 38px;
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-subtle);
+}
+
+.mmMuted{
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+/* Reward-stream cards (PR / issue / maintainer). */
+
+/* Contributions — code volume line. */
+
+.mmAdd{
+  color: var(--success-fg);
+}
+
+.mmDel{
+  color: var(--danger-fg);
+}
+
+/* Collapsible scoring internals. */
+
+/* Identity. */
+
+/* ── Tabs — precise underline rail (animated ::after) ─────────────── */
+
+/* ── Works lists (PR / issue rows) ────────────────────────────── */
+/* One framed register; rows light a left spine in their own role/state color
+ * (--row-accent, set inline) on hover — semantic, not flat indigo. */
+.mmWorkList{
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mmWorkRow,
+.mmRepoRow{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 0;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--softer-border);
+  box-shadow: inset 0 0 0 transparent;
+  transition: background 100ms, box-shadow 100ms;
+}
+
+.mmWorkRow:last-child,
+.mmRepoRow:last-child{
+  border-bottom: none;
+}
+
+.mmWorkRow:hover,
+.mmRepoRow:hover{
+  background: var(--softer-fill);
+  box-shadow: inset 2px 0 0 var(--row-accent, var(--accent-emphasis));
+}
+
+.mmWorkIcon{
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
+.mmWorkBody{
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mmWorkTitle{
+  font-size: 12.5px;
+  color: var(--fg-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mmWorkMeta{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--fg-subtle);
+  font-size: 10.5px;
+}
+
+.mmWorkRepo{
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.mmWorkNum{
+  font-family: var(--mono);
+}
+
+.mmDiff{
+  display: inline-flex;
+  gap: 5px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mmWorkRight{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.mmWorkDate{
+  width: 40px;
+  text-align: right;
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mmWorkExt{
+  color: var(--fg-subtle);
+  opacity: 0;
+  transition: opacity 100ms;
+}
+
+.mmWorkRow:hover .mmWorkExt{
+  opacity: 1;
+}
+
+.mmScoreBadge{
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Repository rows ──────────────────────────────────────────── */
+.mmRepoRow{
+  gap: 11px;
+}
+
+.mmRepoAvatar{
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+  flex: 0 0 auto;
+}
+
+.mmRepoBody{
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mmRepoTop{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mmRepoName{
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mmRoleChip{
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mmRepoMeta{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+  color: var(--fg-subtle);
+  font-size: 10.5px;
+}
+
+.mmRepoMeta span{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mmRepoTao{
+  flex: 0 0 auto;
+  width: 84px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Filter chips + empty state ───────────────────────────────── */
+.mmChips{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mmChip{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--soft-border);
+  border-radius: 5px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 100ms, border-color 100ms, background 100ms, transform 120ms;
+}
+
+.mmChip:hover{
+  color: var(--fg-default);
+}
+
+.mmChipOn{
+  border-color: color-mix(in srgb, var(--accent-emphasis) 55%, transparent);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+.mmChipN{
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.mmChipOn .mmChipN{
+  color: var(--accent-fg);
+}
+
+.mmEmpty{
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+/* ── Motion + focus (surgical, reduced-motion gated). The box entrance is scoped
+ * to .modalBoxWide so the shared Compare modal (bare .modalBox) is untouched; the
+ * scrim is left un-animated for the same reason. ─────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .modalBoxWide{
+    animation: mmIn 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes mmIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.99);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .mmDonut{
+    animation: mmPop 240ms ease-out both;
+    transform-origin: center;
+  }
+  @keyframes mmPop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .mmChip:active{
+    transform: scale(0.94);
+  }
+}
+
+.mmChip:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+@media (max-width: 760px) {
+          .modalBoxWide{
+    max-height: 92vh;
+  }
+    .mmWorkRepo{
+    max-width: 130px;
+  }
+  .mmRepoTao{
+    width: 64px;
+  }
+  .mmWorkDate{
+    width: 36px;
+  }
+}
+
+/* ═══════════════ MINER DASHBOARD MODAL (2-pane: sidebar + cards) ═══════════════ */
+
+/* Shell — near-fullscreen; .mmShell rides alongside .modalBox/.modalBoxWide so no
+ * bare .modalBox rule is touched (Compare modal stays safe). */
+.mmShell{
+  max-width: 1180px;
+  width: min(94vw, 1180px);
+  height: 88vh;
+  max-height: 88vh;
+  padding: 0;
+  border: none;
+}
+.mmShellMax{
+  width: 98vw;
+  max-width: 98vw;
+  height: 96vh;
+  max-height: 96vh;
+}
+
+/* Center the near-fullscreen dashboard with minimal gutter (only when this modal
+ * is open; the shared Compare modal keeps the default top-aligned padding). */
+.modalOuter:has(.mmShell){
+  padding: 2vh 12px;
+  place-items: center;
+}
+
+.mmTopBar{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--soft-border);
+  /* A subtle surface one step up from the page — --bg-subtle is #101113 in dark, #f9fafb
+   * in light. The old --bg-inset sank to the page's own value in dark mode and the bar
+   * vanished; this sits lighter than the page yet darker than the card body, so it reads
+   * as a distinct toolbar band, with the border below dividing it from the content. */
+  background: var(--bg-subtle);
+  flex: 0 0 auto;
+}
+.mmTopActions{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mmTopBar button{
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--soft-border);
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 100ms, background 100ms, border-color 100ms, transform 120ms;
+}
+.mmTopBar button:hover{
+  color: var(--fg-default);
+  /* A step lighter than the --bg-subtle bar, so the button lifts on hover and never
+   * matches the bar's surface. */
+  background: var(--bg-emphasis);
+}
+.mmTopBar button:disabled{
+  opacity: 0.4;
+  cursor: default;
+}
+.mmTopBar button:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: 2px;
+}
+/* Tracked state — gold star, so the toggle reads as "favorited". */
+.mmTopBar button.mmTopStarOn,
+.mmTopBar button.mmTopStarOn:hover{
+  color: var(--attention-fg);
+  border-color: color-mix(in srgb, var(--attention-emphasis) 45%, transparent);
+}
+
+.mmGrid{
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+.mmSide{
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--soft-border);
+  background: var(--bg-subtle);
+}
+.mmSideScroll{
+  overflow-y: auto;
+  padding: 22px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.mmSideAvatarWrap{
+  position: relative;
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+}
+.mmSideAvatarRing{
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(
+    from 200deg,
+    var(--accent-emphasis),
+    color-mix(in srgb, var(--accent-emphasis) 35%, transparent),
+    var(--accent-emphasis)
+  );
+  box-shadow: 0 0 0 1px var(--soft-border), 0 0 18px var(--accent-glow);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+}
+.mmSideAvatar{
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--bg-emphasis);
+}
+.mmSideStatus{
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dot, var(--fg-subtle));
+  border: 2px solid var(--bg-subtle);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--dot, var(--fg-subtle)) 70%, transparent);
+}
+.mmSideNameRow{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.mmSideName{
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--fg-default);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mmSideNameGh{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  transition: color 0.15s ease;
+}
+.mmSideNameGh:hover{
+  color: var(--fg-default);
+}
+.mmSidePoints{
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-emphasis) 45%, transparent);
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.mmSidePoints svg{
+  align-self: center;
+}
+.mmSidePoints strong{
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.mmSidePointsUnit{
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+.mmSideDivider{
+  width: 100%;
+  height: 1px;
+  background: var(--soft-border);
+  margin: 16px 0;
+}
+/* Volume at a glance — PRs / issues / repos as three compact cells. */
+.mmSideGrid{
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.mmSideCell{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 9px 4px;
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  background: var(--bg-canvas);
+}
+.mmSideCell strong{
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.15;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+.mmSideCell span{
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+}
+/* The remaining stats — a tidy hairline-divided register. */
+.mmSideStats{
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.mmSideStat{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--softer-border);
+}
+.mmSideStat:last-child{
+  border-bottom: none;
+}
+.mmSideStat dt{
+  color: var(--fg-subtle);
+  margin: 0;
+}
+.mmSideStat dd{
+  margin: 0;
+  color: var(--fg-default);
+  font-weight: 600;
+  text-align: right;
+}
+.mmSidePos{
+  color: var(--success-fg);
+}
+.mmSideBio{
+  width: 100%;
+  margin: 8px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+/* Tenure ribbon — a diagonal corner banner in the modal's top-left, coloured by SN74
+ * working-age tier (grey → blue → green → purple → gold). The modal box's overflow:hidden
+ * + rounded corner clip it cleanly into the corner; pointer-events:none keeps the nav
+ * buttons beneath it clickable. The star + uppercase tracking give it a "rank" feel. */
+.mmRibbon{
+  position: absolute;
+  bottom: 22px;
+  left: -36px;
+  z-index: 6;
+  width: 142px;
+  padding: 3px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transform: rotate(45deg);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+  pointer-events: none;
+  box-shadow: 0 2px 9px rgba(0, 0, 0, 0.45);
+}
+.mmRibbon svg{
+  flex-shrink: 0;
+  margin-top: -1px;
+}
+.mmTenureNew{
+  background: var(--neutral-emphasis);
+}
+.mmTenureRookie{
+  background: var(--accent-emphasis);
+}
+.mmTenureRegular{
+  background: var(--success-emphasis);
+}
+.mmTenureVeteran{
+  background: var(--done-emphasis);
+}
+.mmTenurePioneer{
+  background: var(--attention-emphasis);
+  color: #1c1500;
+}
+.mmSideFollow{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.mmSideFollow svg{
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+.mmSideFollow strong{
+  color: var(--fg-default);
+  font-weight: 600;
+}
+.mmSideFollowSep{
+  color: var(--fg-subtle);
+}
+
+/* ── Main column + cards ──────────────────────────────────────── */
+.mmMain{
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 18px 24px;
+  background: var(--bg-canvas);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.mmBottomRow{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Top-level dashboard tabs (Overview / Contributions). */
+.mmMainTabs{
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--soft-border);
+}
+.mmMainTab{
+  position: relative;
+  border: none;
+  background: none;
+  padding: 8px 2px;
+  margin-bottom: -1px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 100ms;
+}
+.mmMainTab::after{
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 2px;
+  width: 0;
+  background: var(--accent-emphasis);
+  transition: width 140ms ease;
+}
+.mmMainTab:hover{
+  color: var(--fg-default);
+}
+.mmMainTabOn{
+  color: var(--fg-default);
+}
+.mmMainTabOn::after{
+  width: 100%;
+}
+.mmMainTab:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.mmCard{
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--soft-border);
+  border-radius: 16px;
+  background: var(--bg-inset);
+}
+.mmCardHead{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mmCardTitle{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--fg-default);
+  font-size: 13px;
+  font-weight: 600;
+}
+.mmCardTitle svg{
+  color: var(--fg-subtle);
+}
+/* Insights & next actions — Linear-style cards: a subtle elevated surface with a
+ * clean 1px border; the semantic colour lives only in a soft icon badge, keeping the
+ * row calm and scannable. Derived from the miner's per-repo signals. */
+.mmInsights{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mmInsight{
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 13px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  transition: border-color 120ms ease;
+}
+.mmInsight:hover{
+  border-color: var(--border-strong);
+}
+.mmInsightIcon{
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+.mmInsightText{
+  min-width: 0;
+}
+.mmInsightTitle{
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg-default);
+}
+.mmInsightBody{
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.mmInsightStrong .mmInsightIcon{
+  color: var(--success-fg);
+  background: color-mix(in srgb, var(--success-emphasis) 15%, transparent);
+}
+.mmInsightWarn .mmInsightIcon{
+  color: var(--danger-fg);
+  background: color-mix(in srgb, var(--danger-emphasis) 16%, transparent);
+}
+.mmInsightAction .mmInsightIcon{
+  color: var(--attention-fg);
+  background: color-mix(in srgb, var(--attention-emphasis) 16%, transparent);
+}
+.mmInsightInfo .mmInsightIcon{
+  color: var(--accent-fg);
+  background: color-mix(in srgb, var(--accent-emphasis) 15%, transparent);
+}
+.mmInfo{
+  display: inline-flex;
+  color: var(--fg-subtle);
+  cursor: help;
+}
+
+/* Range tabs (timeline) */
+
+.mmTlEmpty{
+  display: grid;
+  place-items: center;
+  height: 216px;
+  border: 1px dashed var(--soft-border);
+  border-radius: 12px;
+  color: var(--fg-subtle);
+  font-size: 12px;
+}
+
+/* Right-side card controls (repo dropdown + filter tabs). */
+.mmCardControls{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* Custom repository dropdown (avatar + per-repo τ/day + score), matching the
+ * app's Dropdown chrome. */
+.mmRepoDd{
+  position: relative;
+  display: inline-flex;
+}
+.mmRepoDdTrigger{
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  height: 30px;
+  padding: 0 8px 0 7px;
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  background: var(--bg-canvas);
+  color: var(--fg-default);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 100ms, box-shadow 100ms;
+}
+.mmRepoDdTrigger:hover{
+  border-color: var(--border-strong);
+}
+.mmRepoDdTrigger[aria-expanded='true'],
+.mmRepoDdTrigger:focus-visible{
+  outline: none;
+  border-color: var(--accent-emphasis);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.mmRepoDdAvatar{
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+  flex: 0 0 auto;
+}
+.mmRepoDdName{
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mmRepoDdChevron{
+  color: var(--fg-subtle);
+  flex: 0 0 auto;
+}
+.mmRepoDdMenu{
+  /* position/top/left/width/max-height are set inline (body portal, fixed). */
+  z-index: 9600;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: var(--shadow-overlay);
+}
+.mmRepoDdOpt{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-default);
+  text-align: left;
+  cursor: pointer;
+  transition: background 80ms;
+}
+.mmRepoDdOpt:hover{
+  background: var(--menu-item-hover-bg);
+}
+.mmRepoDdOptOn{
+  background: var(--accent-subtle);
+}
+.mmRepoDdInfo{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mmRepoDdRepoText{
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-default);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mmRepoDdOwner{
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.mmRepoDdMeta{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-subtle);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mmRepoDdScore{
+  color: var(--fg-muted);
+}
+.mmRepoDdMetaSep{
+  opacity: 0.45;
+}
+.mmRepoDdValue{
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  padding-left: 8px;
+}
+.mmRepoDdValue strong{
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.1;
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+}
+.mmRepoDdValueZero strong{
+  color: var(--fg-subtle);
+  font-weight: 500;
+}
+.mmRepoDdValueUnit{
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--fg-subtle);
+}
+
+/* Filter tabs (table) */
+.mmCardTabs{
+  display: flex;
+  gap: 14px;
+}
+.mmCardTab{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 1px;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 100ms;
+}
+.mmCardTab::after{
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 2px;
+  width: 0;
+  background: var(--accent-emphasis);
+  transition: width 140ms ease;
+}
+.mmCardTab:hover{
+  color: var(--fg-default);
+}
+.mmCardTabOn{
+  color: var(--fg-default);
+}
+.mmCardTabOn::after{
+  width: 100%;
+}
+.mmCardTabN{
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 5px;
+  text-align: center;
+  background: var(--soft-fill);
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mmCardTabOn .mmCardTabN{
+  background: var(--accent-subtle);
+  color: var(--accent-fg);
+}
+
+/* Works table */
+.mmTableWrap{
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 420px;
+  scrollbar-width: thin;
+}
+/* Contributions list — the card fills the main pane (no floating void): head + foot
+ * stay put and the table scrolls in the space between (single scroll, not two). */
+.mmCardFill{
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mmCardFill .mmTableWrap{
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+.mmCardFill .mmEmpty{
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mmCardFill .mmCardFoot{
+  flex: 0 0 auto;
+}
+.mmTable{
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.mmTable thead th{
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 12px;
+  text-align: left;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--soft-border);
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+/* Fluid columns (percentages) so the table fills the panel at any width — no dead
+ * zone when maximized, nothing clipped — while keeping the normal-size proportions. */
+.mmThState{ width: 12%; }
+.mmThTitle{ width: 46%; }
+.mmThScore{
+  width: 9%;
+  text-align: right;
+}
+.mmThCreated,
+.mmThUpdated{ width: 12%; }
+.mmTr{
+  cursor: pointer;
+  transition: background 100ms;
+}
+.mmTr:hover{
+  background: var(--softer-fill);
+}
+.mmTr:hover .mmTitleText{
+  color: var(--accent-fg);
+}
+.mmTr:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: -1px;
+}
+.mmTable tbody td{
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--softer-border);
+  font-size: 12.5px;
+  color: var(--fg-default);
+  vertical-align: middle;
+}
+.mmTable tbody tr:last-child td{
+  border-bottom: none;
+}
+.mmTdTitle{
+  min-width: 0;
+}
+.mmTitleLink{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.mmTitleText{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mmTitleLink:hover .mmTitleText{
+  color: var(--accent-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mmTitleNum{
+  flex: 0 0 auto;
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.mmPill{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.mmTdCreated,
+.mmTdUpdated{
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Base (at merge) and Live (time-decayed) per-PR score columns. */
+.mmTdScore{
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* Base = muted baseline number (the score at merge). */
+.mmScoreBase{
+  color: var(--fg-subtle);
+}
+/* Current = a freshness-tinted chip, so the score columns read as badges (distinct
+ * from the plain date text) and the color shows how much value has decayed. */
+.mmScoreChip{
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 48px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+.mmScoreFresh{
+  background: var(--success-subtle);
+  color: var(--success-fg);
+}
+.mmScoreFading{
+  background: var(--attention-subtle);
+  color: var(--attention-fg);
+}
+.mmScoreStale{
+  background: var(--neutral-subtle);
+  color: var(--fg-muted);
+}
+/* Recent "Updated" highlight — mirrors the explorer's RecentTime. */
+.mmRecent{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--success-fg);
+  font-weight: 700;
+}
+.mmRecentDot{
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success-emphasis);
+  display: inline-block;
+  animation: gtPulse 1.6s ease-in-out infinite;
+}
+.mmCardFoot{
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+  border-top: 1px solid var(--softer-border);
+}
+.mmViewAll{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  color: var(--accent-fg);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 100ms;
+  padding-top: 10px;
+}
+.mmViewAll:hover{
+  opacity: 0.78;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mmCardTab:focus-visible,
+.mmViewAll:focus-visible,
+.mmTitleLink:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Row-detail (master-detail) view inside the works card. */
+.mmDetail{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mmDetailTitle{
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fg-default);
+}
+/* The title is the link to GitHub: underline the text on hover, with a trailing
+ * external-link icon at the end of the title. */
+.mmDetailTitleLink{
+  color: inherit;
+  text-decoration: none;
+}
+.mmDetailTitleLink:hover .mmDetailTitleText{
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mmDetailTitleIcon{
+  margin-left: 5px;
+  color: var(--fg-subtle);
+  vertical-align: middle;
+}
+.mmDetailTitleLink:hover .mmDetailTitleIcon{
+  color: var(--accent-fg);
+}
+.mmDetailBody{
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--soft-border);
+  border-radius: 10px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* "View on GitHub" link under an issue's description. */
+.mmDetailGh{
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--soft-border);
+  border-radius: 8px;
+  background: var(--bg-canvas);
+  color: var(--fg-default);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 100ms, border-color 100ms, background 100ms;
+}
+.mmDetailGh:hover{
+  color: var(--accent-fg);
+  border-color: var(--accent-emphasis);
+  background: var(--soft-fill);
+}
+.mmDetailGh:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: 2px;
+}
+
+/* ── Rich PR detail (scoring) ──────────────────────────────────── */
+.mmDetailTop{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mmDetailBackBtn{
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 100ms, background 100ms, border-color 100ms;
+}
+.mmDetailBackBtn:hover{
+  color: var(--fg-default);
+  background: var(--bg-emphasis);
+}
+.mmDetailBackBtn:focus-visible{
+  outline: 1px solid var(--accent-emphasis);
+  outline-offset: 2px;
+}
+.mmDetailAvatar{
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  background: var(--bg-emphasis);
+  flex: 0 0 auto;
+}
+.mmDetailNum{
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg-default);
+}
+.mmDetailScore{
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+.mmDetailScore > span{
+  color: var(--fg-subtle);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mmDetailScore strong{
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+.mmDetailRepo{
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-subtle);
+}
+.mmDetailRepo:hover{
+  color: var(--accent-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mmDetailChips{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mmDetailChip{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--soft-border);
+  border-radius: 7px;
+  background: var(--bg-canvas);
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+a.mmDetailChip:hover{
+  color: var(--fg-default);
+  border-color: var(--border-strong);
+}
+.mmDetailChip svg{
+  color: var(--fg-subtle);
+}
+
+/* Detail sub-tabs (Overview / Files / Conversation) */
+
+.mmOverview{
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.mmDetailLabel{
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-subtle);
+}
+
+/* Time-decay card */
+.mmDecayCard{
+  padding: 14px;
+  border: 1px solid var(--soft-border);
+  border-radius: 12px;
+  background: var(--bg-canvas);
+}
+.mmDecayHead{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.mmDecayMult{
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-default);
+  font-variant-numeric: tabular-nums;
+}
+.mmDecayMult em{
+  color: var(--fg-subtle);
+  font-style: normal;
+  font-weight: 500;
+  font-size: 11px;
+}
+/* Bordered chart container — matches the Overview EarningForecastChart. */
+.mmDecayPlot{
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
+  border-radius: 6px;
+}
+.mmDecaySvg{
+  display: block;
+  width: 100%;
+  height: 220px;
+}
+/* Hover tooltip — mirrors the Overview forecast chart's readout. */
+.mmDecayTip{
+  background: color-mix(in srgb, var(--bg-overlay) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+.mmDecayTipHead{
+  margin-bottom: 6px;
+  color: var(--fg-default);
+  font-size: 11px;
+  font-weight: 700;
+}
+.mmDecayTipMuted{
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-style: italic;
+}
+.mmDecayTipRow{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.mmDecayTipRow + .mmDecayTipRow{
+  margin-top: 4px;
+}
+.mmDecayTipDot{
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+.mmDecayTipKey{
+  flex: 1;
+  color: var(--fg-muted);
+}
+.mmDecayTipVal{
+  color: var(--fg-default);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* Scoring breakdown + token donut */
+.mmScoreGrid{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: 16px;
+  align-items: start;
+}
+.mmBreak{
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--soft-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.mmBreakRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--softer-border);
+  font-size: 12.5px;
+}
+.mmBreakRow:last-child{
+  border-bottom: none;
+}
+.mmBreakRow > span{
+  color: var(--fg-subtle);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mmBreakRow strong{
+  color: var(--fg-default);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mmTokenCard{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--soft-border);
+  border-radius: 12px;
+  background: var(--bg-canvas);
+}
+.mmTokenCard .mmDetailLabel{
+  align-self: flex-start;
+}
+.mmTokenLegend{
+  display: flex;
+  gap: 14px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.mmTokenLegend > span{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mmConvPanel{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .mmScoreGrid{
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Heatmap internals (frame = .mmCard) */
+.mmHeatScroll{
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-top: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.mmHeatScroll::-webkit-scrollbar{
+  height: 6px;
+}
+.mmHeatScroll::-webkit-scrollbar-thumb{
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+.mmHeatSvg{
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.mmHeatLegend{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+  color: var(--fg-subtle);
+  font-size: 10.5px;
+}
+.mmHeatSwatch{
+  width: 11px;
+  height: 11px;
+  border-radius: 2.5px;
+  border: 1px solid var(--soft-border);
+  flex: 0 0 auto;
+}
+
+/* Emission card internals (frame = .mmCard) */
+.mmStreamsCard{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.mmStreamsTag{
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.mmStreamsGrid{
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+/* RESPONSIVE — collapse to single column under 860px; mobile full sheet */
+@media (max-width: 860px) {
+  .modalOuter:has(.mmShell){
+    padding: 0;
+    place-items: stretch;
+  }
+  .mmShell,
+.mmShellMax{
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .mmGrid{
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .mmSide{
+    border-right: none;
+    border-bottom: 1px solid var(--soft-border);
+  }
+  .mmSideScroll{
+    padding: 16px 16px 14px;
+  }
+  .mmMain{
+    overflow-y: visible;
+  }
+  .mmBottomRow{
+    grid-template-columns: 1fr;
+  }
+  /* No definite main height on mobile (the grid scrolls) — let the table card flow
+   * naturally and the inner table keep a bounded scroll. */
+  .mmCardFill{
+    flex: 0 0 auto;
+    display: block;
+  }
+  .mmCardFill .mmTableWrap{
+    flex: initial;
+    max-height: 62vh;
+  }
+}
+@media (max-width: 760px) {
+  .mmCard{
+    padding: 13px;
+    border-radius: 12px;
+  }
+  .mmStreamsGrid{
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .mmStreamsGrid .mmLegend{
+    width: 100%;
+  }
+}
+@media (max-width: 640px) {
+  /* Narrow viewports: don't squish or drop columns — keep every column at a readable,
+   * fixed width and let the table overflow so the wrap (overflow-x: auto) scrolls
+   * horizontally to reveal the full row. Title takes whatever width is left. */
+  .mmTable{
+    min-width: 620px;
+  }
+  .mmThState{
+    width: 92px;
+  }
+  .mmThTitle{
+    width: auto;
+  }
+  .mmThScore{
+    width: 60px;
+  }
+  .mmThCreated,
+.mmThUpdated{
+    width: 78px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mmTopBar button:active{
+    transform: scale(0.94);
+  }
+}
+
+/* ═══════════════ PALETTE ═══════════════ */
+
+.paletteOuter{
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: none;
+}
+
+.paletteOpen{
+  display: block;
+}
+
+.paletteBg{
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.paletteBox{
+  position: relative;
+  max-width: 38rem;
+  margin: 13vh auto 0;
+  background: var(--bg-emphasis);
+  border: 1px solid var(--soft-border);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.paletteHeader{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--soft-border);
+}
+
+.paletteInput{
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  box-shadow: none !important;
+}
+
+.paletteInput::placeholder{
+  color: var(--fg-mute);
+}
+
+.paletteResults{
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.paletteEmpty{
+  padding: 32px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--fg-subtle);
+}
+
+.paletteItem{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.paletteItem img{
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--soft-border);
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.paletteItemActive{
+  background: var(--soft-fill);
+}
+
+.paletteItemText{
+  min-width: 0;
+  flex: 1;
+}
+
+/* Name row: login (truncates) + the reward-stream swatch(es) on its right. */
+.paletteItemName{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.paletteItemLogin{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Value row: each value (uid · score · top repo) is a subtle chip badge. */
+.paletteItemSub{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--fg-default) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fg-default) 8%, transparent);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The top-repo badge can shrink + ellipsis; uid/score stay their natural size. */
+.badgeRepo{
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.badgeRepoName{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fire icon marks the miner's hottest (top) repo. */
+.badgeFire{
+  display: inline-flex;
+  align-items: center;
+  color: var(--attention-fg);
+}
+
+/* Reward-stream swatches beside the name: a small rounded rectangle per stream
+   (green = PRs, indigo = issue discovery). */
+.streamTags{
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.streamTag{
+  display: block;
+  width: 14px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* Earnings stacked at the right: USD/day (primary) over TAO/day (native). */
+.paletteItemMetrics{
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.paletteItemUsd{
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--success-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.paletteItemTao{
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════ RESPONSIVE ═══════════════ */
+
+@media (max-width: 1280px) {
+  .minerGrid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .listColHideLg{
+    display: none;
+  }
+  .listHeader,
+.listRow{
+    grid-template-columns: 52px minmax(0, 1.2fr) 100px 64px minmax(104px, 0.9fr) minmax(104px, 0.9fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .minerGrid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .listColHideMd{
+    display: none;
+  }
+  /* Visible after hiding md+lg cols: actions · miner · emission · score. */
+  .listHeader,
+.listRow{
+    grid-template-columns: 52px minmax(0, 1fr) 100px 64px;
+  }
+}
+
+@media (max-width: 760px) {
+  .page{
+    padding: 18px 12px;
+    padding-bottom: calc(var(--bottom-nav-height) + 18px);
+  }
+
+  .emissionStats{
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .emissionStat{
+    text-align: left;
+  }
+
+  .headlineStage{
+    padding: 4px 0 10px;
+  }
+
+  .treeInspector{
+    align-items: flex-start;
+  }
+
+  /* Banner wraps on mobile — the vertical divider would dangle, so drop it. */
+  .treeDivider{
+    display: none;
+  }
+
+  .treeInspectorStats{
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  .treeInspectorOpen{
+    margin-left: 0;
+  }
+
+  .toolbar{
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .toolbarRight{
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: space-between;
+  }
+
+
+
+  .minerGrid{
+    grid-template-columns: 1fr;
+  }
+
+  .listColHideSm{
+    display: none;
+  }
+
+  .listHeader,
+.listRow{
+    grid-template-columns: 48px minmax(0, 1fr) 92px;
+    gap: 8px;
+  }
+
+  .listHeader{
+    padding: 0 10px;
+  }
+
+  .listRow{
+    padding: 10px 10px;
+    padding-left: 7px;
+  }
+
+
+  }
+
+@media (max-width: 520px) {
+  .emissionStats{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+
+
+
+
+  }
+
+/* ═══════════════ Miner earnings distribution (header right panel) ═══════════════ */
+.distPanel{
+  flex: 1 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px 11px;
+  border: 1px solid var(--soft-border);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+}
+
+.distHead{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+
+.distCount{
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--fg-muted);
+}
+
+/* Histogram — bars sized by miner count per $/day bucket; bars animate as the
+ * feed refreshes. */
+.histo{
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 104px;
+  margin-top: 12px;
+}
+
+.histoCol{
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  justify-content: flex-end;
+  outline: none;
+}
+
+.histoCol[tabindex='0']{
+  cursor: pointer;
+}
+
+/* Hover/focus highlight band — a subtle full-height column behind the bar
+ * (stops above the x-axis label), like a chart's column hover state. */
+.histoCol::before{
+  content: '';
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: -6px;
+  bottom: 16px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg-default) 6%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.histoCol:hover::before,
+.histoCol:focus::before{
+  opacity: 1;
+}
+
+.histoBar{
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent-emphasis);
+  transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1), background 120ms ease;
+}
+.histoBar[data-active]{
+  background: color-mix(in srgb, var(--accent-emphasis) 82%, var(--fg-default));
+}
+
+.histoBar em{
+  position: absolute;
+  top: -14px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.histoLabel{
+  font-size: 9px;
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+
+/* ── Bucket popover: the miners in a hovered $/day bar ── */
+.distPop{
+  position: absolute;
+  /* Open DOWNWARD — the panel sits near the top of the page, so opening upward
+   * clips the popover against the viewport. Flush to the column bottom (no gap)
+   * so moving into the popover doesn't trip the hover-out. */
+  top: 100%;
+  z-index: 60;
+  width: 234px;
+  max-width: 78vw;
+  padding: 9px 10px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-overlay);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+/* Anchor to the hovered column's edge so the popover never overflows the panel:
+ * left-half bars grow rightward, right-half bars grow leftward. */
+.distPopLeft{
+  left: 0;
+}
+.distPopRight{
+  right: 0;
+}
+/* upward arrow bridging the popover to the bar above it */
+.distPop::after{
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  width: 9px;
+  height: 9px;
+  background: var(--bg-overlay);
+  border-left: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border-strong);
+  transform: translateY(5px) rotate(45deg);
+}
+.distPopLeft::after{
+  left: 14px;
+}
+.distPopRight::after{
+  right: 14px;
+}
+
+.distPopHead{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--soft-border);
+}
+.distPopHead strong{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-default);
+}
+.distPopHead strong span{
+  color: var(--fg-subtle);
+  font-weight: 500;
+}
+.distPopHead > span{
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--fg-muted);
+}
+
+.distPopList{
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 196px;
+  overflow-y: auto;
+  margin: 0 -4px;
+}
+
+.distPopRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.distPopRow:hover{
+  background: var(--soft-fill);
+}
+
+.distPopAvatar{
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  object-fit: cover;
+}
+
+.distPopName{
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+  font-size: 12px;
+  color: var(--fg-default);
+  overflow: hidden;
+}
+.distPopName{
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.distPopName em{
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--fg-subtle);
+  font-family: var(--mono);
+}
+
+.distPopVal{
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--success-fg);
+  font-variant-numeric: tabular-nums;
+}

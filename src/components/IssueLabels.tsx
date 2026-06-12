@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Box } from '@primer/react';
+import { useTheme, type ThemeMode } from '@/lib/theme';
 
 type IssueLabel = { name: string; color?: string | null };
 
@@ -37,28 +38,72 @@ function fallbackColorFor(name: string): string {
   return match?.[1] ?? '6e7781';
 }
 
-// GitHub stores label colors as hex without `#`. Pick readable text with a
-// YIQ-style luminance check so custom label colors stay legible.
-function readableFgFor(hex: string): string {
-  const h = normalizeHexColor(hex);
-  if (!h) return '#ffffff';
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 160 ? '#1f2328' : '#ffffff';
+function hexToRgb(hex: string): [number, number, number] {
+  return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  let s = 0;
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === rn) h = (gn - bn) / d + (gn < bn ? 6 : 0);
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h *= 60;
+  }
+  return [Math.round(h), Math.round(s * 100), Math.round(l * 100)];
+}
+
+type ChipColors = { background: string; color: string; borderColor: string };
+
+// Reproduce github.com's own label theming (computed here in JS so it never depends on
+// CSS calc/custom-property plumbing): dark = translucent tint + lightened text + border;
+// light = solid color bg + black/white text + subtle border. Matches the colors shown
+// on a PR/issue page exactly.
+function chipColors(hex: string, theme: ThemeMode): ChipColors {
+  const [r, g, b] = hexToRgb(hex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const perceived = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255;
+
+  if (theme === 'light') {
+    const lightnessSwitch = Math.max(0, Math.min((perceived - 0.6) * -1000, 1));
+    const borderAlpha = Math.max(0, Math.min((perceived - 0.96) * 100, 1));
+    return {
+      background: `rgb(${r}, ${g}, ${b})`,
+      color: `hsl(0, 0%, ${lightnessSwitch * 100}%)`,
+      borderColor: `hsla(${h}, ${s}%, ${l - 25}%, ${borderAlpha})`,
+    };
+  }
+
+  const threshold = 0.453;
+  const lightnessSwitch = Math.max(0, Math.min((perceived - threshold) * -1000, 1));
+  const lighten = (threshold - perceived) * 100 * lightnessSwitch;
+  return {
+    background: `rgba(${r}, ${g}, ${b}, 0.18)`,
+    color: `hsl(${h}, ${s}%, ${l + lighten}%)`,
+    borderColor: `hsla(${h}, ${s}%, ${l + lighten}%, 0.3)`,
+  };
 }
 
 export const IssueLabelChip = React.memo(function IssueLabelChip({
   label,
   maxWidth = 120,
+  theme = 'dark',
 }: {
   label: IssueLabel;
   maxWidth?: number;
+  theme?: ThemeMode;
 }) {
   const hex = normalizeHexColor(label.color) ?? fallbackColorFor(label.name);
-  const bg = `#${hex}`;
-  const fg = readableFgFor(hex);
+  const c = chipColors(hex, theme);
 
   return (
     <span
@@ -67,8 +112,9 @@ export const IssueLabelChip = React.memo(function IssueLabelChip({
         display: 'inline-block',
         padding: '0 7px',
         borderRadius: 999,
-        background: bg,
-        color: fg,
+        border: `1px solid ${c.borderColor}`,
+        background: c.background,
+        color: c.color,
         fontSize: 11,
         fontWeight: 600,
         lineHeight: '18px',
@@ -95,6 +141,10 @@ export const IssueLabels = React.memo(function IssueLabels({
   maxLabelWidth?: number;
   wrap?: boolean;
 }) {
+  // One theme read for the whole label group (passed down to each chip) so the
+  // colors track light/dark without a hook per chip.
+  const { theme } = useTheme();
+
   if (!labels || labels.length === 0) return null;
 
   const visible = labels.slice(0, maxVisible);
@@ -113,7 +163,7 @@ export const IssueLabels = React.memo(function IssueLabels({
       }}
     >
       {visible.map((label) => (
-        <IssueLabelChip key={label.name} label={label} maxWidth={maxLabelWidth} />
+        <IssueLabelChip key={label.name} label={label} maxWidth={maxLabelWidth} theme={theme} />
       ))}
       {hidden > 0 && (
         <span

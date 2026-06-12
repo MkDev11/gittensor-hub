@@ -46,6 +46,22 @@ interface UpstreamRepoMiner {
   total_merged_prs?: string | number | null;
   totalPrs?: string | number | null;
   total_prs?: string | number | null;
+  issueDiscoveryScore?: string | number | null;
+  issue_discovery_score?: string | number | null;
+  issueTokenScore?: string | number | null;
+  issue_token_score?: string | number | null;
+  issueCredibility?: string | number | null;
+  issue_credibility?: string | number | null;
+  isIssueEligible?: boolean | null;
+  is_issue_eligible?: boolean | null;
+  totalSolvedIssues?: string | number | null;
+  total_solved_issues?: string | number | null;
+  totalValidSolvedIssues?: string | number | null;
+  total_valid_solved_issues?: string | number | null;
+  totalClosedIssues?: string | number | null;
+  total_closed_issues?: string | number | null;
+  totalOpenIssues?: string | number | null;
+  total_open_issues?: string | number | null;
   isEligible?: boolean | null;
   is_eligible?: boolean | null;
   failedReason?: string | null;
@@ -59,7 +75,8 @@ interface UpstreamRepoMiner {
 }
 
 interface UpstreamRepo {
-  fullName: string;
+  fullName?: string | null;
+  full_name?: string | null;
   config?: { issueDiscoveryShare?: string | number | null; issue_discovery_share?: string | number | null } | null;
   issueDiscoveryShare?: string | number | null;
   issue_discovery_share?: string | number | null;
@@ -111,8 +128,10 @@ async function refresh(): Promise<CachedShared> {
   ]);
   const issueDiscoveryShareByRepo = new Map<string, number>();
   for (const repo of repos) {
+    const repoName = repo.fullName ?? repo.full_name;
+    if (!repoName) continue;
     issueDiscoveryShareByRepo.set(
-      repo.fullName.toLowerCase(),
+      repoName.toLowerCase(),
       num(repo.config?.issueDiscoveryShare ?? repo.config?.issue_discovery_share ?? repo.issueDiscoveryShare ?? repo.issue_discovery_share),
     );
   }
@@ -184,6 +203,10 @@ function repoScopedCredibility(row: UpstreamRepoMiner): number {
   return num(row.credibility ?? row.repoCredibility ?? row.repo_credibility ?? row.prCredibility ?? row.pr_credibility);
 }
 
+function repoScopedIssueCredibility(row: UpstreamRepoMiner): number {
+  return num(row.issueCredibility ?? row.issue_credibility);
+}
+
 function meaningfulRepoMiner(row: {
   isEligible: boolean;
   score: number;
@@ -206,6 +229,37 @@ function meaningfulRepoMiner(row: {
   );
 }
 
+function meaningfulRepoEvaluation(row: {
+  isEligible: boolean;
+  isIssueEligible?: boolean;
+  score: number;
+  issueDiscoveryScore?: number;
+  baseScore: number;
+  collateralScore: number;
+  prCount: number;
+  openPrCount: number;
+  closedPrCount: number;
+  totalPrCount: number;
+  totalSolvedIssues?: number;
+  totalValidSolvedIssues?: number;
+  totalClosedIssues?: number;
+  totalOpenIssues?: number;
+  usdPerDay?: number;
+  taoPerDay?: number;
+}): boolean {
+  return (
+    meaningfulRepoMiner(row) ||
+    Boolean(row.isIssueEligible) ||
+    (row.issueDiscoveryScore ?? 0) > 0 ||
+    (row.totalSolvedIssues ?? 0) > 0 ||
+    (row.totalValidSolvedIssues ?? 0) > 0 ||
+    (row.totalClosedIssues ?? 0) > 0 ||
+    (row.totalOpenIssues ?? 0) > 0 ||
+    (row.usdPerDay ?? 0) > 0 ||
+    (row.taoPerDay ?? 0) > 0
+  );
+}
+
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
   const fullName = `${params.owner}/${params.name}`;
@@ -220,10 +274,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
       minersByLogin.set(m.githubUsername.toLowerCase(), m);
     }
 
-    // OSS Contributions: per-repo validator rows. This endpoint already
-    // includes the repo-scoped score and eligibility gate, so do not rebuild
-    // the panel from global PR data or global miner score.
-    const ossContributions = repoMinerRows
+    // Full per-repo validator rows. The upstream endpoint now carries both
+    // PR and issue-discovery RepoEvaluation fields, so expose a complete row
+    // for repo-scoped dashboards while keeping ossContributions filtered for
+    // the existing repo detail panels.
+    const repoEvaluations = repoMinerRows
       .map((r) => {
         const githubId = stringValue(r.githubId ?? r.github_id);
         const username = r.githubUsername ?? r.github_username ?? '';
@@ -242,7 +297,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
         const openPrCount = num(r.totalOpenPrs ?? r.total_open_prs);
         const closedPrCount = num(r.totalClosedPrs ?? r.total_closed_prs);
         const totalPrCount = num(r.totalPrs ?? r.total_prs);
+        const issueDiscoveryScore = num(r.issueDiscoveryScore ?? r.issue_discovery_score);
+        const issueTokenScore = num(r.issueTokenScore ?? r.issue_token_score);
+        const totalSolvedIssues = num(r.totalSolvedIssues ?? r.total_solved_issues);
+        const totalValidSolvedIssues = num(r.totalValidSolvedIssues ?? r.total_valid_solved_issues);
+        const totalClosedIssues = num(r.totalClosedIssues ?? r.total_closed_issues);
+        const totalOpenIssues = num(r.totalOpenIssues ?? r.total_open_issues);
         const isEligible = (r.isEligible ?? r.is_eligible) === true;
+        const isIssueEligible = (r.isIssueEligible ?? r.is_issue_eligible) === true;
         return {
           githubId,
           githubUsername: username || m?.githubUsername || githubId,
@@ -254,6 +316,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
           closedPrCount,
           totalPrCount,
           credibility: repoScopedCredibility(r),
+          issueDiscoveryScore: Number(issueDiscoveryScore.toFixed(2)),
+          issueTokenScore: Number(issueTokenScore.toFixed(2)),
+          issueCredibility: repoScopedIssueCredibility(r),
+          isIssueEligible,
+          totalSolvedIssues,
+          totalValidSolvedIssues,
+          totalClosedIssues,
+          totalOpenIssues,
           ossRank: githubId ? shared.ossRankByGithubId.get(githubId) ?? null : null,
           globalScore: m ? Number(num(m.totalScore).toFixed(2)) : null,
           uid: Number.isFinite(uidNum) ? uidNum : null,
@@ -265,6 +335,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
           usdPerDay: num(r.usdPerDay ?? r.usd_per_day),
         };
       })
+      .filter(meaningfulRepoEvaluation);
+
+    // OSS Contributions: per-repo PR contribution rows only.
+    const ossContributions = repoEvaluations
       .filter(meaningfulRepoMiner)
       .sort((a, b) => {
         if ((a.isEligible ? 1 : 0) !== (b.isEligible ? 1 : 0)) return a.isEligible ? -1 : 1;
@@ -389,6 +463,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ owner: string;
     return NextResponse.json({
       fullName,
       issueDiscoveryEnabled,
+      repoEvaluations,
       ossContributions,
       issueDiscoveries,
       fetched_at: shared.fetched_at,

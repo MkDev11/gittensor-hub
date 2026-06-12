@@ -172,6 +172,91 @@ export interface GtRepoPrsResponse {
   fetched_at: number;
 }
 
+/** One of a miner's scored pull requests (from the gittensor `/prs` feed),
+ * carrying its repo so the miner modal can list works across all repos. */
+export interface MinerPr {
+  repo: string;
+  number: number;
+  title: string;
+  state: 'OPEN' | 'MERGED' | 'CLOSED';
+  score: number;
+  createdAt: string;
+  mergedAt: string | null;
+  /** Closed-without-merge timestamp (from the pulls mirror) — needed to recompute the
+   * trailing-window credibility live, since closed PRs count against it. */
+  closedAt: string | null;
+  additions: number;
+  deletions: number;
+  linkedIssueNumber: number | null;
+  /** Author GitHub login (for the detail header). */
+  author: string;
+  /** On-chain hotkey credited for this PR. */
+  hotkey: string;
+  commitCount: number;
+  /** Per-PR scoring breakdown (gittensor AST scoring). */
+  baseScore: number;
+  collateralScore: number;
+  tokenScore: number;
+  /** Total AST nodes scored. */
+  totalNodesScored: number;
+  structuralCount: number;
+  structuralScore: number;
+  leafCount: number;
+  leafScore: number;
+  /** Scoring label (e.g. "bug", "feature") + its multiplier, and the review-quality
+   * multiplier — the two score-story factors carried per-PR. */
+  label: string | null;
+  labelMultiplier: number;
+  reviewQualityMultiplier: number;
+  /** GitHub labels on the PR (name + hex color), same as the explorer shows. */
+  labels: Array<{ name: string; color?: string }>;
+}
+
+/** One of a miner's issues (from the local issues mirror). */
+export interface MinerIssue {
+  repo: string;
+  number: number;
+  title: string;
+  state: string;
+  /** GitHub close reason — COMPLETED / NOT_PLANNED (null when open/unknown). */
+  stateReason: string | null;
+  htmlUrl: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  /** Close timestamp — for the activity "issues resolved" series. */
+  closedAt: string | null;
+  /** GitHub labels on the issue (name + hex color), same as the explorer shows. */
+  labels: Array<{ name: string; color?: string }>;
+}
+
+/** One day's PR/issue lifecycle counts for the activity chart (computed server-side
+ * over the FULL works set, so prolific miners' closed PRs aren't truncated). */
+export interface MinerActivityPoint {
+  label: string;
+  openedPrs: number;
+  mergedPrs: number;
+  closedPrs: number;
+  openedIssues: number;
+  resolvedIssues: number;
+}
+
+/** A miner's complete works across all repos — for the detail modal. */
+export interface MinerWorksResponse {
+  prs: MinerPr[];
+  issues: MinerIssue[];
+  counts: {
+    prs: number;
+    prMerged: number;
+    prOpen: number;
+    prClosed: number;
+    issues: number;
+    issuesOpen: number;
+    issuesCompleted: number;
+  };
+  /** PR/issue activity over the last 30 days (daily buckets). */
+  activity: MinerActivityPoint[];
+}
+
 /** Admin-managed extra repo. Returned by `/api/user-repos`. */
 export interface UserRepo {
   full_name: string;
@@ -195,6 +280,12 @@ export interface Miner {
   hotkey: string;
   githubUsername: string;
   githubId?: string;
+  /** Maintainer attribution from /api/miners/activity (repo rosters × paid cut). */
+  isMaintainer?: boolean;
+  maintainerRepos?: string[];
+  maintainerCut?: number;
+  maintainerTaoShare?: number;
+  maintainerRepoTaoShares?: Record<string, number>;
   isEligible: boolean;
   isIssueEligible?: boolean;
   failedReason?: string | null;
@@ -218,6 +309,69 @@ export interface Miner {
   alphaPerDay?: number;
   taoPerDay?: number;
   usdPerDay?: number;
+  /** Per-repository scoring rows keyed by repository full name. */
+  repoEvaluations?: Record<string, MinerRepoEvaluation> | MinerRepoEvaluation[];
+  /** Snake-case variant returned by the upstream scorer payload. */
+  repo_evaluations?: Record<string, MinerRepoEvaluation> | MinerRepoEvaluation[];
+}
+
+export interface MinerRepoEvaluation {
+  id?: string | number;
+  uid?: string | number;
+  githubUsername?: string;
+  github_username?: string;
+  githubId?: string | number;
+  github_id?: string | number;
+  repositoryFullName?: string;
+  repository_full_name?: string;
+  isEligible?: boolean;
+  is_eligible?: boolean;
+  credibility?: string | number;
+  baseTotalScore?: string | number;
+  base_total_score?: string | number;
+  totalScore?: string | number;
+  total_score?: string | number;
+  totalCollateralScore?: string | number;
+  total_collateral_score?: string | number;
+  totalMergedPrs?: string | number;
+  total_merged_prs?: string | number;
+  totalOpenPrs?: string | number;
+  total_open_prs?: string | number;
+  totalClosedPrs?: string | number;
+  total_closed_prs?: string | number;
+  totalPrs?: string | number;
+  total_prs?: string | number;
+  isIssueEligible?: boolean;
+  is_issue_eligible?: boolean;
+  issueCredibility?: string | number;
+  issue_credibility?: string | number;
+  issueDiscoveryScore?: string | number;
+  issue_discovery_score?: string | number;
+  issueTokenScore?: string | number;
+  issue_token_score?: string | number;
+  /** Per-repo emission/eligibility stamped by /api/miners/activity. */
+  issueDiscoveryShare?: number;
+  emissionShare?: number;
+  prTaoShare?: number;
+  issueTaoShare?: number;
+  minPrCred?: number | null;
+  minIssueCred?: number | null;
+  minMergedPrs?: number | null;
+  minSolvedIssues?: number | null;
+  totalSolvedIssues?: string | number;
+  total_solved_issues?: string | number;
+  totalValidSolvedIssues?: string | number;
+  total_valid_solved_issues?: string | number;
+  totalClosedIssues?: string | number;
+  total_closed_issues?: string | number;
+  totalOpenIssues?: string | number;
+  total_open_issues?: string | number;
+  alphaPerDay?: string | number;
+  alpha_per_day?: string | number;
+  taoPerDay?: string | number;
+  tao_per_day?: string | number;
+  usdPerDay?: string | number;
+  usd_per_day?: string | number;
 }
 
 export interface AuthorCredibility {
@@ -249,6 +403,14 @@ export interface RepoMiner {
   closedPrCount?: number;
   totalPrCount?: number;
   credibility?: number;
+  issueDiscoveryScore?: number;
+  issueTokenScore?: number;
+  issueCredibility?: number;
+  isIssueEligible?: boolean;
+  totalSolvedIssues?: number;
+  totalValidSolvedIssues?: number;
+  totalClosedIssues?: number;
+  totalOpenIssues?: number;
   ossRank: number | null;
   globalScore?: number | null;
   /** On-chain miner UID — surfaced for the drawer treemap's tile label. */
@@ -273,6 +435,8 @@ export interface RepoMiner {
 export interface RepoMinersResponse {
   fullName: string;
   issueDiscoveryEnabled?: boolean;
+  /** Full per-repo miner evaluations, including both PR and issue-discovery fields. */
+  repoEvaluations?: RepoMiner[];
   ossContributions: RepoMiner[];
   issueDiscoveries: RepoMiner[];
   fetched_at: number;
