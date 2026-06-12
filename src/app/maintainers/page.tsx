@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Box, Heading, Text, TextInput } from '@primer/react';
-import { SearchIcon, ChevronRightIcon, ChevronDownIcon, VerifiedIcon } from '@primer/octicons-react';
+import { SearchIcon, ChevronRightIcon, ChevronDownIcon, VerifiedIcon, InfoIcon } from '@primer/octicons-react';
 import { formatDurationHours } from '@/lib/format';
 import type { MaintainersResponse, MaintainerSummary, MaintainerRepoContribution, RepoMaintainersSummary } from '@/lib/api-types';
 
@@ -70,6 +70,19 @@ function fmtTao(v: number): string {
 // on narrow viewports via the MIN_WIDTH wrapper.
 const GRID = '24px minmax(220px,1fr) 64px 168px 96px 80px 104px';
 const MIN_WIDTH = 880;
+
+// What the A–F grade means — shown as the Grade-column tooltip. Mirrors
+// maintainerGrade() in api-types, and is honest that the speed signal reflects
+// the repo's merge/close activity (which a bot or merge-app can drive), not
+// necessarily the named maintainers.
+const GRADE_HELP =
+  'Grade (A–F): how responsive the repo is to miner work.\n' +
+  '• PR repos — merge speed 50%, acceptance rate 30%, backlog health 20%\n' +
+  '• Issue-discovery repos — resolve speed 60%, completion rate 40%\n' +
+  '• Mixed repos blend the two by issue-discovery share\n' +
+  '“*” marks a provisional grade (fewer than 5 resolved items).\n' +
+  'Based on the repo’s merge/close activity, which can be driven by a bot or ' +
+  'app with merge rights — not necessarily the listed maintainers.';
 
 /** Stable per-maintainer key — id when present, else login. Used for both the
  *  React list key and the expanded-row set, so two people who happen to share a
@@ -240,7 +253,13 @@ function HeaderRow({ first, count }: { first: string; count: string }) {
       <span style={{ textAlign: 'right' }}>{count}</span>
       <span style={{ textAlign: 'right' }}>Shipping · 30d</span>
       <span style={{ textAlign: 'right' }}>All-time</span>
-      <span style={{ textAlign: 'right' }}>Grade</span>
+      <Box
+        as="span"
+        title={GRADE_HELP}
+        sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1, cursor: 'help', color: 'fg.muted' }}
+      >
+        Grade <InfoIcon size={11} />
+      </Box>
       <span style={{ textAlign: 'right' }}>τ / day</span>
     </Box>
   );
