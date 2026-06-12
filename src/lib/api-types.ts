@@ -600,6 +600,44 @@ export interface MaintainerSummary {
   rewardShare: number;
 }
 
+/** One maintainer within a repo's roster — the repo-centric ("who maintains
+ *  this repo") view, the inverse of {@link MaintainerSummary}. */
+export interface RepoMaintainerEntry {
+  login: string;
+  githubId: string | null;
+  /** Registered Gittensor miner — earns the reward split on this repo. */
+  registered: boolean;
+  /** This maintainer's τ-fraction from this repo (0 when not registered). */
+  rewardShare: number;
+}
+
+/** A repo with its full maintainer roster + the repo's shipping/grade/reward.
+ *  Throughput here is the repo's own (the figure each maintainer is credited
+ *  with in the person view). */
+export interface RepoMaintainersSummary {
+  repo: string; // owner/name
+  owner: string;
+  name: string;
+  issueDiscoveryShare: number;
+  maintainerCut: number;
+  mode: 'PR' | 'issue' | 'mixed';
+  gradeLetter: MaintainerGrade['letter'];
+  gradeScore: number | null;
+  provisional: boolean;
+  speedHours: number | null;
+  mergedPrsTotal: number;
+  mergedPrs30d: number;
+  issuesCompletedTotal: number;
+  issuesResolved30d: number;
+  shipped30d: number;
+  shippedTotal: number;
+  /** Total maintainer-pool τ-fraction for the repo (whole pool when it has any
+   *  registered maintainer, else 0). Split evenly among its registered ones. */
+  rewardShare: number;
+  maintainerCount: number;
+  maintainers: RepoMaintainerEntry[];
+}
+
 export interface MaintainersResponse {
   generatedAt: string;
   /** True when figures are restricted to registered miners' work (false on a
@@ -609,5 +647,8 @@ export interface MaintainersResponse {
   rosterAvailable: boolean;
   repoCount: number;
   maintainerCount: number;
+  /** Person-centric: each maintainer and the repos they steward. */
   maintainers: MaintainerSummary[];
+  /** Repo-centric: each repo and its full maintainer roster. */
+  repos: RepoMaintainersSummary[];
 }

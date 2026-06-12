@@ -11,6 +11,8 @@ import {
   type MaintainerRepoContribution,
   type MaintainerSummary,
   type MaintainersResponse,
+  type RepoMaintainersSummary,
+  type RepoMaintainerEntry,
 } from '@/lib/api-types';
 import type { RepoEntry } from '@/lib/repos';
 import type { Miner } from '@/types/entities';
@@ -126,6 +128,7 @@ async function build(): Promise<MaintainersResponse> {
   const loginById = miners?.loginById ?? new Map<string, string>();
 
   const people = new Map<string, Accum>();
+  const repoSummaries: RepoMaintainersSummary[] = [];
   let repoCount = 0;
 
   for (let i = 0; i < active.length; i++) {
@@ -144,8 +147,13 @@ async function build(): Promise<MaintainersResponse> {
     });
     repoCount++;
 
+    // Exclude the repo's own maintainers from the responsiveness/throughput
+    // figures — their self-authored work isn't "serving miners" and would
+    // otherwise inflate the speed (e.g. self-merged PRs landing instantly).
+    const maintainerLoginSet = new Set(roster.map((m) => m.login.toLowerCase()).filter(Boolean));
     const stats = computeMaintainerStats(db, repo.fullName, {
       minerLogins,
+      maintainerLogins: maintainerLoginSet,
       issueDiscoveryShare: repo.issueDiscoveryShare,
     });
     const grade = maintainerGrade(stats);
@@ -157,6 +165,8 @@ async function build(): Promise<MaintainersResponse> {
     // miner-maintainers (exact — distinct from the repo-attributed throughput).
     const registeredOnRepo = roster.filter((m) => m.githubId && registeredIds.has(m.githubId));
     const perReward = registeredOnRepo.length > 0 ? maintainerPool(repo) / registeredOnRepo.length : 0;
+
+    const repoEntries: RepoMaintainerEntry[] = [];
 
     for (const m of roster) {
       const isRegistered = Boolean(m.githubId && registeredIds.has(m.githubId));
@@ -180,6 +190,7 @@ async function build(): Promise<MaintainersResponse> {
 
       const key = personKey(m);
       const login = m.login || (m.githubId ? loginById.get(m.githubId) ?? m.githubId : 'unknown');
+      repoEntries.push({ login, githubId: m.githubId, registered: isRegistered, rewardShare: reward });
       let p = people.get(key);
       if (!p) {
         p = {
@@ -210,6 +221,29 @@ async function build(): Promise<MaintainersResponse> {
         p.gradeSampleSum += grade.sample;
       }
     }
+
+    repoEntries.sort((a, b) => b.rewardShare - a.rewardShare || Number(b.registered) - Number(a.registered) || a.login.localeCompare(b.login));
+    repoSummaries.push({
+      repo: repo.fullName,
+      owner: repo.owner,
+      name: repo.name,
+      issueDiscoveryShare: share,
+      maintainerCut: repo.maintainerCut,
+      mode,
+      gradeLetter: grade.letter,
+      gradeScore: grade.score,
+      provisional: grade.provisional,
+      speedHours,
+      mergedPrsTotal: stats.throughput.mergedPrsTotal,
+      mergedPrs30d: stats.throughput.mergedPrs30d,
+      issuesCompletedTotal: stats.responsiveness.completedIssues,
+      issuesResolved30d: stats.throughput.issuesCompleted30d,
+      shipped30d: stats.throughput.mergedPrs30d + stats.throughput.issuesCompleted30d,
+      shippedTotal: stats.throughput.mergedPrsTotal + stats.responsiveness.completedIssues,
+      rewardShare: perReward * registeredOnRepo.length,
+      maintainerCount: repoEntries.length,
+      maintainers: repoEntries,
+    });
   }
 
   const maintainers: MaintainerSummary[] = Array.from(people.values())
@@ -237,6 +271,8 @@ async function build(): Promise<MaintainersResponse> {
     // Headline order: reward first (the clearest "value"), then recent shipping.
     .sort((a, b) => b.rewardShare - a.rewardShare || b.shipped30d - a.shipped30d || b.shippedTotal - a.shippedTotal || a.login.localeCompare(b.login));
 
+  repoSummaries.sort((a, b) => b.rewardShare - a.rewardShare || b.shipped30d - a.shipped30d || b.shippedTotal - a.shippedTotal || a.repo.localeCompare(b.repo));
+
   return {
     generatedAt: new Date().toISOString(),
     minerFiltered: minerLogins != null,
@@ -244,6 +280,7 @@ async function build(): Promise<MaintainersResponse> {
     repoCount,
     maintainerCount: maintainers.length,
     maintainers,
+    repos: repoSummaries,
   };
 }
 

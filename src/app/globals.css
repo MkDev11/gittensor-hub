@@ -585,6 +585,13 @@ select {
   50% { transform: scale(1.05); box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 6px rgba(235, 87, 87, 0); }
 }
 
+/* Linear-style tooltip entrance: subtle rise + fade. The resting transform is
+ * translateX(-100%) (right-aligned to its trigger), so the keyframe keeps it. */
+@keyframes tooltipIn {
+  from { opacity: 0; transform: translateX(-100%) translateY(-3px); }
+  to   { opacity: 1; transform: translateX(-100%) translateY(0); }
+}
+
 /* ── Markdown rendering for issue / PR bodies ───────────────────────────── */
 
 .md-content {
