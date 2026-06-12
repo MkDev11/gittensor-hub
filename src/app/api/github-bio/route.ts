@@ -8,6 +8,7 @@ import { withRotation } from '@/lib/github';
 export const dynamic = 'force-dynamic';
 
 const TTL_MS = 6 * 60 * 60 * 1000; // 6h
+const MAX_CACHE = 1000; // bound the in-memory cache so it can't grow without limit
 
 interface Profile {
   bio: string | null;
@@ -34,6 +35,10 @@ export async function GET(req: NextRequest) {
       followers: typeof data.followers === 'number' ? data.followers : null,
       following: typeof data.following === 'number' ? data.following : null,
     };
+    if (cache.size >= MAX_CACHE) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
     cache.set(key, { at: Date.now(), profile });
     return NextResponse.json(profile);
   } catch {

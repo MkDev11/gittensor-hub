@@ -75,7 +75,8 @@ interface UpstreamRepoMiner {
 }
 
 interface UpstreamRepo {
-  fullName: string;
+  fullName?: string | null;
+  full_name?: string | null;
   config?: { issueDiscoveryShare?: string | number | null; issue_discovery_share?: string | number | null } | null;
   issueDiscoveryShare?: string | number | null;
   issue_discovery_share?: string | number | null;
@@ -127,8 +128,10 @@ async function refresh(): Promise<CachedShared> {
   ]);
   const issueDiscoveryShareByRepo = new Map<string, number>();
   for (const repo of repos) {
+    const repoName = repo.fullName ?? repo.full_name;
+    if (!repoName) continue;
     issueDiscoveryShareByRepo.set(
-      repo.fullName.toLowerCase(),
+      repoName.toLowerCase(),
       num(repo.config?.issueDiscoveryShare ?? repo.config?.issue_discovery_share ?? repo.issueDiscoveryShare ?? repo.issue_discovery_share),
     );
   }

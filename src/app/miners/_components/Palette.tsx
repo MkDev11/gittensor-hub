@@ -48,7 +48,7 @@ export default function Palette({ open, views, onClose, onSelect }: PaletteProps
     const needle = q.toLowerCase().trim();
     const list = needle
       ? views.filter((v) => {
-          const hay = `${v.login} ${v.githubId} ${v.uid ?? ''} ${v.rows.map((r) => r.repo).join(' ')}`.toLowerCase();
+          const hay = `${v.login} ${v.githubId} ${v.uid ?? ''} ${v.rows.map((r) => r.repo).join(' ')} ${v.topRepos.map((r) => r.repo).join(' ')}`.toLowerCase();
           return hay.includes(needle);
         })
       : [...views].sort((a, b) => b.activity - a.activity);

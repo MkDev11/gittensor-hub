@@ -280,6 +280,12 @@ export interface Miner {
   hotkey: string;
   githubUsername: string;
   githubId?: string;
+  /** Maintainer attribution from /api/miners/activity (repo rosters × paid cut). */
+  isMaintainer?: boolean;
+  maintainerRepos?: string[];
+  maintainerCut?: number;
+  maintainerTaoShare?: number;
+  maintainerRepoTaoShares?: Record<string, number>;
   isEligible: boolean;
   isIssueEligible?: boolean;
   failedReason?: string | null;
@@ -343,6 +349,15 @@ export interface MinerRepoEvaluation {
   issue_discovery_score?: string | number;
   issueTokenScore?: string | number;
   issue_token_score?: string | number;
+  /** Per-repo emission/eligibility stamped by /api/miners/activity. */
+  issueDiscoveryShare?: number;
+  emissionShare?: number;
+  prTaoShare?: number;
+  issueTaoShare?: number;
+  minPrCred?: number | null;
+  minIssueCred?: number | null;
+  minMergedPrs?: number | null;
+  minSolvedIssues?: number | null;
   totalSolvedIssues?: string | number;
   total_solved_issues?: string | number;
   totalValidSolvedIssues?: string | number;
