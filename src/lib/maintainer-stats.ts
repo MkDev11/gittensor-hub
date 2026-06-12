@@ -33,6 +33,11 @@ export interface MaintainerStatsOptions {
    *  only their PRs/issues are counted. `null` = count every contributor (used
    *  as a graceful fallback when the upstream miner list is unavailable). */
   minerLogins: Set<string> | null;
+  /** Lowercased GitHub usernames of the repo's maintainers. When provided, their
+   *  own PRs/issues are excluded so the figures measure responsiveness to *other*
+   *  miners — a maintainer self-merging their own PR shouldn't read as fast
+   *  review. Omit/null to count maintainer work too (the prior behaviour). */
+  maintainerLogins?: Set<string> | null;
   /** Headline review-speed window, in days. Defaults to {@link REVIEW_WINDOW_DAYS}. */
   windowDays?: number;
   /** Repo's issue-discovery emission share (0..1). Defaults to 0. */
@@ -80,6 +85,15 @@ export function computeMaintainerStats(
     if (!login) return false;
     return minerLogins.has(login.toLowerCase());
   };
+  // Exclude the repo's own maintainers: their self-authored PRs/issues aren't
+  // "responsiveness to miners" and would otherwise inflate the speed figures
+  // (e.g. a maintainer instantly merging their own PR). No-op when unset.
+  const maintainerLogins = opts.maintainerLogins;
+  const isMaintainer = (login: string | null): boolean => {
+    if (!maintainerLogins || !login) return false;
+    return maintainerLogins.has(login.toLowerCase());
+  };
+  const counts = (login: string | null): boolean => isMiner(login) && !isMaintainer(login);
   const parseMs = (iso: string | null): number => (iso ? Date.parse(iso) : NaN);
 
   // --- PRs --------------------------------------------------------------------
@@ -116,7 +130,7 @@ export function computeMaintainerStats(
 
   for (const p of pullRows) {
     if (p.merged === 1) mergedAllContributors++;
-    if (!isMiner(p.login)) continue;
+    if (!counts(p.login)) continue;
     minerPullRows++;
     const createdMs = parseMs(p.createdAt);
 
@@ -181,7 +195,7 @@ export function computeMaintainerStats(
   const windowCloseHours: number[] = []; // completed-only
 
   for (const it of issueRows) {
-    if (!isMiner(it.login)) continue;
+    if (!counts(it.login)) continue;
     minerIssueRows++;
     if (it.state === 'closed') {
       closedIssues++;

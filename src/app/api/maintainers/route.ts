@@ -147,8 +147,13 @@ async function build(): Promise<MaintainersResponse> {
     });
     repoCount++;
 
+    // Exclude the repo's own maintainers from the responsiveness/throughput
+    // figures — their self-authored work isn't "serving miners" and would
+    // otherwise inflate the speed (e.g. self-merged PRs landing instantly).
+    const maintainerLoginSet = new Set(roster.map((m) => m.login.toLowerCase()).filter(Boolean));
     const stats = computeMaintainerStats(db, repo.fullName, {
       minerLogins,
+      maintainerLogins: maintainerLoginSet,
       issueDiscoveryShare: repo.issueDiscoveryShare,
     });
     const grade = maintainerGrade(stats);
