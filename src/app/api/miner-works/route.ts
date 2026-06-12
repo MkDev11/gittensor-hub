@@ -507,9 +507,9 @@ function buildActivity(mine: IndexedPr[], issues: MinerIssue[]): MinerActivityPo
   // Closed PRs need the pulls mirror's close timestamp (the feed carries none).
   if (closed.length > 0) {
     try {
-      const stmt = getReadDb().prepare('SELECT closed_at FROM pulls WHERE repo_full_name = ? AND number = ?');
+      const stmt = getReadDb().prepare('SELECT closed_at FROM pulls WHERE LOWER(repo_full_name) = ? AND number = ?');
       for (const p of closed) {
-        const row = stmt.get(p.repo, p.number) as { closed_at: string | null } | undefined;
+        const row = stmt.get(p.repo.toLowerCase(), p.number) as { closed_at: string | null } | undefined;
         bump(row?.closed_at, 'closedPrs');
       }
     } catch {
