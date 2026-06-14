@@ -38,7 +38,14 @@ function groupPullNumbersByRepo(rows: PullRow[]): Map<string, number[]> {
 function parseSinceIso(raw: string | null): string | null {
   if (!raw) return null;
   const sinceMs = Number(raw);
-  if (Number.isFinite(sinceMs) && sinceMs > 0) return new Date(sinceMs).toISOString();
+  if (Number.isFinite(sinceMs) && sinceMs > 0) {
+    // A finite but out-of-range epoch (e.g. ?since=1e21) makes an Invalid Date,
+    // and Date.prototype.toISOString() throws RangeError on it. Validate before
+    // formatting so a malformed `since` falls through to null instead of 500ing,
+    // matching the guard already applied to the date-string path below.
+    const fromMs = new Date(sinceMs);
+    if (Number.isFinite(fromMs.getTime())) return fromMs.toISOString();
+  }
   const sinceDate = new Date(raw);
   return Number.isFinite(sinceDate.getTime()) ? sinceDate.toISOString() : null;
 }
