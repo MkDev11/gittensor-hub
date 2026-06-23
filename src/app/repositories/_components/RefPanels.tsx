@@ -70,9 +70,9 @@ const FORMULA_FACTORS: FormulaFactor[] = [
   },
   {
     key: 'cred', value: '0.80 – 1.0',
-    tag: 'per-repo gate + multiplier',
-    rule: 'credibility = merged / (merged + closed)  ·  gates at ≥ 0.80, multiplies as itself',
-    desc: <>Computed per-repo from only that repo&apos;s PRs inside its configured PR lookback window. Two roles: (1) a hard gate — below 0.80, earn nothing from that repo; (2) a continuous multiplier above 0.80 — the credibility value itself (e.g. 0.85, 0.92, 1.0) multiplies every earned_score on that repo. Closed PRs hurt twice: lower the ratio AND don&apos;t earn directly.</>,
+    tag: 'per-repo eligibility gate',
+    rule: 'credibility = merged / (merged + closed)  ·  gates at ≥ 0.80',
+    desc: <>Computed per-repo from only that repo&apos;s PRs inside its configured PR lookback window. It is an eligibility gate for PR rewards: below 0.80, earn nothing from that repo; at or above 0.80, eligible PRs keep their normal earned_score. Closed PRs hurt the ratio and don&apos;t earn directly.</>,
   },
   {
     key: 'review', value: '0 – 1.0',
