@@ -17,6 +17,7 @@
 // excluded from both the rows AND the baseline.
 import Database from 'better-sqlite3';
 import type { FairnessSignals, MinerFairnessRow } from './api-types';
+import { hasMergedLinkedPrSql } from './issue-buckets';
 
 export type { FairnessSignals, MinerFairnessRow } from './api-types';
 
@@ -69,13 +70,17 @@ export function computeFairnessSignals(
     const rows = db
       .prepare(
         `SELECT author_login AS login, state, state_reason AS reason,
-                created_at AS createdAt, closed_at AS resolvedAt
+                created_at AS createdAt, closed_at AS resolvedAt,
+                CASE WHEN ${hasMergedLinkedPrSql('issues')} THEN 1 ELSE 0 END AS hasMergedPr
          FROM issues WHERE repo_full_name = ?`,
       )
-      .all(repo) as Array<{ login: string | null; state: string; reason: string | null; createdAt: string | null; resolvedAt: string | null }>;
+      .all(repo) as Array<{ login: string | null; state: string; reason: string | null; createdAt: string | null; resolvedAt: string | null; hasMergedPr: number }>;
     items = rows.map((r) => ({
       login: r.login,
-      resolved: r.state === 'closed' && r.reason === 'completed',
+      // A completed issue counts as resolved only when backed by a merged linked
+      // PR — same definition as issue-buckets.ts and the issues page, so the
+      // baseline and per-miner speed aren't polluted by non-PR-backed closes.
+      resolved: r.state === 'closed' && r.reason === 'completed' && r.hasMergedPr === 1,
       rejected: r.state === 'closed' && (r.reason === 'not_planned' || r.reason === 'duplicate'),
       createdAt: r.createdAt,
       resolvedAt: r.resolvedAt,

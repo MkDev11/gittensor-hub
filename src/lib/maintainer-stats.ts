@@ -19,6 +19,7 @@
 //   • Backlog health  — how much miner work is piling up and how old it is.
 import Database from 'better-sqlite3';
 import type { MaintainerStats } from './api-types';
+import { hasMergedLinkedPrSql } from './issue-buckets';
 
 export type { MaintainerStats } from './api-types';
 
@@ -179,10 +180,11 @@ export function computeMaintainerStats(
   const issueRows = db
     .prepare(
       `SELECT author_login AS login, state, state_reason AS reason,
-              created_at AS createdAt, closed_at AS closedAt
+              created_at AS createdAt, closed_at AS closedAt,
+              CASE WHEN ${hasMergedLinkedPrSql('issues')} THEN 1 ELSE 0 END AS hasMergedPr
        FROM issues WHERE repo_full_name = ?`,
     )
-    .all(repo) as Array<{ login: string | null; state: string; reason: string | null; createdAt: string | null; closedAt: string | null }>;
+    .all(repo) as Array<{ login: string | null; state: string; reason: string | null; createdAt: string | null; closedAt: string | null; hasMergedPr: number }>;
 
   let minerIssueRows = 0;
   let closedIssues = 0; // every closed miner issue (any reason) — volume context
@@ -202,8 +204,11 @@ export function computeMaintainerStats(
       const closedMs = parseMs(it.closedAt);
       const createdMs = parseMs(it.createdAt);
       if (closedMs >= day30Start) issuesClosed30++;
-      // Only `completed` closes count toward the time-to-resolve headline.
-      if (it.reason === 'completed') {
+      // Only `completed` closes backed by a merged linked PR count as scored
+      // discoveries — matches issue-buckets.ts (the single source of truth) and
+      // the issues page. A `completed` close with no merged PR is the Gittensor
+      // "risky" bucket, not solved work, so it must not move the headline.
+      if (it.reason === 'completed' && it.hasMergedPr === 1) {
         completedIssues++;
         if (closedMs >= day30Start) issuesCompleted30++;
         if (Number.isFinite(closedMs) && Number.isFinite(createdMs)) {
