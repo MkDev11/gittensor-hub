@@ -15,7 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Box, Heading, Text, TextInput } from '@primer/react';
 import { SearchIcon, ChevronRightIcon, ChevronDownIcon, VerifiedIcon, InfoIcon } from '@primer/octicons-react';
 import { formatDurationHours } from '@/lib/format';
-import type { MaintainersResponse, MaintainerSummary, MaintainerRepoContribution, RepoMaintainersSummary } from '@/lib/api-types';
+import type { MaintainersResponse, MaintainerSummary, MaintainerRepoContribution, RepoMaintainersSummary, MaintainerGradeInput } from '@/lib/api-types';
 
 const LETTER_COLOR: Record<string, string> = {
   A: '#22c55e', B: '#86efac', C: '#9eb872', D: '#eab308', F: '#c5503a', '—': '#62666d',
@@ -51,6 +51,131 @@ const R_SORT: Record<SortKey, (r: RepoMaintainersSummary) => number> = {
   count: (r) => r.maintainerCount,
 };
 
+type GradeLetter = MaintainerSummary['gradeLetter'];
+type GradeMix = 'policy' | 'balanced' | 'pr' | 'issue';
+
+interface DisplayGrade {
+  score: number | null;
+  letter: GradeLetter;
+}
+
+interface GradeSettings {
+  prSpeed: number;
+  prAcceptance: number;
+  prBacklog: number;
+  issueSpeed: number;
+  issueCompletion: number;
+  mix: GradeMix;
+}
+
+const DEFAULT_GRADE_SETTINGS: GradeSettings = {
+  prSpeed: 50,
+  prAcceptance: 30,
+  prBacklog: 20,
+  issueSpeed: 60,
+  issueCompletion: 40,
+  mix: 'policy',
+};
+
+const MIX_OPTIONS: ReadonlyArray<{ value: GradeMix; label: string; detail: string }> = [
+  { value: 'policy', label: 'Repo split', detail: 'Use repo PR / issue split' },
+  { value: 'balanced', label: '50 / 50', detail: 'Equal PR and issue weight' },
+  { value: 'pr', label: 'PR only', detail: 'Score only PR-side signal' },
+  { value: 'issue', label: 'Issues only', detail: 'Score only issue-side signal' },
+];
+
+function gradeMixLabel(mix: GradeMix): string {
+  return MIX_OPTIONS.find((o) => o.value === mix)?.label ?? 'Repo split';
+}
+
+function gradeSettingsEqual(a: GradeSettings, b: GradeSettings): boolean {
+  return a.prSpeed === b.prSpeed
+    && a.prAcceptance === b.prAcceptance
+    && a.prBacklog === b.prBacklog
+    && a.issueSpeed === b.issueSpeed
+    && a.issueCompletion === b.issueCompletion
+    && a.mix === b.mix;
+}
+
+function gradeLetterFromScore(score: number | null): GradeLetter {
+  if (score == null || !Number.isFinite(score)) return '—';
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+function blendScore(parts: Array<{ value: number | null; weight: number }>): number | null {
+  let sum = 0;
+  let weight = 0;
+  for (const part of parts) {
+    if (part.value == null || !Number.isFinite(part.value) || part.weight <= 0) continue;
+    sum += part.value * part.weight;
+    weight += part.weight;
+  }
+  return weight > 0 ? sum / weight : null;
+}
+
+function prSideScore(pr: MaintainerGradeInput['pr'], settings: GradeSettings): number | null {
+  if (!pr) return null;
+  const total = settings.prSpeed + settings.prAcceptance + settings.prBacklog;
+  if (total <= 0) return null;
+  return blendScore([
+    { value: pr.speed, weight: settings.prSpeed },
+    { value: pr.acceptance, weight: settings.prAcceptance },
+    { value: pr.backlog, weight: settings.prBacklog },
+  ]);
+}
+
+function issueSideScore(issue: MaintainerGradeInput['issue'], settings: GradeSettings): number | null {
+  if (!issue) return null;
+  const total = settings.issueSpeed + settings.issueCompletion;
+  if (total <= 0) return null;
+  return blendScore([
+    { value: issue.speed, weight: settings.issueSpeed },
+    { value: issue.completion, weight: settings.issueCompletion },
+  ]);
+}
+
+function issueWeightForMix(settings: GradeSettings, issueDiscoveryShare: number, hasPr: boolean, hasIssue: boolean): number {
+  if (settings.mix === 'pr') return 0;
+  if (settings.mix === 'issue') return 1;
+  if (!hasPr && hasIssue) return 1;
+  if (hasPr && !hasIssue) return 0;
+  if (!hasPr && !hasIssue) return 0;
+  if (settings.mix === 'balanced') return 0.5;
+  return Math.min(1, Math.max(0, issueDiscoveryShare));
+}
+
+function gradeFromInput(input: MaintainerGradeInput, issueDiscoveryShare: number, settings: GradeSettings): DisplayGrade {
+  const pr = prSideScore(input.pr, settings);
+  const issue = issueSideScore(input.issue, settings);
+  const issueWeight = issueWeightForMix(settings, issueDiscoveryShare, pr != null, issue != null);
+  const score = blendScore([
+    { value: pr, weight: 1 - issueWeight },
+    { value: issue, weight: issueWeight },
+  ]);
+  return { score, letter: gradeLetterFromScore(score) };
+}
+
+function gradeForMaintainer(m: MaintainerSummary, settings: GradeSettings): DisplayGrade {
+  let sum = 0;
+  let sample = 0;
+  for (const repo of m.repos) {
+    const grade = gradeFromInput(repo.gradeInput, repo.issueDiscoveryShare, settings);
+    if (grade.score == null || repo.gradeInput.sample <= 0) continue;
+    sum += grade.score * repo.gradeInput.sample;
+    sample += repo.gradeInput.sample;
+  }
+  const score = sample > 0 ? sum / sample : null;
+  return { score, letter: gradeLetterFromScore(score) };
+}
+
+function fallbackGrade(score: number | null, letter: GradeLetter): DisplayGrade {
+  return { score, letter };
+}
+
 interface EmissionSnapshot {
   activeMinerTaoPerDay?: number;
   recycleTaoPerDay?: number;
@@ -75,18 +200,22 @@ const MIN_WIDTH = 880;
 // Concise Grade-column tooltip (the full breakdown lives in the GradeGuide
 // panel). Honest that the speed signal reflects the repo's merge/close
 // activity — which a bot or merge-app can drive — not the named maintainers.
-const GRADE_TIP = (
-  <>
-    <Text sx={{ display: 'block', fontWeight: 600, color: 'fg.default', mb: 1 }}>Grade · responsiveness to miner work</Text>
-    <Text sx={{ display: 'block', color: 'fg.muted' }}>
-      Blends merge / resolve speed, acceptance and backlog health, weighted by the repo&apos;s PR vs
-      issue-discovery split. A&nbsp;90+ · B&nbsp;80+ · C&nbsp;70+ · D&nbsp;60+ · F&nbsp;&lt;60.
-    </Text>
-    <Text sx={{ display: 'block', color: 'fg.subtle', mt: 1 }}>
-      Repo-attributed, and can reflect a bot/app with merge rights. See “How grading works”.
-    </Text>
-  </>
-);
+function GradeTip({ settings, customActive }: { settings: GradeSettings; customActive: boolean }) {
+  return (
+    <>
+      <Text sx={{ display: 'block', fontWeight: 600, color: 'fg.default', mb: 1 }}>Grade · responsiveness to miner work</Text>
+      <Text sx={{ display: 'block', color: 'fg.muted' }}>
+        Blends merge / resolve speed, acceptance and backlog health. Default uses the repo&apos;s PR vs issue-discovery split.
+      </Text>
+      <Text sx={{ display: 'block', color: customActive ? 'attention.fg' : 'fg.subtle', mt: 1 }}>
+        Current: {customActive ? 'custom' : 'default'} · PR {settings.prSpeed}/{settings.prAcceptance}/{settings.prBacklog} · issues {settings.issueSpeed}/{settings.issueCompletion} · {gradeMixLabel(settings.mix)}.
+      </Text>
+      <Text sx={{ display: 'block', color: 'fg.subtle', mt: 1 }}>
+        Repo-attributed, and can reflect a bot/app with merge rights. See “How grading works”.
+      </Text>
+    </>
+  );
+}
 
 /** Stable per-maintainer key — id when present, else login. Used for both the
  *  React list key and the expanded-row set, so two people who happen to share a
@@ -99,6 +228,9 @@ export default function MaintainersPage() {
   const [sortKey, setSortKey] = useState<SortKey>('reward');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showGuide, setShowGuide] = useState(false);
+  const [gradeSettings, setGradeSettings] = useState<GradeSettings>(DEFAULT_GRADE_SETTINGS);
+  const customGradeActive = !gradeSettingsEqual(gradeSettings, DEFAULT_GRADE_SETTINGS);
+  const updateGradeSettings = (patch: Partial<GradeSettings>) => setGradeSettings((prev) => ({ ...prev, ...patch }));
 
   const dataQuery = useQuery<MaintainersResponse>({
     queryKey: ['all-maintainers'],
@@ -132,15 +264,29 @@ export default function MaintainersPage() {
     return (e?.totalTaoPerDay ?? 30) / 2;
   }, [emissionQuery.data]);
 
+  const maintainerGrades = useMemo(() => {
+    const map = new Map<string, DisplayGrade>();
+    for (const m of dataQuery.data?.maintainers ?? []) map.set(keyOf(m), gradeForMaintainer(m, gradeSettings));
+    return map;
+  }, [dataQuery.data?.maintainers, gradeSettings]);
+
+  const repoGrades = useMemo(() => {
+    const map = new Map<string, DisplayGrade>();
+    for (const r of dataQuery.data?.repos ?? []) map.set(r.repo, gradeFromInput(r.gradeInput, r.issueDiscoveryShare, gradeSettings));
+    return map;
+  }, [dataQuery.data?.repos, gradeSettings]);
+
   const filtered = useMemo(() => {
     const all = dataQuery.data?.maintainers ?? [];
     const q = query.trim().toLowerCase();
     const base = q
       ? all.filter((m) => m.login.toLowerCase().includes(q) || m.repos.some((r) => r.repo.toLowerCase().includes(q)))
       : all;
-    const get = M_SORT[sortKey];
+    const get = sortKey === 'grade'
+      ? (m: MaintainerSummary) => maintainerGrades.get(keyOf(m))?.score ?? -1
+      : M_SORT[sortKey];
     return [...base].sort((a, b) => get(b) - get(a) || b.shipped30d - a.shipped30d || a.login.localeCompare(b.login));
-  }, [dataQuery.data?.maintainers, query, sortKey]);
+  }, [dataQuery.data?.maintainers, maintainerGrades, query, sortKey]);
 
   const filteredRepos = useMemo(() => {
     const all = dataQuery.data?.repos ?? [];
@@ -148,9 +294,11 @@ export default function MaintainersPage() {
     const base = q
       ? all.filter((r) => r.repo.toLowerCase().includes(q) || r.maintainers.some((m) => m.login.toLowerCase().includes(q)))
       : all;
-    const get = R_SORT[sortKey];
+    const get = sortKey === 'grade'
+      ? (r: RepoMaintainersSummary) => repoGrades.get(r.repo)?.score ?? -1
+      : R_SORT[sortKey];
     return [...base].sort((a, b) => get(b) - get(a) || b.shipped30d - a.shipped30d || a.repo.localeCompare(b.repo));
-  }, [dataQuery.data?.repos, query, sortKey]);
+  }, [dataQuery.data?.repos, query, repoGrades, sortKey]);
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -178,7 +326,14 @@ export default function MaintainersPage() {
         ) : null}
       </Box>
 
-      <GradeGuide open={showGuide} onToggle={() => setShowGuide((v) => !v)} />
+      <GradeGuide
+        open={showGuide}
+        settings={gradeSettings}
+        customActive={customGradeActive}
+        onChange={updateGradeSettings}
+        onReset={() => setGradeSettings(DEFAULT_GRADE_SETTINGS)}
+        onToggle={() => setShowGuide((v) => !v)}
+      />
 
       {/* Controls */}
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', mb: 3 }}>
@@ -217,11 +372,19 @@ export default function MaintainersPage() {
         ) : (
           <Box sx={{ overflowX: 'auto' }}>
             <Box sx={{ minWidth: MIN_WIDTH, border: '1px solid', borderColor: 'border.subtle', borderRadius: 2, overflow: 'hidden' }}>
-              <HeaderRow first="Maintainer" count="Repos" />
+              <HeaderRow first="Maintainer" count="Repos" settings={gradeSettings} customActive={customGradeActive} />
               {filtered.map((m) => {
                 const k = keyOf(m);
                 return (
-                  <MaintainerRow key={k} m={m} minerPoolTAO={minerPoolTAO} expanded={expanded.has(k)} onToggle={() => toggle(k)} />
+                  <MaintainerRow
+                    key={k}
+                    m={m}
+                    grade={maintainerGrades.get(k) ?? fallbackGrade(m.gradeScore, m.gradeLetter)}
+                    gradeSettings={gradeSettings}
+                    minerPoolTAO={minerPoolTAO}
+                    expanded={expanded.has(k)}
+                    onToggle={() => toggle(k)}
+                  />
                 );
               })}
             </Box>
@@ -232,11 +395,18 @@ export default function MaintainersPage() {
       ) : (
         <Box sx={{ overflowX: 'auto' }}>
           <Box sx={{ minWidth: MIN_WIDTH, border: '1px solid', borderColor: 'border.subtle', borderRadius: 2, overflow: 'hidden' }}>
-            <HeaderRow first="Repository" count="Maintainers" />
+            <HeaderRow first="Repository" count="Maintainers" settings={gradeSettings} customActive={customGradeActive} />
             {filteredRepos.map((r) => {
               const k = `repo:${r.repo}`;
               return (
-                <RepoRow key={k} r={r} minerPoolTAO={minerPoolTAO} expanded={expanded.has(k)} onToggle={() => toggle(k)} />
+                <RepoRow
+                  key={k}
+                  r={r}
+                  grade={repoGrades.get(r.repo) ?? fallbackGrade(r.gradeScore, r.gradeLetter)}
+                  minerPoolTAO={minerPoolTAO}
+                  expanded={expanded.has(k)}
+                  onToggle={() => toggle(k)}
+                />
               );
             })}
           </Box>
@@ -311,7 +481,7 @@ function Tooltip({ content, children, maxWidth = 320 }: { content: React.ReactNo
   );
 }
 
-function HeaderRow({ first, count }: { first: string; count: string }) {
+function HeaderRow({ first, count, settings, customActive }: { first: string; count: string; settings: GradeSettings; customActive: boolean }) {
   return (
     <Box
       sx={{
@@ -326,7 +496,7 @@ function HeaderRow({ first, count }: { first: string; count: string }) {
       <span style={{ textAlign: 'right' }}>Shipping · 30d</span>
       <span style={{ textAlign: 'right' }}>All-time</span>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', color: 'fg.muted' }}>
-        <Tooltip content={GRADE_TIP}>
+        <Tooltip content={<GradeTip settings={settings} customActive={customActive} />}>
           Grade <Box as="span" sx={{ display: 'inline-flex', color: 'fg.subtle' }}><InfoIcon size={11} /></Box>
         </Tooltip>
       </Box>
@@ -353,9 +523,9 @@ function ViewTab({ active, onClick, children }: { active: boolean; onClick: () =
 }
 
 function MaintainerRow({
-  m, minerPoolTAO, expanded, onToggle,
+  m, grade, gradeSettings, minerPoolTAO, expanded, onToggle,
 }: {
-  m: MaintainerSummary; minerPoolTAO: number; expanded: boolean; onToggle: () => void;
+  m: MaintainerSummary; grade: DisplayGrade; gradeSettings: GradeSettings; minerPoolTAO: number; expanded: boolean; onToggle: () => void;
 }) {
   const tao = m.rewardShare * minerPoolTAO;
   return (
@@ -420,9 +590,9 @@ function MaintainerRow({
 
         {/* grade */}
         <Box sx={{ textAlign: 'right' }}>
-          <Text sx={{ fontWeight: 600, fontSize: 2, color: LETTER_COLOR[m.gradeLetter] ?? '#62666d' }}>{m.gradeLetter}</Text>
-          {m.gradeScore != null ? (
-            <Text className="tnum" sx={{ fontSize: 0, color: 'fg.subtle', ml: 1 }}>{Math.round(m.gradeScore)}</Text>
+          <Text sx={{ fontWeight: 600, fontSize: 2, color: LETTER_COLOR[grade.letter] ?? '#62666d' }}>{grade.letter}</Text>
+          {grade.score != null ? (
+            <Text className="tnum" sx={{ fontSize: 0, color: 'fg.subtle', ml: 1 }}>{Math.round(grade.score)}</Text>
           ) : null}
         </Box>
 
@@ -432,12 +602,12 @@ function MaintainerRow({
         </Box>
       </Box>
 
-      {expanded ? <RepoBreakdown m={m} minerPoolTAO={minerPoolTAO} /> : null}
+      {expanded ? <RepoBreakdown m={m} gradeSettings={gradeSettings} minerPoolTAO={minerPoolTAO} /> : null}
     </Box>
   );
 }
 
-function RepoBreakdown({ m, minerPoolTAO }: { m: MaintainerSummary; minerPoolTAO: number }) {
+function RepoBreakdown({ m, gradeSettings, minerPoolTAO }: { m: MaintainerSummary; gradeSettings: GradeSettings; minerPoolTAO: number }) {
   // Columns line up with the parent table's GRID, so each repo's figures sit
   // directly under Shipping / All-time / Grade / τ-day and visibly sum to the
   // maintainer's aggregate row above.
@@ -449,6 +619,7 @@ function RepoBreakdown({ m, minerPoolTAO }: { m: MaintainerSummary; minerPoolTAO
         const total = r.mergedPrsTotal + r.issuesCompleted;
         const modeLabel = r.mode === 'PR' ? 'PR review' : r.mode === 'issue' ? 'issue discovery' : 'mixed';
         const cutPct = (r.maintainerCut * 100).toFixed(r.maintainerCut > 0 && r.maintainerCut < 0.1 ? 1 : 0);
+        const grade = gradeFromInput(r.gradeInput, r.issueDiscoveryShare, gradeSettings);
         return (
           <Box
             key={`${r.repo}-${i}`}
@@ -507,8 +678,8 @@ function RepoBreakdown({ m, minerPoolTAO }: { m: MaintainerSummary; minerPoolTAO
 
             {/* Grade */}
             <Box sx={{ textAlign: 'right' }}>
-              <Text sx={{ fontWeight: 600, color: r.gradeScore != null ? LETTER_COLOR[r.gradeLetter] : 'fg.subtle' }}>{r.gradeLetter}</Text>
-              {r.gradeScore != null ? <Text className="tnum" sx={{ color: 'fg.subtle', ml: 1 }}>{Math.round(r.gradeScore)}{r.provisional ? '*' : ''}</Text> : null}
+              <Text sx={{ fontWeight: 600, color: grade.score != null ? LETTER_COLOR[grade.letter] : 'fg.subtle' }}>{grade.letter}</Text>
+              {grade.score != null ? <Text className="tnum" sx={{ color: 'fg.subtle', ml: 1 }}>{Math.round(grade.score)}{r.provisional ? '*' : ''}</Text> : null}
             </Box>
 
             {/* τ / day */}
@@ -521,9 +692,9 @@ function RepoBreakdown({ m, minerPoolTAO }: { m: MaintainerSummary; minerPoolTAO
 }
 
 function RepoRow({
-  r, minerPoolTAO, expanded, onToggle,
+  r, grade, minerPoolTAO, expanded, onToggle,
 }: {
-  r: RepoMaintainersSummary; minerPoolTAO: number; expanded: boolean; onToggle: () => void;
+  r: RepoMaintainersSummary; grade: DisplayGrade; minerPoolTAO: number; expanded: boolean; onToggle: () => void;
 }) {
   const tao = r.rewardShare * minerPoolTAO;
   return (
@@ -584,9 +755,9 @@ function RepoRow({
 
         {/* grade */}
         <Box sx={{ textAlign: 'right' }}>
-          <Text sx={{ fontWeight: 600, fontSize: 2, color: LETTER_COLOR[r.gradeLetter] ?? '#62666d' }}>{r.gradeLetter}</Text>
-          {r.gradeScore != null ? (
-            <Text className="tnum" sx={{ fontSize: 0, color: 'fg.subtle', ml: 1 }}>{Math.round(r.gradeScore)}</Text>
+          <Text sx={{ fontWeight: 600, fontSize: 2, color: LETTER_COLOR[grade.letter] ?? '#62666d' }}>{grade.letter}</Text>
+          {grade.score != null ? (
+            <Text className="tnum" sx={{ fontSize: 0, color: 'fg.subtle', ml: 1 }}>{Math.round(grade.score)}</Text>
           ) : null}
         </Box>
 
@@ -710,7 +881,59 @@ function GuideRow({ label, children }: { label: string; children: React.ReactNod
 
 const GRADE_BANDS: ReadonlyArray<[string, string]> = [['A', '90+'], ['B', '80+'], ['C', '70+'], ['D', '60+'], ['F', '<60']];
 
-function GradeGuide({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+function WeightSlider({ label, value, onChange, hint }: { label: string; value: number; onChange: (value: number) => void; hint: string }) {
+  return (
+    <Box sx={{ display: 'grid', gap: 1 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'baseline' }}>
+        <Text sx={{ color: 'fg.default', fontWeight: 500 }}>{label}</Text>
+        <Text className="tnum" sx={{ color: 'fg.subtle', fontSize: 0 }}>{value}%</Text>
+      </Box>
+      <input
+        aria-label={label}
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={value}
+        onChange={(e) => onChange(Number(e.currentTarget.value))}
+        style={{ width: '100%', accentColor: 'var(--fgColor-accent, #2f81f7)' }}
+      />
+      <Text sx={{ color: 'fg.subtle', fontSize: 0 }}>{hint}</Text>
+    </Box>
+  );
+}
+
+function MixButton({ active, label, detail, onClick }: { active: boolean; label: string; detail: string; onClick: () => void }) {
+  return (
+    <Box
+      as="button"
+      type="button"
+      onClick={onClick}
+      sx={{
+        minWidth: 118, px: 2, py: 2, textAlign: 'left', borderRadius: 2, cursor: 'pointer',
+        border: '1px solid', borderColor: active ? 'accent.emphasis' : 'border.default',
+        bg: active ? 'accent.subtle' : 'transparent', color: active ? 'accent.fg' : 'fg.default',
+      }}
+    >
+      <Text sx={{ display: 'block', fontWeight: 600, fontSize: 0 }}>{label}</Text>
+      <Text sx={{ display: 'block', color: active ? 'accent.fg' : 'fg.subtle', fontSize: '11px', mt: 1, lineHeight: 1.35 }}>{detail}</Text>
+    </Box>
+  );
+}
+
+function GradeGuide({
+  open, settings, customActive, onChange, onReset, onToggle,
+}: {
+  open: boolean;
+  settings: GradeSettings;
+  customActive: boolean;
+  onChange: (patch: Partial<GradeSettings>) => void;
+  onReset: () => void;
+  onToggle: () => void;
+}) {
+  const prTotal = settings.prSpeed + settings.prAcceptance + settings.prBacklog;
+  const issueTotal = settings.issueSpeed + settings.issueCompletion;
+
   return (
     <Box sx={{ mb: 3, border: '1px solid', borderColor: 'border.subtle', borderRadius: 2, overflow: 'hidden', bg: 'canvas.subtle' }}>
       <Box
@@ -725,13 +948,23 @@ function GradeGuide({ open, onToggle }: { open: boolean; onToggle: () => void })
         <Box sx={{ color: 'fg.subtle', display: 'flex' }}>{open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}</Box>
         <Box sx={{ color: 'accent.fg', display: 'flex' }}><InfoIcon size={14} /></Box>
         <Text sx={{ fontWeight: 500 }}>How grading works</Text>
-        <Text sx={{ color: 'fg.subtle', fontSize: 0, display: ['none', 'inline'] }}>— what A–F means and how to read it</Text>
+        <Text sx={{ color: 'fg.subtle', fontSize: 0, display: ['none', 'inline'] }}>— customize the A–F formula</Text>
+        <Box
+          as="span"
+          sx={{
+            ml: 'auto', px: 2, py: '2px', borderRadius: 1, fontSize: 0,
+            border: '1px solid', borderColor: customActive ? 'attention.muted' : 'border.default',
+            color: customActive ? 'attention.fg' : 'fg.subtle', whiteSpace: 'nowrap',
+          }}
+        >
+          {customActive ? 'custom' : 'default'}
+        </Box>
       </Box>
 
       {open ? (
         <Box sx={{ px: 3, pb: 3, pt: 2, fontSize: 1, color: 'fg.muted', lineHeight: 1.55, borderTop: '1px solid', borderColor: 'border.muted' }}>
           <Text sx={{ display: 'block' }}>
-            One A–F read of how responsive a repo is to miner work — how fast miner PRs merge / issues resolve,
+            One A–F read of how responsive a repo is to miner work: how fast miner PRs merge / issues resolve,
             whether that work actually lands, and how healthy the open queue is.
           </Text>
 
@@ -744,11 +977,68 @@ function GradeGuide({ open, onToggle }: { open: boolean; onToggle: () => void })
             ))}
           </Box>
 
-          <GuideRow label="PR repos">merge speed 50% · acceptance (% of miner PRs merged) 30% · backlog health 20%</GuideRow>
-          <GuideRow label="Issue-discovery repos">resolve speed 60% · completion rate 40%</GuideRow>
-          <GuideRow label="Mixed repos">the two, blended by the repo&apos;s issue-discovery share</GuideRow>
-          <GuideRow label="PR speed">≤12h very fast · ≤24h fast · ≤48h normal · ≤96h slow · slower very slow</GuideRow>
-          <GuideRow label="Issue speed">≤2d very fast · ≤1w fast · ≤3w normal · ≤6w slow · slower very slow</GuideRow>
+          <GuideRow label="Default PR repos">merge speed 50% · acceptance (% of miner PRs merged) 30% · backlog health 20%</GuideRow>
+          <GuideRow label="Default issue repos">resolve speed 60% · completion rate 40%</GuideRow>
+          <GuideRow label="Default mixed repos">PR and issue sides blend by the repo&apos;s issue-discovery share</GuideRow>
+          <GuideRow label="Speed bands">PR: ≤12h very fast · ≤24h fast · ≤48h normal · ≤96h slow. Issues: ≤2d very fast · ≤1w fast · ≤3w normal · ≤6w slow.</GuideRow>
+
+          <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'border.muted' }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 2, alignItems: 'center', mb: 2 }}>
+              <Box>
+                <Text sx={{ display: 'block', fontWeight: 600, color: 'fg.default' }}>Customize grading</Text>
+                <Text sx={{ color: 'fg.subtle', fontSize: 0 }}>Weights normalize inside each side; 0 disables that ingredient.</Text>
+              </Box>
+              <Box
+                as="button"
+                type="button"
+                onClick={onReset}
+                disabled={!customActive}
+                sx={{
+                  px: 2, py: 1, fontSize: 0, borderRadius: 2, cursor: customActive ? 'pointer' : 'default',
+                  border: '1px solid', borderColor: 'border.default', bg: 'transparent',
+                  color: customActive ? 'fg.muted' : 'fg.subtle', opacity: customActive ? 1 : 0.55,
+                }}
+              >
+                Reset
+              </Box>
+            </Box>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: ['1fr', '1fr 1fr'], gap: 4 }}>
+              <Box sx={{ display: 'grid', gap: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                  <Text sx={{ fontWeight: 600, color: 'fg.default' }}>PR review</Text>
+                  <Text className="tnum" sx={{ color: prTotal > 0 ? 'fg.subtle' : 'attention.fg', fontSize: 0 }}>total {prTotal}%</Text>
+                </Box>
+                <WeightSlider label="Merge speed" value={settings.prSpeed} onChange={(prSpeed) => onChange({ prSpeed })} hint="How quickly miner PRs reach merge." />
+                <WeightSlider label="Acceptance" value={settings.prAcceptance} onChange={(prAcceptance) => onChange({ prAcceptance })} hint="Share of resolved miner PRs that merged." />
+                <WeightSlider label="Backlog health" value={settings.prBacklog} onChange={(prBacklog) => onChange({ prBacklog })} hint="Open PR age, stale share, and queue size." />
+              </Box>
+
+              <Box sx={{ display: 'grid', gap: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                  <Text sx={{ fontWeight: 600, color: 'fg.default' }}>Issue discovery</Text>
+                  <Text className="tnum" sx={{ color: issueTotal > 0 ? 'fg.subtle' : 'attention.fg', fontSize: 0 }}>total {issueTotal}%</Text>
+                </Box>
+                <WeightSlider label="Resolve speed" value={settings.issueSpeed} onChange={(issueSpeed) => onChange({ issueSpeed })} hint="How quickly completed miner issues close." />
+                <WeightSlider label="Completion" value={settings.issueCompletion} onChange={(issueCompletion) => onChange({ issueCompletion })} hint="Share of miner issues closed as completed." />
+              </Box>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Text sx={{ display: 'block', mb: 2, fontWeight: 600, color: 'fg.default' }}>PR / issue blend</Text>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                {MIX_OPTIONS.map((option) => (
+                  <MixButton
+                    key={option.value}
+                    active={settings.mix === option.value}
+                    label={option.label}
+                    detail={option.detail}
+                    onClick={() => onChange({ mix: option.value })}
+                  />
+                ))}
+              </Box>
+            </Box>
+          </Box>
 
           <Text sx={{ display: 'block', mt: 3, fontWeight: 600, color: 'fg.default' }}>Reading it</Text>
           <Box as="ul" sx={{ mt: 1, pl: '18px', '& li': { mb: 1 } }}>

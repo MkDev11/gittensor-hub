@@ -5,6 +5,7 @@ import { computeMaintainerStats } from '@/lib/maintainer-stats';
 import { maintainerPool } from '@/lib/incentives';
 import {
   maintainerGrade,
+  gradeInputFromGrade,
   gradeLetter,
   headlineReviewSpeed,
   headlineIssueResponse,
@@ -158,6 +159,7 @@ async function build(): Promise<MaintainersResponse> {
       issueDiscoveryShare: repo.issueDiscoveryShare,
     });
     const grade = maintainerGrade(stats);
+    const gradeInput = gradeInputFromGrade(grade);
     const share = stats.issueDiscoveryShare;
     const mode: MaintainerRepoContribution['mode'] = share >= 1 ? 'issue' : share > 0 ? 'mixed' : 'PR';
     const speedHours = share >= 0.5 ? headlineIssueResponse(stats).hours : headlineReviewSpeed(stats).hours;
@@ -179,6 +181,7 @@ async function build(): Promise<MaintainersResponse> {
         mode,
         gradeLetter: grade.letter,
         gradeScore: grade.score,
+        gradeInput,
         provisional: grade.provisional,
         speedHours,
         mergedPrsTotal: stats.throughput.mergedPrsTotal,
@@ -233,6 +236,7 @@ async function build(): Promise<MaintainersResponse> {
       mode,
       gradeLetter: grade.letter,
       gradeScore: grade.score,
+      gradeInput,
       provisional: grade.provisional,
       speedHours,
       mergedPrsTotal: stats.throughput.mergedPrsTotal,

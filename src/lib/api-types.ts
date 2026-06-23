@@ -485,6 +485,23 @@ export interface MaintainerGrade {
   issue: { score: number; speed: number | null; completion: number | null } | null;
 }
 
+/** Minimal grade ingredients sent to the /maintainers UI so it can recompute
+ *  the displayed grade with user-selected weights without re-querying stats. */
+export interface MaintainerGradeInput {
+  /** Resolved PRs + closed issues behind the grade — the evidence count. */
+  sample: number;
+  pr: { speed: number | null; acceptance: number | null; backlog: number | null } | null;
+  issue: { speed: number | null; completion: number | null } | null;
+}
+
+export function gradeInputFromGrade(g: MaintainerGrade): MaintainerGradeInput {
+  return {
+    sample: g.sample,
+    pr: g.pr ? { speed: g.pr.speed, acceptance: g.pr.acceptance, backlog: g.pr.backlog } : null,
+    issue: g.issue ? { speed: g.issue.speed, completion: g.issue.completion } : null,
+  };
+}
+
 /** Letter from a 0–100 score. Standard A–F bands. */
 export function gradeLetter(score: number | null): MaintainerGrade['letter'] {
   if (score == null || !Number.isFinite(score)) return '—';
@@ -559,6 +576,7 @@ export interface MaintainerRepoContribution {
   mode: 'PR' | 'issue' | 'mixed';
   gradeLetter: MaintainerGrade['letter'];
   gradeScore: number | null;
+  gradeInput: MaintainerGradeInput;
   provisional: boolean;
   /** Headline responsiveness (median hours) for the repo's dominant side. */
   speedHours: number | null;
@@ -626,6 +644,7 @@ export interface RepoMaintainersSummary {
   mode: 'PR' | 'issue' | 'mixed';
   gradeLetter: MaintainerGrade['letter'];
   gradeScore: number | null;
+  gradeInput: MaintainerGradeInput;
   provisional: boolean;
   speedHours: number | null;
   mergedPrsTotal: number;
