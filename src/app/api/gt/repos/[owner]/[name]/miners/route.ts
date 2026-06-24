@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getReadDb } from '@/lib/db';
 import { backfillPrIssueLinksIfNeeded } from '@/lib/refresh';
+import { assertTrackedRepo } from '@/lib/assert-tracked-repo';
 
 export const dynamic = 'force-dynamic';
 
@@ -262,6 +263,9 @@ function meaningfulRepoEvaluation(row: {
 
 export async function GET(_req: Request, ctx: { params: Promise<{ owner: string; name: string }> }) {
   const params = await ctx.params;
+  const denied = await assertTrackedRepo(params.owner, params.name);
+  if (denied) return denied;
+
   const fullName = `${params.owner}/${params.name}`;
   const fullNameKey = fullName.toLowerCase();
   try {
